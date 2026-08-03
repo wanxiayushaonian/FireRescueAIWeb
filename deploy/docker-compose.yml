@@ -3,7 +3,7 @@ version: "3.8"
 services:
   # Next.js BFF:提供 /api/ustudio/* 取场景数据
   bff:
-    image: ghcr.io/${IMAGE_BFF:-firerescue-bff}:latest
+    image: ${IMAGE_BFF:-firerescue-bff}:${TAG:-latest}
     build:
       context: ..
       dockerfile: deploy/Dockerfile.bff
@@ -16,7 +16,7 @@ services:
 
   # MCP server:agent 直接连 8787
   mcp:
-    image: ghcr.io/${IMAGE_MCP:-firerescue-mcp}:latest
+    image: ${IMAGE_MCP:-firerescue-mcp}:${TAG:-latest}
     build:
       context: ../mcp-server
       dockerfile: ../deploy/Dockerfile.mcp

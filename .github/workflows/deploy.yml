@@ -70,8 +70,8 @@ jobs:
             cd /opt/firerescue
             export GHCR_USER="${{ github.actor }}"
             export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-            export IMAGE_BFF="${{ github.repository }}-bff"
-            export IMAGE_MCP="${{ github.repository }}-mcp"
+            export IMAGE_BFF="ghcr.io/${{ github.repository }}-bff"
+            export IMAGE_MCP="ghcr.io/${{ github.repository }}-mcp"
             docker login ghcr.io -u "$GHCR_USER" -p "$GHCR_TOKEN"
             docker compose -f deploy/docker-compose.yml pull
             docker compose -f deploy/docker-compose.yml up -d --remove-orphans

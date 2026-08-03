@@ -46,8 +46,9 @@ echo "==> 构建 MCP 镜像..."
 docker build -f deploy/Dockerfile.mcp -t firerescue-mcp:local mcp-server
 
 # 5. 用 compose 起(覆盖 image 为本地构建)
-export IMAGE_BFF=firerescue-bff:local
-export IMAGE_MCP=firerescue-mcp:local
+export IMAGE_BFF=firerescue-bff
+export IMAGE_MCP=firerescue-mcp
+export TAG=local
 cd "$APP_DIR/deploy"
 docker compose up -d --remove-orphans
 
