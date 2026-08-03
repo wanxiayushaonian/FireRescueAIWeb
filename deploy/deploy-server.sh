@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # FireRescueAI 服务器一键部署脚本(方案 B 手动部署)
-# 用法:在服务器上执行,需已装 Docker + compose 插件。
+# 用法:在项目目录里执行(如 ~/jjxf/FireRescueAIWeb),需已装 Docker + compose 插件。
 set -euo pipefail
 
-APP_DIR=/opt/firerescue
+# 自动用当前目录(clone 项目根),无需硬编码 /opt
+APP_DIR="$(pwd)"
 echo "==> 部署目录: $APP_DIR"
 
 # 1. 检查 Docker
