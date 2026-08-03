@@ -2,6 +2,7 @@ import http from 'node:http';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createMcpServer } from './server.js';
 import { subscribeCommands } from './command-bus.js';
+import { checkAppKey } from './auth.js';
 
 export function startHttp(opts: {
   port: number;
@@ -24,7 +25,7 @@ export function startHttp(opts: {
 
     // MCP SSE:agent 在 URL 带 ?appKey=
     if (url.pathname === '/sse') {
-      if (url.searchParams.get('appKey') !== opts.appKey) {
+      if (!checkAppKey(url.searchParams.get('appKey'), opts.appKey)) {
         res.writeHead(401); res.end('unauthorized'); return;
       }
       const transport = new SSEServerTransport('/messages', res);
