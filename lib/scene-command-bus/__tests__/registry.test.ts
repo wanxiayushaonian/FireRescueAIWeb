@@ -1,7 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
-import { registerSceneTool, dispatch, __resetForTest } from '../registry.js';
+import { registerSceneTool, dispatch, __resetForTest } from '../registry';
+import type { SceneSdkLike } from '../types';
 
-const fakeSdk = { fly: vi.fn() } as unknown as Record<string, (...a: unknown[]) => unknown>;
+const fakeSdk: SceneSdkLike = { fly: vi.fn() };
 
 describe('scene-command-bus registry', () => {
   it('注册的 handler 被 dispatch 调用', async () => {

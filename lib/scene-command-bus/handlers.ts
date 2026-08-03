@@ -1,5 +1,5 @@
-import { registerSceneTool } from './registry.js';
-import type { SceneSdkLike } from './types.js';
+import { registerSceneTool } from './registry';
+import type { SceneSdkLike } from './types';
 
 export function registerDefaultTools(_sdk: SceneSdkLike): void {
   registerSceneTool('fly_to', async (args, sdk) => {

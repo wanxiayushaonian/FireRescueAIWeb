@@ -1,4 +1,4 @@
-import type { SceneCommand, SceneSdkLike, SceneToolHandler } from './types.js';
+import type { SceneCommand, SceneSdkLike, SceneToolHandler } from './types';
 
 const handlers = new Map<string, SceneToolHandler>();
 

@@ -2,6 +2,7 @@ import { SoonspaceSceneViewer } from '@/components/SoonspaceSceneViewer';
 import { MultiAgentWidget } from '@/components/MultiAgentWidget';
 import { FireSafetyPanel } from '@/components/FireSafetyPanel';
 import { PlanPanel } from '@/components/PlanPanel';
+import { SceneCommandBridge } from '@/components/SceneCommandBridge';
 
 const fallbackText =
   process.env.NEXT_PUBLIC_LOCALE === 'en'
@@ -30,6 +31,7 @@ export default function Page() {
       <FireSafetyPanel />
       <PlanPanel />
       <MultiAgentWidget />
+      <SceneCommandBridge />
     </>
   );
 }
