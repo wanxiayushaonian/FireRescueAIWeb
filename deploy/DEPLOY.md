@@ -1,77 +1,60 @@
-# FireRescueAI 服务器部署(外网服务器 + Docker)
+# FireRescueAI 部署
 
-目标:把 mcp-server 部署到外网服务器,让赛事方 agent(能访问外网)直接连
-`http://<服务器IP>:8787/sse?appKey=...`,不再依赖 cloudflared 隧道。
+## 方式一:CI/CD 自动部署(推荐)
 
-## 架构
+代码 push 到 GitHub master → GitHub Actions 构建两个镜像推 GHCR → SSH 到服务器拉取重启。
+
+### 前置(一次性)
+
+1. **GitHub 仓库**:把项目推到 GitHub(仓库名决定 GHCR 镜像名)。
+2. **GitHub Secrets**(仓库 Settings → Secrets):
+   | Secret | 值 |
+   |--------|----|
+   | `GHCR_TOKEN` | 有 `write:packages` 权限的 Personal Access Token(或 GitHub App token) |
+   | `SERVER_HOST` | 服务器 IP/域名 |
+   | `SERVER_USER` | SSH 用户名 |
+   | `SERVER_SSH_KEY` | 服务器部署用的 SSH 私钥(OpenSSH 格式) |
+   | `SERVER_PORT` | SSH 端口(默认 22,可省略) |
+3. **服务器准备**:
+   - 装 Docker + compose 插件
+   - 建目录 `/opt/firerescue`,放 `deploy/` 下的 `.env`(真实密钥)+ `docker-compose.yml`
+   - 服务器 `.env` 放真实值:`NEXT_PUBLIC_X_APP_KEY`、`MCP_APP_KEY`、`SCENE_ID`、`NEXT_PUBLIC_USTUDIO_BASE` 等
+   - 开放 **8787** 入站 TCP
+
+### 流程
 
 ```
-外网服务器
-├── Docker: firerescue-bff   (Next.js standalone,端口 3000)
-│     提供 /api/ustudio/* 取场景数据(连 fc.xwbuilders.com)
-└── Docker: firerescue-mcp   (端口 8787,映射到宿主)
-       MCP SSE,agent 直接连
-       内部指向 http://bff:3000 (取场景数据)
+git push origin master
+   ↓ GitHub Actions
+   ├─ 构建 firerescue-<repo>-bff / -mcp → 推 ghcr.io
+   └─ SSH 到服务器: compose pull + up -d
 ```
 
-## 部署步骤
+### agent 连接地址
 
-### 1. 本机准备
+```
+http://<SERVER_HOST>:8787/sse?appKey=<MCP_APP_KEY>
+```
+
+## 方式二:手动部署(备选/本地验证)
 
 ```bash
-source ~/.nvm/nvm.sh
-cd /home/ljb/program/FireRescueAI/web
+# 本机构建验证
+docker build -f deploy/Dockerfile.bff -t firerescue-bff:test .
+docker build -f deploy/Dockerfile.mcp -t firerescue-mcp:test mcp-server
 
-# 准备服务器 .env(真实值,从本机 .env.local 复制密钥)
-cp deploy/.env.example deploy/.env
-# 编辑 deploy/.env,填:
-#   NEXT_PUBLIC_X_APP_KEY  <- 本机 .env.local 的同名值
-#   MCP_APP_KEY            <- 生成一个强随机串
-#   SCENE_ID               <- 真实 sceneId(如 463961468455870464)
+# 本地起整套
+cd deploy
+cp .env.example .env   # 填真实值
+docker compose up -d --build
+
+# 验证
+curl -s -o /dev/null -w "%{http_code}" "http://localhost:8787/sse?appKey=<MCP_APP_KEY>"   # 200
 ```
 
-### 2. 上传到服务器
+## 验证清单
 
-```bash
-rsync -avz --exclude node_modules --exclude .next --exclude .git \
-  /home/ljb/program/FireRescueAI/web/ user@服务器IP:/opt/firerescue/
-```
-
-> 服务器需装 Docker + docker compose 插件。
-
-### 3. 服务器上启动
-
-```bash
-ssh user@服务器IP
-cd /opt/firerescue
-docker compose -f deploy/docker-compose.yml up -d --build
-```
-
-### 4. 开放端口
-
-mcp-server 端口 **8787**(docker-compose 已映射宿主 8787)。
-需在服务器防火墙/安全组放行 8787 入站 TCP。
-
-### 5. agent 连接地址
-
-```
-http://<服务器IP>:8787/sse?appKey=<MCP_APP_KEY>
-```
-
-在 dt-ustudio-agent-admin 配:
-```json
-{ "mcpServers": { "instance": { "url": "http://<服务器IP>:8787/sse?appKey=<MCP_APP_KEY>" } } }
-```
-
-## 验证
-
-服务器上:
-```bash
-curl -s -o /dev/null -w "%{http_code}" "http://localhost:8787/sse?appKey=<MCP_APP_KEY>"
-# 200 = 通
-```
-
-## 常见问题
-
-- **agent 看不到工具**:确认 MCP_APP_KEY 与 admin URL 里的一致,端口已放行,`docker compose logs mcp` 无报错。
-- **list_fire_devices 500**:检查 deploy/.env 的 NEXT_PUBLIC_X_APP_KEY、SCENE_ID 是否正确,`docker compose logs bff` 看 BFF 是否成功连 ustudio。
+- `docker compose -f deploy/docker-compose.yml ps` 两个容器 Up
+- `curl .../sse?appKey=<key>` 返回 200(或 SSE 挂起)
+- agent 配 `http://<host>:8787/sse?appKey=<key>` 能列出 list_fire_devices / fly_to
+- `list_fire_devices` 返回 total 407 等真实数据

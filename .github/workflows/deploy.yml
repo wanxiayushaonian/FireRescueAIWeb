@@ -1,0 +1,78 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BFF: ${{ github.repository }}-bff
+  IMAGE_MCP: ${{ github.repository }}-mcp
+
+jobs:
+  build-images:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build & push BFF image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/Dockerfile.bff
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_BFF }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & push MCP image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mcp-server
+          file: deploy/Dockerfile.mcp
+          push: true
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_MCP }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-images
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          script: |
+            set -e
+            cd /opt/firerescue
+            export GHCR_USER="${{ github.actor }}"
+            export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
+            export IMAGE_BFF="${{ github.repository }}-bff"
+            export IMAGE_MCP="${{ github.repository }}-mcp"
+            docker login ghcr.io -u "$GHCR_USER" -p "$GHCR_TOKEN"
+            docker compose -f deploy/docker-compose.yml pull
+            docker compose -f deploy/docker-compose.yml up -d --remove-orphans
+            docker image prune -f || true
