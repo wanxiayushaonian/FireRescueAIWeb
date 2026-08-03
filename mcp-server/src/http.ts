@@ -1,6 +1,7 @@
 import http from 'node:http';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createMcpServer } from './server.js';
+import { subscribeCommands } from './command-bus.js';
 
 export function startHttp(opts: {
   port: number;
@@ -39,6 +40,19 @@ export function startHttp(opts: {
       const transport = transports.get(sessionId);
       if (!transport) { res.writeHead(400); res.end('no session'); return; }
       await transport.handlePostMessage(req, res);
+      return;
+    }
+    if (url.pathname === '/scene-events') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'Access-Control-Allow-Origin': allowOrigin,
+        'X-Accel-Buffering': 'no',
+      });
+      res.write(': connected\n\n');
+      const unsub = subscribeCommands((c) => res.write(`data: ${JSON.stringify(c)}\n\n`));
+      req.on('close', () => { unsub(); res.end(); });
       return;
     }
 
