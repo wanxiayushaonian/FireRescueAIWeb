@@ -1,0 +1,11 @@
+node_modules
+.next
+.git
+plan
+docs
+*.log
+.env
+.env.*
+!.env.example
+deploy
+mcp-server

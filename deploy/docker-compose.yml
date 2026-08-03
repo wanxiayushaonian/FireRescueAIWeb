@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  # Next.js BFF:提供 /api/ustudio/* 取场景数据
+  bff:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.bff
+    image: firerescue-bff
+    restart: unless-stopped
+    env_file: .env
+    expose:
+      - "3000"
+    networks:
+      - fr-net
+
+  # MCP server:agent 直接连 8787
+  mcp:
+    build:
+      context: ../mcp-server
+      dockerfile: ../deploy/Dockerfile.mcp
+    image: firerescue-mcp
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      WEB_BFF_URL: http://bff:3000
+    ports:
+      - "8787:8787"
+    depends_on:
+      - bff
+    networks:
+      - fr-net
+
+networks:
+  fr-net:
+    driver: bridge
