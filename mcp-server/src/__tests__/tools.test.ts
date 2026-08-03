@@ -9,8 +9,10 @@ vi.mock('../command-bus.js', () => ({
 vi.mock('../bff-client.js', () => ({
   getSceneOverview: vi.fn().mockResolvedValue({
     sceneId: 's1',
-    stories: ['1F', '2F'],
-    devices: [{ id: 'd1', name: '喷淋头A', type: 'ClosedSprinklerHead' }],
+    storyCount: 2,
+    deviceCount: 5,
+    fireDeviceCount: 1,
+    ok: true,
   }),
 }));
 
@@ -32,7 +34,7 @@ describe('tools', () => {
   it('list_fire_devices 返回 BFF 数据', async () => {
     const res = await handleToolCall('list_fire_devices', {});
     const text = res.content[0].text;
-    expect(text).toContain('d1');
-    expect(text).toContain('喷淋头A');
+    expect(text).toContain('s1');
+    expect(text).toContain('fireDeviceCount');
   });
 });
