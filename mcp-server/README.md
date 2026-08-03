@@ -26,11 +26,24 @@ cloudflared tunnel --url http://localhost:8787
 
 ## 已知数据形态(Phase 0 集成实测,2026-08-03)
 
-**`list_fire_devices`**(复用 BFF `POST /api/ustudio/overview`,body `{ sceneIds: [SCENE_ID] }`)返回 `{ results: [...] }` 中的首个对象,实测结构:
+**`list_fire_devices`**(复用 BFF `GET /api/ustudio/tree?sceneId=`,拍平过滤 6 类消防设备标识)返回:
 ```json
-{ "sceneId": "463961468455870464", "storyCount": 41, "deviceCount": 3839, "fireDeviceCount": 407, "ok": true }
+{
+  "total": 407,
+  "devices": [
+    { "id": "f1be1f3e-...", "name": "灭火器箱", "type": "ExtinguisherCabinet" },
+    { "id": "2640d3f7-...", "name": "照明灯", "type": "EmergencyLightingFixture" }
+  ],
+  "truncated": true,
+  "overview": { "sceneId": "463961468455870464", "storyCount": 41, "deviceCount": 3839, "fireDeviceCount": 407, "ok": true }
+}
 ```
-⚠️ 该端点只返回**统计数字,不含设备 id/名称清单**。agent 无法直接从 `list_fire_devices` 拿到 `fly_to` 所需的 target id。Phase 0 回退为"返回 overview 原文供 agent 理解";**Phase 1 需加专用 `fire-devices` 端点**(含 id/name)。
+- `devices[].id` = `out_instance_id`,正是 `fly_to` 的 target。
+- `total` 与 overview 的 `fireDeviceCount` 交叉验证一致(407)。
+- 全量 407 条,`truncated: true` 时只返回前 50 条 + `overview`,防 token 爆炸。
+- 消防类型标识(与前端 `lib/fire-types.ts` 同步副本,在 `bff-client.ts` 维护):
+  `StandaloneSmokeAlarm / EmergencyLightingFixture / PortableCO2Extinguisher / ExtinguisherCabinet / HydrantButton / ClosedSprinklerHead`。
+- 历史:原复用 `POST /api/ustudio/overview` 只返回统计数字(无设备 id),Phase 0 集成时已改为复用 tree 路由拿真实清单。
 
 **`fly_to`**:经内存 pub/sub → `GET /scene-events`(SSE)推给浏览器,实测收到:
 ```json

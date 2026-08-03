@@ -14,6 +14,10 @@ vi.mock('../bff-client.js', () => ({
     fireDeviceCount: 1,
     ok: true,
   }),
+  getFireDeviceList: vi.fn().mockResolvedValue([
+    { id: 'd1', name: '喷淋头A', type: 'ClosedSprinklerHead' },
+    { id: 'd2', name: '烟感B', type: 'StandaloneSmokeAlarm' },
+  ]),
 }));
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -31,10 +35,12 @@ describe('tools', () => {
     expect(res.content[0].text).toContain('fly_to');
   });
 
-  it('list_fire_devices 返回 BFF 数据', async () => {
+  it('list_fire_devices 返回设备清单', async () => {
     const res = await handleToolCall('list_fire_devices', {});
     const text = res.content[0].text;
-    expect(text).toContain('s1');
-    expect(text).toContain('fireDeviceCount');
+    expect(text).toContain('"total": 2');
+    expect(text).toContain('d1');
+    expect(text).toContain('喷淋头A');
+    expect(text).toContain('ClosedSprinklerHead');
   });
 });
