@@ -21,7 +21,7 @@
    | `NEXT_PUBLIC_LOCALE` | 界面语言(默认 `zh-CN`,可省略) |
 3. **服务器准备**:
    - 装 Docker + compose 插件
-   - 建目录 `/opt/firerescue`,放 `deploy/` 下的 `.env`(真实密钥)+ `docker-compose.yml`
+   - 建目录 `/opt/firerescue` 并 `git clone` 本仓库(部署 job 会 `git pull` 同步 compose),然后配 `deploy/.env`(真实密钥)
    - 服务器 `.env` 放真实值:`NEXT_PUBLIC_X_APP_KEY`、`MCP_APP_KEY`、`SCENE_ID`、`NEXT_PUBLIC_USTUDIO_BASE` 等
    - 开放 **8787**(agent 连 mcp)+ **3000**(前端页面 / BFF)入站 TCP
 
