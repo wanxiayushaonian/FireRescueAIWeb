@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getSceneInstanceTree } from '@/lib/ustudio';
-import { FIRE_TYPE_IDENTIFIERS } from '@/lib/fire-types';
+import { countSceneNodes, type SceneNodeLike } from '@/lib/scene-stats';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,41 +19,10 @@ export type SceneOverview = {
   error?: string;
 };
 
-type TreeLike = {
-  type?: string;
-  children?: unknown[];
-};
-
-const STORY_PATTERN = /story|floor|楼层|层$/i;
-const CONTAINER_PATTERN =
-  /building|story|floor|space|wall|door|window|column|pillar|corridor|楼栋|楼层|空间|墙|门|窗|柱|走廊/i;
-
-function countNode(node: TreeLike, depth: number): { story: number; device: number; fire: number } {
-  const type = String(node.type ?? '');
-  const children = Array.isArray(node.children) ? (node.children as TreeLike[]) : [];
-  const isStory = STORY_PATTERN.test(type);
-
-  let stats = { story: isStory ? 1 : 0, device: 0, fire: 0 };
-
-  if (children.length === 0) {
-    if (FIRE_TYPE_IDENTIFIERS.has(type)) stats.fire = 1;
-    else if (type !== '' && !CONTAINER_PATTERN.test(type)) stats.device = 1;
-    return stats;
-  }
-
-  for (const child of children) {
-    const c = countNode(child, depth + 1);
-    stats.story += c.story;
-    stats.device += c.device;
-    stats.fire += c.fire;
-  }
-  return stats;
-}
-
 async function overviewOne(sceneId: string): Promise<SceneOverview> {
   try {
     const tree = await getSceneInstanceTree({ sceneId });
-    const counted = countNode(tree as TreeLike, 0);
+    const counted = countSceneNodes(tree as SceneNodeLike);
     return {
       sceneId,
       storyCount: counted.story,
