@@ -39,7 +39,7 @@ async function getDevicesCached(sceneId: string): Promise<Awaited<ReturnType<typ
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown>,
-): Promise<{ content: { type: 'text'; text: string }[] }> {
+): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
   const sceneId = process.env.SCENE_ID || '';
 
   if (name === 'list_fire_devices') {
@@ -63,7 +63,13 @@ export async function handleToolCall(
   }
 
   if (name === 'fly_to') {
-    const target = String(args.target ?? '');
+    const target = String(args.target ?? '').trim();
+    if (!target) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'fly_to 缺少 target:需提供场景对象 id(可用 list_fire_devices 查询)' }],
+      };
+    }
     const cmd: SceneCommand = {
       id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       tool: 'fly_to',
@@ -71,7 +77,14 @@ export async function handleToolCall(
       ts: Date.now(),
     };
     publishCommand(cmd);
-    return { content: [{ type: 'text', text: `ack: fly_to -> ${target}` }] };
+    // 命令通道是单向 fire-and-forget:这里只表示「已下发」,不代表场景已执行。
+    // 场景页面离线 / SDK 未就绪 / EventSource 重连窗口都会导致命令丢失且无回执。
+    return {
+      content: [{
+        type: 'text',
+        text: `已下发 fly_to -> ${target}:命令经 /scene-events 推送至场景页面。仅当页面在线且场景 SDK 就绪时才会执行;命令通道为单向,无执行回执,实际效果需另行确认。`,
+      }],
+    };
   }
 
   throw new Error(`unknown tool: ${name}`);

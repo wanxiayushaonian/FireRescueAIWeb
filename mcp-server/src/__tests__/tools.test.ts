@@ -33,10 +33,17 @@ describe('tools', () => {
     expect(names).toContain('fly_to');
   });
 
-  it('fly_to 发布 SceneCommand 并返回 ack', async () => {
+  it('fly_to 发布命令,文案明确为「已下发」而非暗示确定执行成功', async () => {
     const res = await handleToolCall('fly_to', { target: 'd1' });
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({ tool: 'fly_to', args: { target: 'd1' } }));
-    expect(res.content[0].text).toContain('fly_to');
+    expect(res.content[0].text).toContain('已下发');
+    expect(res.content[0].text).not.toMatch(/^ack:/);
+  });
+
+  it('fly_to 空 target → 标记错误且不发布命令', async () => {
+    const res = await handleToolCall('fly_to', {});
+    expect(res.isError).toBe(true);
+    expect(publishCommand).not.toHaveBeenCalled();
   });
 
   it('list_fire_devices 返回设备清单', async () => {
