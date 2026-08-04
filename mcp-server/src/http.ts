@@ -10,14 +10,16 @@ export function startHttp(opts: {
   corsOrigin: string;
 }): http.Server {
   const transports = new Map<string, SSEServerTransport>();
-  // CORS_ORIGIN 支持逗号分隔多域名;空数组表示未配置(允许任意源,开发用,生产应配置)。
-  const allowList = opts.corsOrigin
+  // CORS_ORIGIN 支持逗号分隔多域名;'*' 或空表示放行所有(ACAO='*',Origin 不校验)。
+  const rawList = opts.corsOrigin
     ? opts.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean)
     : [];
+  const allowAll = rawList.length === 0 || rawList.includes('*');
+  const allowList = rawList.filter((x) => x !== '*');
 
-  // Access-Control-Allow-Origin:未配置白名单则 '*';否则回显请求 Origin(若命中白名单),否则回首个白名单。
+  // Access-Control-Allow-Origin:放行所有则 '*';否则回显请求 Origin(若命中白名单),否则回首个白名单。
   function acaFor(req: http.IncomingMessage): string {
-    if (allowList.length === 0) return '*';
+    if (allowAll) return '*';
     const origin = req.headers.origin;
     return origin && allowList.includes(origin) ? origin : allowList[0];
   }
@@ -41,7 +43,7 @@ export function startHttp(opts: {
   // /scene-events 的消费方是浏览器(不应持有服务端 appKey),
   // 故用 Origin 白名单防跨站订阅命令流,而非 appKey。未配置白名单时放行(开发)。
   function originAuthorized(req: http.IncomingMessage): boolean {
-    if (allowList.length === 0) return true;
+    if (allowAll) return true;
     const origin = req.headers.origin;
     return !!origin && allowList.includes(origin);
   }

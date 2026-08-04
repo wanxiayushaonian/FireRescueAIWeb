@@ -56,6 +56,13 @@ describe('http 鉴权与路由', () => {
     expect(await statusOf(`http://localhost:${port}/scene-events`)).toBe(200);
   });
 
+  it('/scene-events CORS_ORIGIN=* 视为放行所有(不挡任意 Origin)', async () => {
+    const { port } = await start('*');
+    expect(await statusOf(`http://localhost:${port}/scene-events`, {
+      headers: { Origin: 'https://evil.example.com' },
+    })).toBe(200);
+  });
+
   it('/scene-events 配白名单且 Origin 不匹配 → 403', async () => {
     const { port } = await start('https://app.example.com');
     expect(await statusOf(`http://localhost:${port}/scene-events`, {
