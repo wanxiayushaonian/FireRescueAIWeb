@@ -14,6 +14,15 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'focus_objects',
+    description: '高亮聚焦一组场景对象(设备 id 来自 list_fire_devices),并飞向首个;空数组清除高亮',
+    inputSchema: {
+      type: 'object',
+      properties: { ids: { type: 'array', items: { type: 'string' }, description: '对象 id 列表' } },
+      required: ['ids'],
+    },
+  },
+  {
     name: 'fly_to',
     description: '让 3D 场景镜头飞向指定对象(target 为对象 id)',
     inputSchema: {
@@ -56,6 +65,24 @@ export async function handleToolCall(
       content: [{
         type: 'text',
         text: JSON.stringify({ total: floors.length, floors }, null, 2),
+      }],
+    };
+  }
+
+  if (name === 'focus_objects') {
+    const ids = Array.isArray(args.ids) ? (args.ids as unknown[]).map(String) : [];
+    const cmd: SceneCommand = {
+      id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tool: 'focus_objects',
+      args: { ids },
+      ts: Date.now(),
+    };
+    publishCommand(cmd);
+    const action = ids.length === 0 ? '已清除聚焦高亮' : `已聚焦 ${ids.length} 个对象`;
+    return {
+      content: [{
+        type: 'text',
+        text: `已下发 focus_objects:${action}。命令经 /scene-events 推送;仅当页面在线且场景 SDK 就绪时生效,通道为单向无回执。`,
       }],
     };
   }

@@ -65,4 +65,19 @@ describe('tools', () => {
     expect(text).toContain('f1');
     expect(text).toContain('一层');
   });
+
+  it('focus_objects 发布命令并返回已下发', async () => {
+    const res = await handleToolCall('focus_objects', { ids: ['d1', 'd2'] });
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'focus_objects', args: { ids: ['d1', 'd2'] },
+    }));
+    expect(res.content[0].text).toContain('已下发');
+  });
+
+  it('focus_objects 空 ids 也发布(清除命令)', async () => {
+    await handleToolCall('focus_objects', { ids: [] });
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'focus_objects', args: { ids: [] },
+    }));
+  });
 });
