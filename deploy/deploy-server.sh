@@ -37,12 +37,24 @@ ENVEOF
 fi
 
 echo "==> .env 已存在"
-grep -q REPLACE_ME "$APP_DIR/deploy/.env" && { echo "❌ .env 里还有 REPLACE_ME 占位符,先填真实值!"; exit 1; }
+# 占位符检查:拦截 REPLACE_ME / REPLACE_WITH / replace-with / <...>,避免 source 报错或 build 注入失败
+if grep -qE 'REPLACE_ME|REPLACE_WITH|replace-with|<[^>]+>' "$APP_DIR/deploy/.env"; then
+  echo "❌ .env 里还有占位符,先全部填真实值:"
+  grep -nE 'REPLACE_ME|REPLACE_WITH|replace-with|<[^>]+>' "$APP_DIR/deploy/.env"
+  exit 1
+fi
 
 # 4. 构建并启动
 cd "$APP_DIR"
-echo "==> 构建 BFF 镜像..."
-docker build -f deploy/Dockerfile.bff -t firerescue-bff:local .
+# NEXT_PUBLIC_* 是 build 时固化进客户端 bundle,必须从 deploy/.env 读出经 --build-arg 传入
+set -a; . "$APP_DIR/deploy/.env"; set +a
+echo "==> 构建 BFF 镜像(注入 NEXT_PUBLIC_*)..."
+docker build -f deploy/Dockerfile.bff \
+  --build-arg NEXT_PUBLIC_X_APP_KEY="$NEXT_PUBLIC_X_APP_KEY" \
+  --build-arg NEXT_PUBLIC_USTUDIO_BASE="$NEXT_PUBLIC_USTUDIO_BASE" \
+  --build-arg NEXT_PUBLIC_SCENE_EVENTS_URL="$NEXT_PUBLIC_SCENE_EVENTS_URL" \
+  --build-arg NEXT_PUBLIC_LOCALE="$NEXT_PUBLIC_LOCALE" \
+  -t firerescue-bff:local .
 echo "==> 构建 MCP 镜像..."
 docker build -f deploy/Dockerfile.mcp -t firerescue-mcp:local mcp-server
 
