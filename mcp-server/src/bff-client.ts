@@ -44,7 +44,11 @@ async function bffFetch(path: string, init?: RequestInit): Promise<Response> {
     throw new Error(`BFF ${path} 网络错误或超时(${BFF_TIMEOUT_MS}ms): ${(e as Error).message}`);
   }
   if (!res.ok) {
-    throw new Error(`BFF ${path} failed: ${res.status} ${res.statusText}`);
+    // 读 BFF 返回的 body(含 uStudio 具体错误),透传到错误信息,便于排查
+    let detail = '';
+    try { detail = await res.text(); } catch { /* ignore */ }
+    const snippet = detail ? ` | ${detail.slice(0, 500)}` : '';
+    throw new Error(`BFF ${path} failed: ${res.status} ${res.statusText}${snippet}`);
   }
   return res;
 }
