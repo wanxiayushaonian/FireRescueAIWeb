@@ -19,9 +19,10 @@
    | `NEXT_PUBLIC_USTUDIO_BASE` | uStudio 网关(默认 `https://fc.xwbuilders.com`,可省略) |
    | `NEXT_PUBLIC_SCENE_EVENTS_URL` | 命令流订阅地址(默认走同源 `/api/scene-events`,留空即可) |
    | `NEXT_PUBLIC_LOCALE` | 界面语言(默认 `zh-CN`,可省略) |
+   | `SERVER_APP_DIR` | 服务器部署目录(默认 `/opt/firerescue`;想用现有目录如 `~/jjxf/FireRescueAIWeb` 就配这个,可省略) |
 3. **服务器准备**:
    - 装 Docker + compose 插件
-   - 建目录 `/opt/firerescue` 并 `git clone` 本仓库(部署 job 会 `git pull` 同步 compose),然后配 `deploy/.env`(真实密钥)
+   - 建部署目录(默认 `/opt/firerescue`,或 `SERVER_APP_DIR` 指定的路径)并 `git clone` 本仓库(部署 job 会 `git pull` 同步 compose),然后配 `deploy/.env`(真实密钥)
    - 服务器 `.env` 放真实值:`NEXT_PUBLIC_X_APP_KEY`、`MCP_APP_KEY`、`SCENE_ID`、`NEXT_PUBLIC_USTUDIO_BASE` 等
    - 开放 **8787**(agent 连 mcp)+ **3000**(前端页面 / BFF)入站 TCP
 

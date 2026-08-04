@@ -74,7 +74,8 @@ jobs:
           port: ${{ secrets.SERVER_PORT || 22 }}
           script: |
             set -e
-            cd /opt/firerescue
+            # 服务器部署目录:默认 /opt/firerescue,可用 SERVER_APP_DIR secret 覆盖(如 ~/jjxf/...)
+            cd "${{ secrets.SERVER_APP_DIR || '/opt/firerescue' }}"
             # 同步仓库最新 docker-compose.yml(/opt/firerescue 需是 git clone;非仓库则跳过)
             git pull --ff-only || echo "⚠️ git pull 失败:确认 /opt/firerescue 是仓库 clone,或手动同步 deploy/docker-compose.yml"
             export GHCR_USER="${{ github.actor }}"
