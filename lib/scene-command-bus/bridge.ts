@@ -41,7 +41,7 @@ export function manageSceneBridge(
   eventsUrl: string,
   deps?: Partial<BridgeDeps>,
 ): () => void {
-  const getSdk = deps?.getSdk ?? sceneSdk;
+  const getSdk = deps?.getSdk ?? (() => sceneSdk() as unknown as SceneSdkLike);
   const register = deps?.register ?? registerDefaultTools;
   const connect = deps?.connect ?? connectSceneEvents;
   const eventTarget: EventTargetLike | null =

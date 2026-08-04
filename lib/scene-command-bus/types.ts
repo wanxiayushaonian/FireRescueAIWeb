@@ -10,7 +10,7 @@ export type SceneCommand = {
 export type SceneSdkLike = {
   fly: (target: string | number) => unknown;
   heighLight: (id: string, color?: string | number) => unknown;
-  cancelHeighLight: () => unknown;
+  cancelHeighLight: (id: string | number) => unknown;
   setViewMode: (params: unknown, treeData: unknown, storyIds?: string[]) => unknown;
   [k: string]: unknown;
 };

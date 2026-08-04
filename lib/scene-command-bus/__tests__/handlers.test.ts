@@ -7,7 +7,7 @@ describe('fly_to handler', () => {
   it('调用 sdk.fly(target)', async () => {
     __resetForTest();
     const fly = vi.fn().mockResolvedValue(undefined);
-    const sdk: SceneSdkLike = { fly };
+    const sdk = { fly } as unknown as SceneSdkLike;
     registerDefaultTools(sdk);
     await dispatch({ id: '1', tool: 'fly_to', args: { target: 'd1' }, ts: 0 }, sdk);
     expect(fly).toHaveBeenCalledWith('d1');
@@ -15,17 +15,14 @@ describe('fly_to handler', () => {
 });
 
 describe('focus_objects handler', () => {
-  it('空 ids → 调 cancelHeighLight 清除,不高亮', async () => {
+  it('空 ids(无先前高亮)→ 不调 cancelHeighLight', async () => {
     __resetForTest();
-    const fly = vi.fn();
-    const heighLight = vi.fn();
     const cancelHeighLight = vi.fn();
-    const sdk = { fly, heighLight, cancelHeighLight } as never;
+    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight } as unknown as SceneSdkLike;
     registerDefaultTools(sdk);
     await dispatch({ id: '1', tool: 'focus_objects', args: { ids: [] }, ts: 0 }, sdk);
-    expect(cancelHeighLight).toHaveBeenCalled();
-    expect(heighLight).not.toHaveBeenCalled();
-    expect(fly).not.toHaveBeenCalled();
+    expect(cancelHeighLight).not.toHaveBeenCalled();
+    expect(sdk.heighLight).not.toHaveBeenCalled();
   });
 
   it('多 ids → 高亮全部 + 飞向第一个', async () => {
@@ -33,13 +30,24 @@ describe('focus_objects handler', () => {
     const fly = vi.fn();
     const heighLight = vi.fn();
     const cancelHeighLight = vi.fn();
-    const sdk = { fly, heighLight, cancelHeighLight } as never;
+    const sdk = { fly, heighLight, cancelHeighLight } as unknown as SceneSdkLike;
     registerDefaultTools(sdk);
     await dispatch({ id: '1', tool: 'focus_objects', args: { ids: ['a', 'b'] }, ts: 0 }, sdk);
     expect(heighLight).toHaveBeenCalledWith('a', expect.anything());
     expect(heighLight).toHaveBeenCalledWith('b', expect.anything());
     expect(fly).toHaveBeenCalledWith('a');
     expect(cancelHeighLight).not.toHaveBeenCalled();
+  });
+
+  it('先 focus 再 focus 空 → 逐个取消先前高亮(调用即替换)', async () => {
+    __resetForTest();
+    const cancelHeighLight = vi.fn();
+    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight } as unknown as SceneSdkLike;
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'focus_objects', args: { ids: ['a', 'b'] }, ts: 0 }, sdk);
+    await dispatch({ id: '2', tool: 'focus_objects', args: { ids: [] }, ts: 0 }, sdk);
+    expect(cancelHeighLight).toHaveBeenCalledWith('a');
+    expect(cancelHeighLight).toHaveBeenCalledWith('b');
   });
 });
 
@@ -51,7 +59,7 @@ describe('focus_floors handler', () => {
   it('非空 story_ids → 拉 tree + setViewMode 传 storyIds', async () => {
     __resetForTest();
     const setViewMode = vi.fn().mockResolvedValue(undefined);
-    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as never;
+    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as unknown as SceneSdkLike;
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({ type: 'Building', id: 'b', name: '楼', children: [{ type: 'Story', id: 's1', name: '一层' }] }),
@@ -68,7 +76,7 @@ describe('focus_floors handler', () => {
   it('空 story_ids → setViewMode 传空数组(恢复全楼层)', async () => {
     __resetForTest();
     const setViewMode = vi.fn().mockResolvedValue(undefined);
-    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as never;
+    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as unknown as SceneSdkLike;
     vi.stubGlobal('window', { __sceneId: 'scene1' });
     registerDefaultTools(sdk);
     await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: [] }, ts: 0 }, sdk);
@@ -79,7 +87,7 @@ describe('focus_floors handler', () => {
   it('场景未就绪(无 window.__sceneId)→ 跳过,不调 setViewMode', async () => {
     __resetForTest();
     const setViewMode = vi.fn().mockResolvedValue(undefined);
-    const sdk = { fly: vi.fn(), setViewMode } as never;
+    const sdk = { fly: vi.fn(), setViewMode } as unknown as SceneSdkLike;
     vi.stubGlobal('window', {});
     registerDefaultTools(sdk);
     await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);

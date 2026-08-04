@@ -29,7 +29,7 @@ function makeFixture() {
   const disconnect = vi.fn();
   const connect = vi.fn().mockReturnValue(disconnect);
   const register = vi.fn();
-  const sdk: SceneSdkLike = { fly: vi.fn() };
+  const sdk = { fly: vi.fn() } as unknown as SceneSdkLike;
   const eventTarget = makeEventTarget();
   return {
     deps: {

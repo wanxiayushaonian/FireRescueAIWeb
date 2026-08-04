@@ -15,14 +15,19 @@ export function registerDefaultTools(_sdk: SceneSdkLike): void {
     await sdk.fly(target);
   });
 
+  // 追踪当前高亮对象:底层 cancelHeighLight 需逐个 id,无法一次清全部。
+  const highlightedIds = new Set<string>();
   registerSceneTool('focus_objects', async (args, sdk) => {
     const ids = Array.isArray(args.ids) ? (args.ids as unknown[]).map(String) : [];
-    if (ids.length === 0) {
-      sdk.cancelHeighLight();
-      return;
-    }
+    // 调用即替换:先逐个取消上一轮高亮,再高亮新的(空数组=仅清除)
+    for (const id of highlightedIds) sdk.cancelHeighLight(id);
+    highlightedIds.clear();
+    if (ids.length === 0) return;
     // MVP:高亮全部 + 飞向首个。精确框住多对象需底层 ssp(包围盒),留作后续。
-    for (const id of ids) sdk.heighLight(id, FOCUS_HIGHLIGHT_COLOR);
+    for (const id of ids) {
+      sdk.heighLight(id, FOCUS_HIGHLIGHT_COLOR);
+      highlightedIds.add(id);
+    }
     await sdk.fly(ids[0]);
   });
 
