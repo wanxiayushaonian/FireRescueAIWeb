@@ -74,13 +74,48 @@ function collectFireDevices(node: SceneTreeNode, out: FireDevice[]): void {
   }
 }
 
-/** 消防设备清单:复用 BFF tree 路由,拍平过滤出设备本体(id 供 fly_to 用)。 */
-export async function getFireDeviceList(params: { sceneId: string }): Promise<FireDevice[]> {
-  const res = await bffFetch(
-    `/api/ustudio/tree?sceneId=${encodeURIComponent(params.sceneId)}`,
-  );
+const STORY_PATTERN = /story|floor|楼层|层$/i;
+
+export type FloorNode = { id: string; name: string };
+
+// tree 接口返回约 14MB,设备/楼层查询共用,5 分钟内复用。
+const treeCache = new Map<string, { at: number; tree: SceneTreeNode }>();
+const TREE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+export function __resetTreeCacheForTest(): void {
+  treeCache.clear();
+}
+
+/** 拉场景树并短缓存;getFireDeviceList / getFloorList 共享,避免重复拉 14MB tree。 */
+export async function getSceneTree(params: { sceneId: string }): Promise<SceneTreeNode> {
+  const hit = treeCache.get(params.sceneId);
+  if (hit && Date.now() - hit.at < TREE_CACHE_TTL_MS) return hit.tree;
+  const res = await bffFetch(`/api/ustudio/tree?sceneId=${encodeURIComponent(params.sceneId)}`);
   const tree = (await res.json()) as SceneTreeNode;
+  treeCache.set(params.sceneId, { at: Date.now(), tree });
+  return tree;
+}
+
+/** 消防设备清单:复用 tree,拍平过滤出设备本体(id 供 fly_to 用)。 */
+export async function getFireDeviceList(params: { sceneId: string }): Promise<FireDevice[]> {
+  const tree = await getSceneTree(params);
   const out: FireDevice[] = [];
   collectFireDevices(tree, out);
+  return out;
+}
+
+/** 拍平楼层节点(type 匹配 story/floor 模式)。 */
+function collectFloors(node: SceneTreeNode, out: FloorNode[]): void {
+  if (STORY_PATTERN.test(node.type)) out.push({ id: node.id, name: node.name });
+  if (Array.isArray(node.children)) {
+    for (const child of node.children) collectFloors(child, out);
+  }
+}
+
+/** 楼层清单:复用 tree,拍平出楼层节点(id 供 focus_floors 用)。 */
+export async function getFloorList(params: { sceneId: string }): Promise<FloorNode[]> {
+  const tree = await getSceneTree(params);
+  const out: FloorNode[] = [];
+  collectFloors(tree, out);
   return out;
 }

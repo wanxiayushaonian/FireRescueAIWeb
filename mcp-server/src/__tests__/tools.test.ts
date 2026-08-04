@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleToolCall, TOOLS, __resetDeviceCacheForTest } from '../tools.js';
-import { getFireDeviceList } from '../bff-client.js';
+import { handleToolCall, TOOLS } from '../tools.js';
 import { publishCommand } from '../command-bus.js';
 
 vi.mock('../command-bus.js', () => ({
@@ -19,18 +18,22 @@ vi.mock('../bff-client.js', () => ({
     { id: 'd1', name: '喷淋头A', type: 'ClosedSprinklerHead' },
     { id: 'd2', name: '烟感B', type: 'StandaloneSmokeAlarm' },
   ]),
+  getFloorList: vi.fn().mockResolvedValue([
+    { id: 'f1', name: '一层' },
+    { id: 'f2', name: '二层' },
+  ]),
 }));
 
 beforeEach(() => {
   vi.clearAllMocks();
-  __resetDeviceCacheForTest();
 });
 
 describe('tools', () => {
-  it('TOOLS 含 list_fire_devices 与 fly_to', () => {
+  it('TOOLS 含 list_fire_devices / fly_to / list_floors', () => {
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain('list_fire_devices');
     expect(names).toContain('fly_to');
+    expect(names).toContain('list_floors');
   });
 
   it('fly_to 发布命令,文案明确为「已下发」而非暗示确定执行成功', async () => {
@@ -55,10 +58,11 @@ describe('tools', () => {
     expect(text).toContain('ClosedSprinklerHead');
   });
 
-  it('list_fire_devices TTL 内复用缓存,不重复拉 BFF tree', async () => {
-    await handleToolCall('list_fire_devices', {});
-    await handleToolCall('list_fire_devices', {});
-    // 第二次命中内存缓存,fetch 仅触发一次
-    expect(getFireDeviceList).toHaveBeenCalledTimes(1);
+  it('list_floors 返回楼层清单(id/name)', async () => {
+    const res = await handleToolCall('list_floors', {});
+    const text = res.content[0].text;
+    expect(text).toContain('"total": 2');
+    expect(text).toContain('f1');
+    expect(text).toContain('一层');
   });
 });

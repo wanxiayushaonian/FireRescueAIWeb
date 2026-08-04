@@ -1,4 +1,4 @@
-import { getSceneOverview, getFireDeviceList } from './bff-client.js';
+import { getSceneOverview, getFireDeviceList, getFloorList } from './bff-client.js';
 import { publishCommand } from './command-bus.js';
 import type { SceneCommand } from './types.js';
 
@@ -6,6 +6,11 @@ export const TOOLS = [
   {
     name: 'list_fire_devices',
     description: '查询当前场景的消防设备清单(含 id/name/type,id 供 fly_to 使用)',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'list_floors',
+    description: '查询当前场景的楼层清单(含 id/name,id 供 focus_floors 使用)',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -19,23 +24,6 @@ export const TOOLS = [
   },
 ] as const;
 
-// 设备清单 TTL 缓存:tree 接口返回 14MB,agent 每次问都重拉极慢。5 分钟内复用。
-const DEVICE_CACHE_TTL_MS = 5 * 60 * 1000;
-const deviceCache = new Map<string, { at: number; devices: Awaited<ReturnType<typeof getFireDeviceList>> }>();
-
-/** 仅测试用:清空设备缓存。*/
-export function __resetDeviceCacheForTest(): void {
-  deviceCache.clear();
-}
-
-async function getDevicesCached(sceneId: string): Promise<Awaited<ReturnType<typeof getFireDeviceList>>> {
-  const hit = deviceCache.get(sceneId);
-  if (hit && Date.now() - hit.at < DEVICE_CACHE_TTL_MS) return hit.devices;
-  const devices = await getFireDeviceList({ sceneId });
-  deviceCache.set(sceneId, { at: Date.now(), devices });
-  return devices;
-}
-
 export async function handleToolCall(
   name: string,
   args: Record<string, unknown>,
@@ -44,7 +32,7 @@ export async function handleToolCall(
 
   if (name === 'list_fire_devices') {
     const [devices, overview] = await Promise.all([
-      getDevicesCached(sceneId),
+      getFireDeviceList({ sceneId }),
       getSceneOverview({ sceneId }).catch(() => null),
     ]);
     // 全量清单可能很大(tree 14MB),只给 agent 前 50 条 + 统计,避免 token 爆炸
@@ -58,6 +46,16 @@ export async function handleToolCall(
           truncated: devices.length > 50,
           overview,
         }, null, 2),
+      }],
+    };
+  }
+
+  if (name === 'list_floors') {
+    const floors = await getFloorList({ sceneId });
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ total: floors.length, floors }, null, 2),
       }],
     };
   }
