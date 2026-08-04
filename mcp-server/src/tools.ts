@@ -23,6 +23,15 @@ export const TOOLS = [
     },
   },
   {
+    name: 'focus_floors',
+    description: '隔离显示选中的楼层(其余层隐藏);楼层 id 来自 list_floors;空数组恢复全楼层',
+    inputSchema: {
+      type: 'object',
+      properties: { story_ids: { type: 'array', items: { type: 'string' }, description: '楼层 id 列表' } },
+      required: ['story_ids'],
+    },
+  },
+  {
     name: 'fly_to',
     description: '让 3D 场景镜头飞向指定对象(target 为对象 id)',
     inputSchema: {
@@ -83,6 +92,24 @@ export async function handleToolCall(
       content: [{
         type: 'text',
         text: `已下发 focus_objects:${action}。命令经 /scene-events 推送;仅当页面在线且场景 SDK 就绪时生效,通道为单向无回执。`,
+      }],
+    };
+  }
+
+  if (name === 'focus_floors') {
+    const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
+    const cmd: SceneCommand = {
+      id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tool: 'focus_floors',
+      args: { story_ids: storyIds },
+      ts: Date.now(),
+    };
+    publishCommand(cmd);
+    const floorAction = storyIds.length === 0 ? '已恢复全楼层' : `已隔离 ${storyIds.length} 层`;
+    return {
+      content: [{
+        type: 'text',
+        text: `已下发 focus_floors:${floorAction}。命令经 /scene-events 推送;仅当页面在线且场景 SDK 就绪时生效,通道为单向无回执。`,
       }],
     };
   }

@@ -80,4 +80,12 @@ describe('tools', () => {
       tool: 'focus_objects', args: { ids: [] },
     }));
   });
+
+  it('focus_floors 发布命令并返回已下发', async () => {
+    const res = await handleToolCall('focus_floors', { story_ids: ['s1'] });
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'focus_floors', args: { story_ids: ['s1'] },
+    }));
+    expect(res.content[0].text).toContain('已下发');
+  });
 });
