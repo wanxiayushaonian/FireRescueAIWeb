@@ -37,6 +37,13 @@ jobs:
           file: deploy/Dockerfile.bff
           push: true
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_BFF }}:latest
+          # NEXT_PUBLIC_* 在 build 时固化进前端 bundle,必须从 GitHub Secrets 注入
+          # (值与服务器 deploy/.env 保持一致;未配则传空,前端走默认值)。
+          build-args: |
+            NEXT_PUBLIC_X_APP_KEY=${{ secrets.NEXT_PUBLIC_X_APP_KEY }}
+            NEXT_PUBLIC_USTUDIO_BASE=${{ secrets.NEXT_PUBLIC_USTUDIO_BASE }}
+            NEXT_PUBLIC_SCENE_EVENTS_URL=${{ secrets.NEXT_PUBLIC_SCENE_EVENTS_URL }}
+            NEXT_PUBLIC_LOCALE=${{ secrets.NEXT_PUBLIC_LOCALE }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -15,11 +15,15 @@
    | `SERVER_USER` | SSH 用户名 |
    | `SERVER_SSH_KEY` | 服务器部署用的 SSH 私钥(OpenSSH 格式) |
    | `SERVER_PORT` | SSH 端口(默认 22,可省略) |
+   | `NEXT_PUBLIC_X_APP_KEY` | 场景数据密钥(与服务器 `deploy/.env` 同值,必配) |
+   | `NEXT_PUBLIC_USTUDIO_BASE` | uStudio 网关(默认 `https://fc.xwbuilders.com`,可省略) |
+   | `NEXT_PUBLIC_SCENE_EVENTS_URL` | 命令流订阅地址(默认走同源 `/api/scene-events`,留空即可) |
+   | `NEXT_PUBLIC_LOCALE` | 界面语言(默认 `zh-CN`,可省略) |
 3. **服务器准备**:
    - 装 Docker + compose 插件
    - 建目录 `/opt/firerescue`,放 `deploy/` 下的 `.env`(真实密钥)+ `docker-compose.yml`
    - 服务器 `.env` 放真实值:`NEXT_PUBLIC_X_APP_KEY`、`MCP_APP_KEY`、`SCENE_ID`、`NEXT_PUBLIC_USTUDIO_BASE` 等
-   - 开放 **8787** 入站 TCP
+   - 开放 **8787**(agent 连 mcp)+ **3000**(前端页面 / BFF)入站 TCP
 
 ### 流程
 
