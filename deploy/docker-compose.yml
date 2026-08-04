@@ -9,6 +9,9 @@ services:
       dockerfile: deploy/Dockerfile.bff
     restart: unless-stopped
     env_file: .env
+    environment:
+      # BFF 连 mcp 的容器内地址(与 mcp 的 WEB_BFF_URL 对称)
+      MCP_INTERNAL_URL: http://mcp:8787
     expose:
       - "3000"
     networks:

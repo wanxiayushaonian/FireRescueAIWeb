@@ -42,14 +42,6 @@ export function startHttp(opts: {
     return checkAppKey(provided, opts.appKey);
   }
 
-  // /scene-events 的消费方是浏览器(不应持有服务端 appKey),
-  // 故用 Origin 白名单防跨站订阅命令流,而非 appKey。未配置白名单时放行(开发)。
-  function originAuthorized(req: http.IncomingMessage): boolean {
-    if (allowAll) return true;
-    const origin = req.headers.origin;
-    return !!origin && allowList.includes(origin);
-  }
-
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url ?? '', `http://${req.headers.host}`);
     cors(res, req);
@@ -91,8 +83,10 @@ export function startHttp(opts: {
     }
 
     if (url.pathname === '/scene-events') {
-      if (!originAuthorized(req)) {
-        res.writeHead(403); res.end('forbidden'); return;
+      // 订阅命令流需 appKey(与 /sse 一致)。浏览器经 BFF /api/scene-events
+      // 带 appKey 代理订阅,避免公网匿名监听操作命令流。
+      if (!appKeyAuthorized(req, url)) {
+        res.writeHead(401); res.end('unauthorized'); return;
       }
       // cors() 已设 ACAO;这里补 SSE 专属头
       res.writeHead(200, {

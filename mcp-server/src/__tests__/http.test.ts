@@ -51,30 +51,19 @@ describe('http 鉴权与路由', () => {
     expect(s).not.toBe(401);
   });
 
-  it('/scene-events 未配白名单 → 放行 200', async () => {
-    const { port } = await start('');
-    expect(await statusOf(`http://localhost:${port}/scene-events`)).toBe(200);
+  it('/scene-events 无 appKey → 401(公网匿名不可订阅命令流)', async () => {
+    const { port } = await start();
+    expect(await statusOf(`http://localhost:${port}/scene-events`)).toBe(401);
   });
 
-  it('/scene-events CORS_ORIGIN=* 视为放行所有(不挡任意 Origin)', async () => {
-    const { port } = await start('*');
-    expect(await statusOf(`http://localhost:${port}/scene-events`, {
-      headers: { Origin: 'https://evil.example.com' },
-    })).toBe(200);
+  it('/scene-events 错误 appKey → 401', async () => {
+    const { port } = await start();
+    expect(await statusOf(`http://localhost:${port}/scene-events?appKey=wrong`)).toBe(401);
   });
 
-  it('/scene-events 配白名单且 Origin 不匹配 → 403', async () => {
-    const { port } = await start('https://app.example.com');
-    expect(await statusOf(`http://localhost:${port}/scene-events`, {
-      headers: { Origin: 'https://evil.example.com' },
-    })).toBe(403);
-  });
-
-  it('/scene-events 配白名单且 Origin 匹配 → 200', async () => {
-    const { port } = await start('https://app.example.com');
-    expect(await statusOf(`http://localhost:${port}/scene-events`, {
-      headers: { Origin: 'https://app.example.com' },
-    })).toBe(200);
+  it('/scene-events 正确 appKey → 200', async () => {
+    const { port } = await start();
+    expect(await statusOf(`http://localhost:${port}/scene-events?appKey=${APP_KEY}`)).toBe(200);
   });
 
   it('未知路径 → 404', async () => {
@@ -85,7 +74,7 @@ describe('http 鉴权与路由', () => {
   it('/scene-events 空闲时按 heartbeatMs 发送心跳(防代理空闲断开)', async () => {
     const { port } = await start('', 30);
     const ac = new AbortController();
-    const res = await fetch(`http://localhost:${port}/scene-events`, { signal: ac.signal });
+    const res = await fetch(`http://localhost:${port}/scene-events?appKey=${APP_KEY}`, { signal: ac.signal });
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let buf = '';

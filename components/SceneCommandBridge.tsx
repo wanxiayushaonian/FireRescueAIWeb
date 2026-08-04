@@ -12,11 +12,8 @@ import { manageSceneBridge } from '@/lib/scene-command-bus';
  */
 export function SceneCommandBridge() {
   useEffect(() => {
-    const eventsUrl = process.env.NEXT_PUBLIC_SCENE_EVENTS_URL;
-    if (!eventsUrl) {
-      console.warn('[SceneCommandBridge] NEXT_PUBLIC_SCENE_EVENTS_URL 未配置,跳过');
-      return;
-    }
+    // 默认订阅同源 BFF /api/scene-events(BFF 再带 appKey 连 mcp),浏览器无需持 appKey。
+    const eventsUrl = process.env.NEXT_PUBLIC_SCENE_EVENTS_URL || '/api/scene-events';
     return manageSceneBridge(eventsUrl);
   }, []);
 
