@@ -9,6 +9,8 @@ export type SceneCommand = {
 // sceneSdk() 的最小可用子集(按需扩展)
 export type SceneSdkLike = {
   fly: (target: string | number) => unknown;
+  heighLight: (id: string, color?: string | number) => unknown;
+  cancelHeighLight: () => unknown;
   [k: string]: unknown;
 };
 
