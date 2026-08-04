@@ -1,4 +1,5 @@
 import { registerSceneTool } from './registry';
+import { getSceneTreeForView } from './scene-tree';
 import type { SceneSdkLike } from './types';
 
 // 聚焦高亮色:与 FIRE_TYPE_COLORS 告警色一致,agent 不操心配色。
@@ -23,5 +24,17 @@ export function registerDefaultTools(_sdk: SceneSdkLike): void {
     // MVP:高亮全部 + 飞向首个。精确框住多对象需底层 ssp(包围盒),留作后续。
     for (const id of ids) sdk.heighLight(id, FOCUS_HIGHLIGHT_COLOR);
     await sdk.fly(ids[0]);
+  });
+
+  registerSceneTool('focus_floors', async (args, sdk) => {
+    const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
+    const sceneId = typeof window !== 'undefined' ? window.__sceneId : undefined;
+    if (!sceneId) {
+      console.warn('[scene-bus] focus_floors: 场景未就绪(window.__sceneId 空),跳过');
+      return;
+    }
+    const tree = await getSceneTreeForView(sceneId);
+    // 隔离显示选中楼层;空数组 = 恢复全楼层。params 按引擎确认(默认 story 模式)。
+    await sdk.setViewMode({ mode: 'story' }, tree, storyIds);
   });
 }

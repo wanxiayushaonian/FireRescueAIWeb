@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { registerDefaultTools } from '../handlers';
 import { dispatch, __resetForTest } from '../registry';
 import type { SceneSdkLike } from '../types';
@@ -40,5 +40,49 @@ describe('focus_objects handler', () => {
     expect(heighLight).toHaveBeenCalledWith('b', expect.anything());
     expect(fly).toHaveBeenCalledWith('a');
     expect(cancelHeighLight).not.toHaveBeenCalled();
+  });
+});
+
+describe('focus_floors handler', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('非空 story_ids → 拉 tree + setViewMode 传 storyIds', async () => {
+    __resetForTest();
+    const setViewMode = vi.fn().mockResolvedValue(undefined);
+    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as never;
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({ type: 'Building', id: 'b', name: '楼', children: [{ type: 'Story', id: 's1', name: '一层' }] }),
+        { headers: { 'content-type': 'application/json' } },
+      ),
+    ));
+    vi.stubGlobal('window', { __sceneId: 'scene1' });
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
+    expect(setViewMode).toHaveBeenCalled();
+    expect(setViewMode.mock.calls[0][2]).toEqual(['s1']);
+  });
+
+  it('空 story_ids → setViewMode 传空数组(恢复全楼层)', async () => {
+    __resetForTest();
+    const setViewMode = vi.fn().mockResolvedValue(undefined);
+    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as never;
+    vi.stubGlobal('window', { __sceneId: 'scene1' });
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: [] }, ts: 0 }, sdk);
+    expect(setViewMode).toHaveBeenCalled();
+    expect(setViewMode.mock.calls[0][2]).toEqual([]);
+  });
+
+  it('场景未就绪(无 window.__sceneId)→ 跳过,不调 setViewMode', async () => {
+    __resetForTest();
+    const setViewMode = vi.fn().mockResolvedValue(undefined);
+    const sdk = { fly: vi.fn(), setViewMode } as never;
+    vi.stubGlobal('window', {});
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
+    expect(setViewMode).not.toHaveBeenCalled();
   });
 });
