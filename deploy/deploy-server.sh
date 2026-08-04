@@ -50,10 +50,10 @@ cd "$APP_DIR"
 set -a; . "$APP_DIR/deploy/.env"; set +a
 echo "==> 构建 BFF 镜像(注入 NEXT_PUBLIC_*)..."
 docker build -f deploy/Dockerfile.bff \
-  --build-arg NEXT_PUBLIC_X_APP_KEY="$NEXT_PUBLIC_X_APP_KEY" \
-  --build-arg NEXT_PUBLIC_USTUDIO_BASE="$NEXT_PUBLIC_USTUDIO_BASE" \
-  --build-arg NEXT_PUBLIC_SCENE_EVENTS_URL="$NEXT_PUBLIC_SCENE_EVENTS_URL" \
-  --build-arg NEXT_PUBLIC_LOCALE="$NEXT_PUBLIC_LOCALE" \
+  --build-arg NEXT_PUBLIC_X_APP_KEY="${NEXT_PUBLIC_X_APP_KEY-}" \
+  --build-arg NEXT_PUBLIC_USTUDIO_BASE="${NEXT_PUBLIC_USTUDIO_BASE-}" \
+  --build-arg NEXT_PUBLIC_SCENE_EVENTS_URL="${NEXT_PUBLIC_SCENE_EVENTS_URL-}" \
+  --build-arg NEXT_PUBLIC_LOCALE="${NEXT_PUBLIC_LOCALE-}" \
   -t firerescue-bff:local .
 echo "==> 构建 MCP 镜像..."
 docker build -f deploy/Dockerfile.mcp -t firerescue-mcp:local mcp-server
