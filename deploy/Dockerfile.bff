@@ -1,6 +1,6 @@
 # Next.js BFF 镜像(firerescue-bff)
-# 提供 /api/ustudio/* 取场景数据,mcp-server 依赖它。
-# 用 next start(非 standalone),路径稳定可靠。
+# 提供前端页面 + /api/ustudio/* 场景数据 + /api/scene-events 命令流代理,mcp-server 依赖它。
+# 用 Next.js standalone 输出:产物自包含,镜像显著小于 next start(不打包整套 node_modules)。
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
@@ -12,7 +12,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
 # NEXT_PUBLIC_* 必须在 build 时注入:Next.js 把它固化进客户端 bundle,运行时改 env 无效。
-# 通过 --build-arg 传入(deploy-server.sh 从 deploy/.env 读取)。
+# 通过 --build-arg 传入(deploy-server.sh 从 deploy/.env 读取;CI 从 GitHub Secrets 注入)。
 ARG NEXT_PUBLIC_X_APP_KEY
 ARG NEXT_PUBLIC_USTUDIO_BASE
 ARG NEXT_PUBLIC_SCENE_EVENTS_URL
@@ -21,16 +21,17 @@ ENV NEXT_PUBLIC_X_APP_KEY=$NEXT_PUBLIC_X_APP_KEY
 ENV NEXT_PUBLIC_USTUDIO_BASE=$NEXT_PUBLIC_USTUDIO_BASE
 ENV NEXT_PUBLIC_SCENE_EVENTS_URL=$NEXT_PUBLIC_SCENE_EVENTS_URL
 ENV NEXT_PUBLIC_LOCALE=$NEXT_PUBLIC_LOCALE
+# standalone 输出(配合 next.config.mjs 的 NEXT_OUTPUT_STANDALONE=1 分支)
+ENV NEXT_OUTPUT_STANDALONE=1
 RUN npm run build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/.next ./.next
+# standalone:自包含产物(含精简 node_modules + server.js)+ 静态资源 + public
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
-COPY --from=builder /app/next.config.mjs ./next.config.mjs
 EXPOSE 3000
-CMD ["npx", "next", "start", "-p", "3000"]
+CMD ["node", "server.js"]
