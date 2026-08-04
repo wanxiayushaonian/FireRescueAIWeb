@@ -80,7 +80,10 @@ jobs:
           script: |
             set -e
             # 服务器部署目录:默认 /opt/firerescue,可用 SERVER_APP_DIR secret 覆盖(如 ~/jjxf/...)
-            cd "${{ secrets.SERVER_APP_DIR || '/opt/firerescue' }}"
+            # 支持 ~ 开头路径:引号内 ~ 不展开,这里手动替换为 $HOME
+            APP_DIR="${{ secrets.SERVER_APP_DIR || '/opt/firerescue' }}"
+            APP_DIR="${APP_DIR/#\~/$HOME}"
+            cd "$APP_DIR"
             # 同步仓库最新 docker-compose.yml(/opt/firerescue 需是 git clone;非仓库则跳过)
             git pull --ff-only || echo "⚠️ git pull 失败:确认 /opt/firerescue 是仓库 clone,或手动同步 deploy/docker-compose.yml"
             export GHCR_USER="${{ github.actor }}"
