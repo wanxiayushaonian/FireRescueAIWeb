@@ -26,12 +26,23 @@ export type FireDevice = {
   type: string;
 };
 
+const BFF_TIMEOUT_MS = 8000;
+
 async function bffFetch(path: string, init?: RequestInit): Promise<Response> {
-  const res = await fetch(`${BFF_URL}${path}`, {
-    ...init,
-    headers: { 'x-app-key': X_APP_KEY, ...(init?.headers ?? {}) },
-    cache: 'no-store',
-  });
+  // 超时兜底:避免 BFF 卡住(尤其 /tree 14MB)时工具调用无限期挂起。
+  const timeoutSignal = AbortSignal.timeout(BFF_TIMEOUT_MS);
+  const signal = init?.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal;
+  let res: Response;
+  try {
+    res = await fetch(`${BFF_URL}${path}`, {
+      ...init,
+      signal,
+      headers: { 'x-app-key': X_APP_KEY, ...(init?.headers ?? {}) },
+      cache: 'no-store',
+    });
+  } catch (e) {
+    throw new Error(`BFF ${path} 网络错误或超时(${BFF_TIMEOUT_MS}ms): ${(e as Error).message}`);
+  }
   if (!res.ok) {
     throw new Error(`BFF ${path} failed: ${res.status} ${res.statusText}`);
   }

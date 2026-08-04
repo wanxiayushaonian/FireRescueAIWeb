@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleToolCall, TOOLS } from '../tools.js';
+import { handleToolCall, TOOLS, __resetDeviceCacheForTest } from '../tools.js';
+import { getFireDeviceList } from '../bff-client.js';
 import { publishCommand } from '../command-bus.js';
 
 vi.mock('../command-bus.js', () => ({
@@ -20,7 +21,10 @@ vi.mock('../bff-client.js', () => ({
   ]),
 }));
 
-beforeEach(() => { vi.clearAllMocks(); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  __resetDeviceCacheForTest();
+});
 
 describe('tools', () => {
   it('TOOLS 含 list_fire_devices 与 fly_to', () => {
@@ -42,5 +46,12 @@ describe('tools', () => {
     expect(text).toContain('d1');
     expect(text).toContain('喷淋头A');
     expect(text).toContain('ClosedSprinklerHead');
+  });
+
+  it('list_fire_devices TTL 内复用缓存,不重复拉 BFF tree', async () => {
+    await handleToolCall('list_fire_devices', {});
+    await handleToolCall('list_fire_devices', {});
+    // 第二次命中内存缓存,fetch 仅触发一次
+    expect(getFireDeviceList).toHaveBeenCalledTimes(1);
   });
 });

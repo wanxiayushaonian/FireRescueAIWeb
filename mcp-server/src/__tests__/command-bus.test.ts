@@ -27,4 +27,16 @@ describe('command-bus', () => {
     expect(a).toHaveBeenCalledTimes(1);
     expect(b).toHaveBeenCalledTimes(1);
   });
+
+  it('一个订阅者抛错不影响其他订阅者收到命令', () => {
+    const throwing = vi.fn(() => { throw new Error('boom'); });
+    const ok = vi.fn();
+    subscribeCommands(throwing);
+    subscribeCommands(ok);
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    publishCommand(cmd('fly_to'));
+    spy.mockRestore();
+    expect(throwing).toHaveBeenCalledTimes(1);
+    expect(ok).toHaveBeenCalledTimes(1);
+  });
 });
