@@ -1,7 +1,5 @@
-version: "3.8"
-
+# BFF:前端页面 + /api/ustudio/* 场景数据 + /api/scene-events 命令流代理
 services:
-  # Next.js BFF:提供 /api/ustudio/* 取场景数据
   bff:
     image: ${IMAGE_BFF:-firerescue-bff}:${TAG:-latest}
     build:
@@ -12,8 +10,10 @@ services:
     environment:
       # BFF 连 mcp 的容器内地址(与 mcp 的 WEB_BFF_URL 对称)
       MCP_INTERNAL_URL: http://mcp:8787
+    ports:
+      - "3000:3000" # 对外:浏览器访问前端页面 + /api/*(演示用)
     expose:
-      - "3000"
+      - "3000" # 容器间:mcp 经 WEB_BFF_URL=http://bff:3000 访问
     networks:
       - fr-net
 
