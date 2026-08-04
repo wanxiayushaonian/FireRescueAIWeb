@@ -5,9 +5,9 @@ import { startHttp } from '../http.js';
 const APP_KEY = 'test-key-123';
 const openServers: Server[] = [];
 
-function start(corsOrigin = ''): Promise<{ port: number }> {
+function start(corsOrigin = '', heartbeatMs?: number): Promise<{ port: number }> {
   return new Promise((resolve, reject) => {
-    const server = startHttp({ port: 0, appKey: APP_KEY, corsOrigin });
+    const server = startHttp({ port: 0, appKey: APP_KEY, corsOrigin, heartbeatMs });
     openServers.push(server);
     server.on('listening', () => {
       const addr = server.address();
@@ -80,5 +80,27 @@ describe('http 鉴权与路由', () => {
   it('未知路径 → 404', async () => {
     const { port } = await start();
     expect(await statusOf(`http://localhost:${port}/nope`)).toBe(404);
+  });
+
+  it('/scene-events 空闲时按 heartbeatMs 发送心跳(防代理空闲断开)', async () => {
+    const { port } = await start('', 30);
+    const ac = new AbortController();
+    const res = await fetch(`http://localhost:${port}/scene-events`, { signal: ac.signal });
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let gotPing = false;
+    const readLoop = (async () => {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        if (buf.includes(': ping')) { gotPing = true; break; }
+      }
+    })();
+    await Promise.race([readLoop, new Promise((r) => setTimeout(r, 1500))]);
+    ac.abort();
+    await readLoop.catch(() => {});
+    expect(gotPing).toBe(true);
   });
 });

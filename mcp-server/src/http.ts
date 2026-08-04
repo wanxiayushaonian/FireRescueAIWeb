@@ -8,6 +8,8 @@ export function startHttp(opts: {
   port: number;
   appKey: string;
   corsOrigin: string;
+  /** /scene-events 心跳间隔(ms);0 表示关闭。默认 15s,防中间代理空闲断开。 */
+  heartbeatMs?: number;
 }): http.Server {
   const transports = new Map<string, SSEServerTransport>();
   // CORS_ORIGIN 支持逗号分隔多域名;'*' 或空表示放行所有(ACAO='*',Origin 不校验)。
@@ -100,9 +102,13 @@ export function startHttp(opts: {
         'X-Accel-Buffering': 'no',
       });
       res.write(': connected\n\n');
+      // 心跳:空闲时定期发 SSE 注释行(': ping'),客户端忽略,但能刷新中间代理
+      // (如 nginx 默认 proxy_read_timeout 60s)的空闲计时,避免长连接被静默断开。
+      const hbMs = opts.heartbeatMs && opts.heartbeatMs > 0 ? opts.heartbeatMs : 15000;
+      const heartbeat = setInterval(() => res.write(': ping\n\n'), hbMs);
       // command-bus 已对 listener 做错误隔离,这里无需再 try/catch
       const unsub = subscribeCommands((c) => res.write(`data: ${JSON.stringify(c)}\n\n`));
-      req.on('close', () => { unsub(); res.end(); });
+      req.on('close', () => { clearInterval(heartbeat); unsub(); res.end(); });
       return;
     }
 
