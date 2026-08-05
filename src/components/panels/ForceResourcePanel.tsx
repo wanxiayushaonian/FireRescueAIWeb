@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flag, Users, Truck, Package, Search, ChevronDown, ChevronRight, Copy, MapPin } from 'lucide-react';
 import type { FetchState, ResourceItem, Station } from '@/mock/types';
-import { fetchForceStats, fetchResources, fetchStations, RESOURCE_TREE } from '@/mock/stations';
+import { fetchStations, fetchResources, fetchForceStats, fetchResourceTree } from '@/api/force';
+import type { ResourceTreeGroup } from '@/lib/force-mapper';
 import { addSceneAction } from '@/mock/sceneLog';
 import StatCard from '@/components/StatCard';
 import StatusBadge, { statusVariantOf } from '@/components/StatusBadge';
@@ -24,9 +25,10 @@ type Row =
 export default function ForceResourcePanel() {
   const [demoState, setDemoState] = useState<FetchState>('ok');
   const [state, setState] = useState<FetchState>('loading');
-  const [stats, setStats] = useState<{ value: number; delta: string }[]>([]);
+  const [stats, setStats] = useState<{ value: number; delta?: string }[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
   const [resources, setResources] = useState<ResourceItem[]>([]);
+  const [tree, setTree] = useState<ResourceTreeGroup[]>([]);
   const [query, setQuery] = useState('');
   const [treeSel, setTreeSel] = useState<{ category: string; subtype?: string } | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({ 队站: true });
@@ -39,12 +41,13 @@ export default function ForceResourcePanel() {
     if (s === 'loading') { setState('loading'); return; }
     setState('loading');
     try {
-      const [st, rs, fs] = await Promise.all([
-        fetchStations({ state: s }), fetchResources({ state: s }), fetchForceStats({ state: s }),
+      const [st, rs, statList, tr] = await Promise.all([
+        fetchStations(s), fetchResources(s), fetchForceStats(s), fetchResourceTree(s),
       ]);
       setStations(st);
       setResources(rs);
-      setStats([fs.stations, fs.personnel, fs.vehicles, fs.equipment]);
+      setStats(statList); // {value, delta?}[] 顺序 队站/人员/车辆/装备
+      setTree(tr);
       setState(st.length === 0 && rs.length === 0 ? 'empty' : 'ok');
     } catch {
       setState('error');
@@ -145,7 +148,7 @@ export default function ForceResourcePanel() {
           <div className="flex min-h-0 flex-1 border-t border-line">
             {/* 分类树 */}
             <div className="w-[150px] shrink-0 overflow-y-auto border-r border-line py-1">
-              {RESOURCE_TREE.map((group) => {
+              {tree.map((group) => {
                 const open = !!expanded[group.category];
                 return (
                   <div key={group.category}>
