@@ -122,7 +122,14 @@ export class SoonspaceRuntime {
     await sdk.init({
       config: { hostUrl: sdkHostUrl(), appKey: X_APP_KEY },
       locale: { lang: sdkLocale() },
-      commandBridge: { panelList, panelSetVisible, showVideo },
+      // TODO(增量后续):重接到原型 UI——panelList/panelSetVisible → 原型 DraggablePanel 系统,
+      // showVideo → 原型 VideoPlaybackPanel。迁壳后旧 UI(generated-panel-runtime / UStudioVideoDialog)
+      // 已不挂载,先 stub 避免平台推送这些命令时调失效函数。
+      commandBridge: {
+        panelList: () => [],
+        panelSetVisible: async () => ({}) as never,
+        showVideo: () => {},
+      },
     });
 
     // 外部创建 SoonSpace 实例并配置 Draco 解码路径，避免 SDK 内部创建时缺少 Draco 配置导致模型加载失败。
