@@ -31,7 +31,6 @@ export default function RealGisMap() {
   const stationsRef = useRef<Station[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
-  const [selected, setSelected] = useState<Station | null>(null);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
   useEffect(() => {
@@ -98,7 +97,6 @@ export default function RealGisMap() {
   }, [stations]);
 
   const handleStationClick = useCallback((s: Station) => {
-    setSelected(s);
     addSceneAction({
       action: 'flyTo',
       target: s.name,
@@ -107,7 +105,7 @@ export default function RealGisMap() {
     });
   }, []);
 
-  // sceneLog 联动:flyTo/addMarker → 地图定位;resetView/removeMarker → 复位
+  // sceneLog 联动:flyTo/addMarker → 地图定位;resetView → 复位园区俯瞰视角(removeMarker 仅移除选中,视角不变)
   // 只订阅一次,stations 经 ref 读取最新值,避免重复订阅卸载。
   useEffect(() => {
     const unsub = subscribeSceneLog((_list, latest) => {
@@ -121,8 +119,9 @@ export default function RealGisMap() {
           if (m) m.openPopup();
         }
       }
-      if (latest.action === 'resetView' || latest.action === 'removeMarker') {
-        setSelected(null);
+      if (latest.action === 'resetView') {
+        // 恢复园区俯瞰视角:复位地图视角(removeMarker 语义是移除选中标注,地图视角不变,无需处理)
+        mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
       }
     });
     return () => {
