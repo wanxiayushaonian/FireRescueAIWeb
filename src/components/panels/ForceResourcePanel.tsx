@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Flag, Users, Truck, Package, Search, ChevronDown, ChevronRight, Copy, MapPin } from 'lucide-react';
 import type { FetchState, ResourceItem, Station } from '@/mock/types';
-import { fetchStations, fetchResources, fetchForceStats, fetchResourceTree } from '@/api/force';
-import type { ResourceTreeGroup } from '@/lib/force-mapper';
+import { fetchStations, fetchResources } from '@/api/force';
+import { buildForceStats, buildResourceTree, type ResourceTreeGroup } from '@/lib/force-mapper';
 import { addSceneAction } from '@/mock/sceneLog';
 import StatCard from '@/components/StatCard';
 import StatusBadge, { statusVariantOf } from '@/components/StatusBadge';
@@ -41,13 +41,11 @@ export default function ForceResourcePanel() {
     if (s === 'loading') { setState('loading'); return; }
     setState('loading');
     try {
-      const [st, rs, statList, tr] = await Promise.all([
-        fetchStations(s), fetchResources(s), fetchForceStats(s), fetchResourceTree(s),
-      ]);
+      const [st, rs] = await Promise.all([fetchStations(s), fetchResources(s)]);
       setStations(st);
       setResources(rs);
-      setStats(statList); // {value, delta?}[] 顺序 队站/人员/车辆/装备
-      setTree(tr);
+      setStats(buildForceStats(st, rs)); // {value, delta?}[] 顺序 队站/人员/车辆/装备
+      setTree(buildResourceTree(st, rs));
       setState(st.length === 0 && rs.length === 0 ? 'empty' : 'ok');
     } catch {
       setState('error');
@@ -91,7 +89,7 @@ export default function ForceResourcePanel() {
   const writeLinkage = (s: Station) => {
     addSceneAction({ action: 'addMarker', target: `${s.name} @${s.lng},${s.lat}`, params: { lng: s.lng, lat: s.lat }, source: '面板' });
     addSceneAction({ action: 'flyTo', target: `${s.name} (${s.lng}, ${s.lat})`, params: { lng: s.lng, lat: s.lat }, source: '面板' });
-    showToast('已写入场景动作日志 · 演示数据');
+    showToast('已写入场景动作日志');
   };
 
   const stationName = (id: string) => stations.find((s) => s.id === id)?.name ?? id;
@@ -230,7 +228,7 @@ export default function ForceResourcePanel() {
                     ))}
                   {allLoaded && (
                     <li className="py-2 text-center text-[11px] text-text-3">
-                      已加载全部 {rows.length} 条 · 演示数据
+                      已加载全部 {rows.length} 条
                     </li>
                   )}
                 </ul>
