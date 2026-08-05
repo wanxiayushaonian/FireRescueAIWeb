@@ -8,12 +8,20 @@ export const dynamic = 'force-dynamic';
 async function proxy(request: NextRequest): Promise<Response> {
   const path = request.nextUrl.pathname.replace(/^\/api\/business\/?/, '');
   const token = await getServiceToken();
-  const url = buildProxyUrl(path, request.nextUrl.search.slice(1));
-  const res = await fetch(url, {
-    method: request.method,
-    headers: buildProxyHeaders(token, request.headers),
-    body: ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer(),
-  });
+  const search = request.nextUrl.search.slice(1);
+  // body 只读一次(GET/HEAD 无 body)
+  const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer();
+  const doFetch = (p: string) =>
+    fetch(buildProxyUrl(p, search), {
+      method: request.method,
+      headers: buildProxyHeaders(token, request.headers),
+      body,
+    });
+  let res = await doFetch(path);
+  // znya 列表接口带尾斜杠(/fire-stations/),Next catch-all 剥离尾斜杠 → 404 补斜杠重试一次
+  if (res.status === 404 && !path.endsWith('/')) {
+    res = await doFetch(path + '/');
+  }
   return new NextResponse(res.body, {
     status: res.status,
     headers: { 'content-type': res.headers.get('content-type') ?? 'application/json' },
