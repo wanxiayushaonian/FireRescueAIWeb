@@ -86,9 +86,8 @@ export function buildResourceTree(
     for (const t of list) map.set(key(t), (map.get(key(t)) ?? 0) + 1);
     return [...map.entries()].map(([name, count]) => ({ name, count }));
   };
-  // 固定顺序(队站类型)→ 树显示稳定。顺序与 task-4-brief 测试期望一致(救援站在前);
-  // 注意与旧 mock RESOURCE_TREE(救援大队在前)不一致,brief 实现与测试二者冲突时以测试为准。
-  const stationTypes = ['救援站', '救援大队', '政府专职站', '企业专职站', '微型消防站'];
+  // 固定顺序(队站类型)→ 树显示稳定;与 mock RESOURCE_TREE 一致(救援大队在前)。
+  const stationTypes = ['救援大队', '救援站', '政府专职站', '企业专职站', '微型消防站'];
   return [
     { category: '队站', children: groupBy(stations, (s) => s.type) },
     { category: '人员', children: groupBy(resources.filter((r) => r.category === '人员'), (r) => r.subtype) },

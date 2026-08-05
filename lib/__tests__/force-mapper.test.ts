@@ -56,7 +56,7 @@ describe('force-mapper', () => {
     ];
     const tree = buildResourceTree(stations, resources);
     const stationNode = tree.find((g) => g.category === '队站');
-    expect(stationNode?.children).toEqual([{ name: '救援站', count: 1 }, { name: '救援大队', count: 1 }]);
+    expect(stationNode?.children).toEqual([{ name: '救援大队', count: 1 }, { name: '救援站', count: 1 }]);
     expect(tree.find((g) => g.category === '人员')?.children).toEqual([{ name: '干部', count: 1 }]);
     expect(tree.find((g) => g.category === '装备')?.children).toEqual([{ name: '侦检', count: 1 }]);
   });
