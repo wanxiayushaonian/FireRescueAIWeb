@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { mapStation, mapResource, buildForceStats, buildResourceTree } from '../force-mapper';
 
 const RAW_STATION = {
-  id: 'st-1', name: '城东救援站', station_type: '救援站', address: '珠江路 100 号',
+  id: 'st-1', name: '城东救援站', station_type: '普通消防站', address: '珠江路 100 号',
   longitude: 118.7545, latitude: 32.046, duty_phone: '025-8311****', status: 'normal',
   extra_attrs: { commander: '张海涛', personnel_count: 42, vehicle_summary: { 水罐车: 2, 云梯车: 1 } },
 };
@@ -15,7 +15,7 @@ describe('force-mapper', () => {
   it('mapStation 映射 snake→camel 并展开 extra_attrs', () => {
     const s = mapStation(RAW_STATION);
     expect(s.name).toBe('城东救援站');
-    expect(s.type).toBe('救援站');
+    expect(s.type).toBe('普通消防站');
     expect(s.lng).toBe(118.7545);
     expect(s.lat).toBe(32.046);
     expect(s.dutyPhone).toBe('025-8311****');
@@ -48,7 +48,7 @@ describe('force-mapper', () => {
   });
 
   it('buildResourceTree 按分类/子类分组', () => {
-    const stations = [mapStation(RAW_STATION), mapStation({ id: 'st-2', name: '鼓楼大队', station_type: '救援大队', status: 'normal' })];
+    const stations = [mapStation(RAW_STATION), mapStation({ id: 'st-2', name: '庐山大道特勤站', station_type: '特勤消防站', status: 'normal' })];
     const resources = [
       mapResource(RAW_VEHICLE),
       mapResource({ ...RAW_VEHICLE, id: 'f-2', force_type: '人员', subtype: '干部' }),
@@ -56,7 +56,7 @@ describe('force-mapper', () => {
     ];
     const tree = buildResourceTree(stations, resources);
     const stationNode = tree.find((g) => g.category === '队站');
-    expect(stationNode?.children).toEqual([{ name: '救援大队', count: 1 }, { name: '救援站', count: 1 }]);
+    expect(stationNode?.children).toEqual([{ name: '特勤消防站', count: 1 }, { name: '普通消防站', count: 1 }]);
     expect(tree.find((g) => g.category === '人员')?.children).toEqual([{ name: '干部', count: 1 }]);
     expect(tree.find((g) => g.category === '装备')?.children).toEqual([{ name: '侦检', count: 1 }]);
   });

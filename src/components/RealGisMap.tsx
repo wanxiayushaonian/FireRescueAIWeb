@@ -17,14 +17,15 @@ const TILE_URL = `https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=G
 const ANNO_URL = `https://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${TIANDITU_KEY}`;
 
 const TYPE_COLORS: Record<string, string> = {
-  救援大队: '#f97316',
-  救援站: '#22d3ee',
-  政府专职站: '#3b82f6',
-  企业专职站: '#a78bfa',
+  特勤消防站: '#f97316',
+  普通消防站: '#22d3ee',
+  专职消防站: '#3b82f6',
   微型消防站: '#34d399',
+  水上消防站: '#a78bfa',
 };
-const DEFAULT_CENTER: [number, number] = [32.06, 118.8];
-const DEFAULT_ZOOM = 12;
+// 九江市中心(九江市消防救援支队 ~115.96, 29.67);真实数据已替换为九江 82 站
+const DEFAULT_CENTER: [number, number] = [29.67, 115.96];
+const DEFAULT_ZOOM = 11;
 
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
