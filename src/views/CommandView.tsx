@@ -2,8 +2,8 @@
 // 布局：左 实时警情接入（380px）/ 右上 灾情变量监测（400×300）/ 右下 辅助决策推荐流。
 // 实时数据由 src/mock/liveChannel.ts 的 mock 时钟驱动（connect('mock')，生产环境替换 WebSocket）。
 import { useCallback, useEffect, useRef, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { Siren, GaugeCircle, Sparkles, Video } from 'lucide-react';
-import GisMapPlaceholder from '@/components/GisMapPlaceholder';
 import DraggablePanel from '@/components/DraggablePanel';
 import IncidentListPanel from '@/components/command/IncidentListPanel';
 import DisasterVarsPanel from '@/components/command/DisasterVarsPanel';
@@ -17,6 +17,12 @@ import {
 } from '@/mock/liveChannel';
 import type { LiveEvent, LiveSnapshot } from '@/mock/liveChannel';
 import type { Recommendation } from '@/mock/incidents';
+
+// GIS 底座:与总览模块同一 RealGisMap(Leaflet 浏览器库,须客户端加载,ssr:false)
+const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
+  ssr: false,
+  loading: () => null,
+});
 
 export default function CommandView() {
   const [snap, setSnap] = useState<LiveSnapshot>(() => getSnapshot());
@@ -163,7 +169,7 @@ export default function CommandView() {
   return (
     <div className="relative h-full w-full">
       {/* 实战指挥落 GIS 底座（与模块一同一底图） */}
-      <GisMapPlaceholder />
+      <RealGisMap />
 
       {/* 战术推演层：蔓延圈 / 力量部署 / 进攻路线（纯 SVG 叠加，pointer-events-none 不影响底图交互） */}
       <TacticalOverlay

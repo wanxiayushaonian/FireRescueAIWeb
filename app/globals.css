@@ -272,4 +272,8 @@
     background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.6), transparent);
     height: 1px;
   }
+  /* GIS 深色地图滤镜(天地图彩色底图 → 深色指挥大屏风格) */
+  .gis-dark-filter {
+    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+  }
 }

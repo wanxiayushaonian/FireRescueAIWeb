@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Archive, Database, Building2, Crosshair, FileText } from 'lucide-react';
 import TopBar from '@/components/TopBar';
@@ -6,7 +7,11 @@ import SideNav from '@/components/SideNav';
 import type { ModuleKey } from '@/components/SideNav';
 import RealSceneView from '@/components/RealSceneView';
 import { SceneCommandBridge } from '@/components/SceneCommandBridge';
-import GisMapPlaceholder from '@/components/GisMapPlaceholder';
+// GIS 底座:Leaflet 是浏览器库,须客户端加载(ssr:false),否则构建期 SSR 报 window 未定义
+const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
+  ssr: false,
+  loading: () => null,
+});
 import DraggablePanel from '@/components/DraggablePanel';
 import ToastHost from '@/components/Toast';
 import ForceResourcePanel from '@/components/panels/ForceResourcePanel';
@@ -182,7 +187,7 @@ export default function App() {
               ) : module === 'command' ? (
                 <CommandView />
               ) : module === 'overview' ? (
-                <GisMapPlaceholder />
+                <RealGisMap />
               ) : (
                 <RealSceneView sceneId={selectedSceneId} />
               )}
