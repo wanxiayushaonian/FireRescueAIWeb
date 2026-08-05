@@ -4,7 +4,8 @@ import { Archive, Database, Building2, Crosshair, FileText } from 'lucide-react'
 import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
 import type { ModuleKey } from '@/components/SideNav';
-import ScenePlaceholder from '@/components/ScenePlaceholder';
+import RealSceneView from '@/components/RealSceneView';
+import { SceneCommandBridge } from '@/components/SceneCommandBridge';
 import GisMapPlaceholder from '@/components/GisMapPlaceholder';
 import DraggablePanel from '@/components/DraggablePanel';
 import ToastHost from '@/components/Toast';
@@ -153,7 +154,7 @@ export default function App() {
               ) : module === 'overview' ? (
                 <GisMapPlaceholder />
               ) : (
-                <ScenePlaceholder />
+                <RealSceneView />
               )}
             </motion.div>
           </AnimatePresence>
@@ -238,6 +239,7 @@ export default function App() {
               </DraggablePanel>
             </>
           )}
+          <SceneCommandBridge />
           <AgentChat module={module} onOpenPanel={handleAgentOpenPanel} />
         </main>
       </div>
