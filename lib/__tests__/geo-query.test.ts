@@ -20,7 +20,7 @@ describe('geo-query', () => {
     expect(hit.map((s) => s.name)).toEqual(['城东']);
   });
 
-  it('filterByRadius:空集/全命中边界', () => {
+  it('filterByRadius:空集边界', () => {
     expect(filterByRadius([], { lng: 0, lat: 0 }, 1000, (x) => x)).toEqual([]);
   });
 });

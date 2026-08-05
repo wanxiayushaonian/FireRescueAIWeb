@@ -1,6 +1,6 @@
-// 实战指挥 · 战术推演层（纯 SVG/CSS 叠加，覆盖在 GisMapPlaceholder 占位场景上，不接真 GIS）
-// 坐标投影沿用 GisMapPlaceholder 的线性投影（同一 viewBox 1000×700 + preserveAspectRatio slice，
-// 两层 SVG 完全重合，因此同一 lng/lat 换算出的 xy 在两层中位置一致）。
+// 实战指挥 · 战术推演层（纯 SVG/CSS 叠加层，SVG 线性投影，南京演示区）。
+// TODO: 现底层已换真实 Leaflet 地图(EPSG:3857 Web Mercator)，本层线性投影不跟随 pan/zoom 且纬度方向有
+// ~15-18% 拉伸，与真实底图不对齐；后续需 port 到 Leaflet layers(L.latLng → map.latLngToContainerPoint)。
 // 三个图层：火势蔓延圈（阶段≥到场）/ 力量部署标注（推荐卡被采纳）/ 进攻路线（最近 2 队站→警情点）。
 // 所有场景日志写入均去重：同一警情同一阶段只写一次 drawZone/drawRoute，clearTactical 每次换警情/熄灭一次。
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -16,7 +16,7 @@ import { GIS_BUILDINGS } from '@/mock/geo';
 import { addSceneAction } from '@/mock/sceneLog';
 import DemoTag from '@/components/DemoTag';
 
-/** 与 GisMapPlaceholder 完全一致的经纬度 → SVG 坐标线性投影 */
+/** 经纬度 → SVG 坐标线性投影（南京演示区） */
 const LNG_MIN = 118.73, LNG_MAX = 118.85;
 const LAT_MIN = 32.02, LAT_MAX = 32.11;
 const W = 1000, H = 700, PAD = 92;

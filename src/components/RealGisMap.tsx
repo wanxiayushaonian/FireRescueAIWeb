@@ -72,6 +72,15 @@ export default function RealGisMap() {
     };
   }, []);
 
+  const handleStationClick = useCallback((s: Station) => {
+    addSceneAction({
+      action: 'flyTo',
+      target: s.name,
+      params: { lng: s.lng, lat: s.lat },
+      source: '面板',
+    });
+  }, []);
+
   // 点位 → 地图标记(仅在有 key 且有底图时添加;无 key 降级只显示点位文字列表)
   useEffect(() => {
     const map = mapRef.current;
@@ -94,16 +103,7 @@ export default function RealGisMap() {
       markersRef.current.forEach((m) => m.remove());
       markersRef.current.clear();
     };
-  }, [stations]);
-
-  const handleStationClick = useCallback((s: Station) => {
-    addSceneAction({
-      action: 'flyTo',
-      target: s.name,
-      params: { lng: s.lng, lat: s.lat },
-      source: '面板',
-    });
-  }, []);
+  }, [stations, handleStationClick]);
 
   // sceneLog 联动:flyTo/addMarker → 地图定位;resetView → 复位园区俯瞰视角(removeMarker 仅移除选中,视角不变)
   // 只订阅一次,stations 经 ref 读取最新值,避免重复订阅卸载。
