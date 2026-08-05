@@ -31,6 +31,36 @@ export default function App() {
   const [planPanelOpen, setPlanPanelOpen] = useState(true);
   const [libraryPanelOpen, setLibraryPanelOpen] = useState(false);
 
+  const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
+  const [selectedSceneId, setSelectedSceneId] = useState<string>('');
+
+  // 场景列表 + 最近使用(替代写死 .env SCENE_ID,场景选择交前端 TopBar 下拉)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const res = await fetch('/api/ustudio/bootstrap', { cache: 'no-store' });
+        if (!res.ok) return;
+        const data = (await res.json()) as { scenes?: { scene_id: string; scene_name: string }[] };
+        const list = data.scenes ?? [];
+        setScenes(list);
+        const recent = typeof window !== 'undefined' ? localStorage.getItem('firerescue:recent-scene') : null;
+        const initial = recent && list.some((s) => s.scene_id === recent) ? recent : (list[0]?.scene_id ?? '');
+        setSelectedSceneId(initial);
+      } catch {
+        /* bootstrap 失败留空,TopBar 下拉空 + RealSceneView 显示未选择 */
+      }
+    })();
+  }, []);
+
+  const handleSelectScene = (id: string) => {
+    setSelectedSceneId(id);
+    try {
+      localStorage.setItem('firerescue:recent-scene', id);
+    } catch {
+      /* ignore storage quota/privacy */
+    }
+  };
+
   const handleSelect = (k: ModuleKey) => {
     setModule(k);
     if (k === 'overview') setForcePanelOpen(true);
@@ -129,7 +159,7 @@ export default function App() {
 
   return (
     <div className="flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-bg-deep text-text-1">
-      <TopBar />
+      <TopBar scenes={scenes} selectedSceneId={selectedSceneId} onSelectScene={handleSelectScene} />
       <div className="flex min-h-0 flex-1">
         <SideNav
           active={module}
@@ -154,7 +184,7 @@ export default function App() {
               ) : module === 'overview' ? (
                 <GisMapPlaceholder />
               ) : (
-                <RealSceneView />
+                <RealSceneView sceneId={selectedSceneId} />
               )}
             </motion.div>
           </AnimatePresence>

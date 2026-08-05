@@ -10,23 +10,17 @@ import type { SceneTreeNode } from '@/lib/ustudio';
 type View = 'loading' | 'ready' | 'error' | 'no-scene';
 
 /**
- * 真实 3D 场景区(抽 SoonspaceSceneViewer 核心,去掉顶栏/门厅/插件/信息卡)。
+ * 真实 3D 场景区。sceneId 由父组件(App)传入——来自 TopBar 场景下拉选择
+ * (场景列表经 bootstrap 获取 + localStorage 最近使用)。
  *
- * - bootstrap → SoonspaceRuntime.init → 真实 3D 渲染
- * - 订阅 sceneLog(scene-action-executor)→ 真实 SDK 联动(flyTo/highlight/switchFloor/resetView)
- * - SDK init 时自动建平台 WS(平台 invokeTwinsFunction 推送的可视化 SDK 自动执行)
- * - 浮层 SceneInfoCard/SceneLogPanel 沿用原型
+ * - bootstrap → SoonspaceRuntime.init → 真实 3D(SDK init 自动建平台 WS)
+ * - 订阅 sceneLog(scene-action-executor)→ 真实 SDK 联动
+ * - sceneId 变化 → effect 重跑 → 自动 dispose 旧 runtime + 重新 init(切换场景)
  *
- * sceneId:NEXT_PUBLIC_SCENE_ID → URL ?sceneId= → 无则「未配置场景」(不进门厅)。
+ * 不再依赖 NEXT_PUBLIC_SCENE_ID(写死 .env 不合理);场景选择交前端。
  */
-function resolveSceneId(): string | null {
-  if (typeof window === 'undefined') return null;
-  const fromEnv = process.env.NEXT_PUBLIC_SCENE_ID?.trim();
-  if (fromEnv) return fromEnv;
-  return new URLSearchParams(window.location.search).get('sceneId')?.trim() || null;
-}
-
-export function RealSceneView() {
+export function RealSceneView(props: { sceneId: string }) {
+  const { sceneId } = props;
   const containerRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<SoonspaceRuntime | null>(null);
   const initialViewRef = useRef<CameraViewpoint | null>(null);
@@ -35,13 +29,14 @@ export function RealSceneView() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    let disposed = false;
-    let unsub: (() => void) | undefined;
-    const sceneId = resolveSceneId();
     if (!sceneId) {
       setView('no-scene');
       return;
     }
+    let disposed = false;
+    let unsub: (() => void) | undefined;
+    setView('loading');
+    setError(null);
 
     void (async () => {
       try {
@@ -63,13 +58,11 @@ export function RealSceneView() {
           return;
         }
 
-        // 存初始视角(供 resetCamera 恢复)
         try {
           initialViewRef.current = runtime.getCameraViewpoint();
         } catch {
           /* 某些引擎不支持,resetCamera 将走 warn 分支 */
         }
-        // 预取场景树(供 switchFloor 的 setViewMode)
         try {
           const tRes = await fetch(`/api/ustudio/tree?sceneId=${encodeURIComponent(sceneId)}`, { cache: 'no-store' });
           if (tRes.ok) treeRef.current = (await tRes.json()) as SceneTreeNode;
@@ -121,7 +114,7 @@ export function RealSceneView() {
       runtimeRef.current = null;
       containerRef.current?.replaceChildren();
     };
-  }, []);
+  }, [sceneId]);
 
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
@@ -134,8 +127,8 @@ export function RealSceneView() {
       {view === 'no-scene' && (
         <div className="absolute inset-0 grid place-items-center text-center">
           <div className="rounded-xl border border-dashed border-line-glow bg-bg-panel/40 px-8 py-6 backdrop-blur-sm">
-            <div className="mb-1 text-base font-bold text-text-1">未配置场景</div>
-            <div className="text-sm text-text-2">设 NEXT_PUBLIC_SCENE_ID 或 URL ?sceneId=</div>
+            <div className="mb-1 text-base font-bold text-text-1">未选择场景</div>
+            <div className="text-sm text-text-2">从顶栏场景下拉切换</div>
             <DemoTag className="mt-3" />
           </div>
         </div>

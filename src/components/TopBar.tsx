@@ -20,7 +20,11 @@ function useClock() {
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 
-export default function TopBar() {
+export default function TopBar(props: {
+  scenes?: { scene_id: string; scene_name: string }[];
+  selectedSceneId?: string;
+  onSelectScene?: (id: string) => void;
+}) {
   const now = useClock();
   const [alertOpen, setAlertOpen] = useState(false);
   const [script, setScript] = useState<ScriptState>(() => getScriptState());
@@ -83,6 +87,20 @@ export default function TopBar() {
       </div>
       {/* 右 */}
       <div className="flex items-center gap-4">
+        {props.scenes && props.scenes.length > 0 && (
+          <select
+            value={props.selectedSceneId ?? ''}
+            onChange={(e) => props.onSelectScene?.(e.target.value)}
+            className="rounded-md border border-line bg-bg-panel-2 px-2 py-1.5 text-[12px] text-text-1"
+            title="切换场景"
+          >
+            {props.scenes.map((s) => (
+              <option key={s.scene_id} value={s.scene_id}>
+                {s.scene_name || s.scene_id}
+              </option>
+            ))}
+          </select>
+        )}
         <span className="text-[13px] text-text-2">值班长：王建国 · 指挥中心</span>
         {/* 全局演示剧本：一键串联 接警→研判→生成→对抗→评估→归档（演示数据） */}
         <button
