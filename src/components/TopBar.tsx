@@ -10,8 +10,11 @@ import { showToast } from './Toast';
 import DemoTag from './DemoTag';
 
 function useClock() {
-  const [now, setNow] = useState(() => new Date());
+  // 初始 null:SSR 与客户端首次渲染都为 null(一致),避免时钟 hydration mismatch;
+  // mount 后立即设真实时间并启动定时器。
+  const [now, setNow] = useState<Date | null>(null);
   useEffect(() => {
+    setNow(new Date());
     const t = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(t);
   }, []);
@@ -48,7 +51,10 @@ export default function TopBar(props: {
   }, []);
 
   const p = (n: number) => String(n).padStart(2, '0');
-  const time = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`;
+  // now 为 null 时(SSR/首渲染)用占位,保证服务端与客户端输出一致
+  const time = now
+    ? `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())} ${p(now.getHours())}:${p(now.getMinutes())}:${p(now.getSeconds())}`
+    : '----/--/-- --:--:--';
 
   const handleAlertClick = (a: AlertItem) => {
     addSceneAction({ action: 'highlight', target: a.facility, source: '面板' });
@@ -79,11 +85,11 @@ export default function TopBar(props: {
       </div>
       {/* 中 */}
       <div className="absolute left-1/2 flex -translate-x-1/2 items-baseline gap-2 whitespace-nowrap">
-        <motion.div key={now.getSeconds()} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
+        <motion.div key={now ? now.getSeconds() : 0} initial={{ opacity: 0.4 }} animate={{ opacity: 1 }} transition={{ duration: 0.15 }}
           className="font-mono text-[15px] text-text-1">
           {time}
         </motion.div>
-        <div className="text-[11px] text-text-3">星期{WEEK[now.getDay()]}</div>
+        <div className="text-[11px] text-text-3">{now ? `星期${WEEK[now.getDay()]}` : ''}</div>
       </div>
       {/* 右 */}
       <div className="flex items-center gap-4">
