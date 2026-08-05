@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="flameGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f97316"/>
+      <stop offset="100%" stop-color="#ef4444"/>
+    </linearGradient>
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="1.6" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path d="M32 5 L55 13 V32 C55 46 45 55 32 59 C19 55 9 46 9 32 V13 Z"
+        fill="rgba(10,20,32,.75)" stroke="url(#flameGrad)" stroke-width="2.5"
+        stroke-linejoin="round" filter="url(#glow)"/>
+  <path d="M32 16 C35 21 40 24 40 32 C40 39 36.5 44 32 45 C27.5 44 24 39 24 32 C24 27 26 24 28 22 C28 26 29 28 31 29 C30 24 30.5 20 32 16 Z"
+        fill="url(#flameGrad)" filter="url(#glow)"/>
+  <path d="M32 34 C33.5 36 34.5 38 34.5 40.5 C34.5 43 33 44.5 32 45 C31 44.5 29.5 43 29.5 40.5 C29.5 38 30.5 36 32 34 Z"
+        fill="#fdba74" opacity=".85"/>
+</svg>

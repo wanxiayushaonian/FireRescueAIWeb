@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200" fill="none" stroke="#22d3ee" stroke-width="1" opacity=".85">
+  <path d="M110 30 H210 V180 H110 Z" stroke-linejoin="round"/>
+  <path d="M110 30 L160 12 L210 30" stroke-linejoin="round"/>
+  <g class="floor-lines">
+    <path d="M110 55 H210"/><path d="M110 80 H210"/><path d="M110 105 H210"/>
+    <path d="M110 130 H210"/><path d="M110 155 H210"/>
+  </g>
+  <g opacity=".6">
+    <path d="M122 40 h12 v9 h-12 Z M142 40 h12 v9 h-12 Z M162 40 h12 v9 h-12 Z M182 40 h12 v9 h-12 Z"/>
+    <path d="M122 65 h12 v9 h-12 Z M142 65 h12 v9 h-12 Z M162 65 h12 v9 h-12 Z M182 65 h12 v9 h-12 Z"/>
+    <path d="M122 90 h12 v9 h-12 Z M142 90 h12 v9 h-12 Z M162 90 h12 v9 h-12 Z M182 90 h12 v9 h-12 Z"/>
+    <path d="M122 115 h12 v9 h-12 Z M142 115 h12 v9 h-12 Z M162 115 h12 v9 h-12 Z M182 115 h12 v9 h-12 Z"/>
+    <path d="M122 140 h12 v9 h-12 Z M142 140 h12 v9 h-12 Z M162 140 h12 v9 h-12 Z M182 140 h12 v9 h-12 Z"/>
+  </g>
+  <path d="M148 180 V164 H172 V180" opacity=".8"/>
+  <path d="M60 180 H260"/>
+  <path d="M80 120 H110 V180 H80 Z M210 140 H240 V180 H210 Z" opacity=".5"/>
+</svg>
