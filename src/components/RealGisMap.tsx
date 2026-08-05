@@ -11,8 +11,10 @@ import { fetchStations } from '@/api/force';
 import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
 
 const TIANDITU_KEY = process.env.NEXT_PUBLIC_TIANDITU_KEY || '';
-// 天地图 vec_c(EPSG:3857,兼容 Leaflet 默认 CRS),深色大屏用 CSS 反色
-const TILE_URL = `https://t{s}.tianditu.gov.cn/vec_c/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=c&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${TIANDITU_KEY}`;
+// 天地图 vec_w(EPSG:3857 Web Mercator,与 Leaflet 默认 CRS 一致;勿用 vec_c 经纬度切片,会与 CRS 不匹配致瓦片错位空白)
+const TILE_URL = `https://t{s}.tianditu.gov.cn/vec_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=vec&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${TIANDITU_KEY}`;
+// 中文矢量注记(cva_w):地名/POI/道路名文字,叠加在底图上(天地图底图 vec_w 只有线划,文字在单独注记图层)
+const ANNO_URL = `https://t{s}.tianditu.gov.cn/cva_w/wmts?SERVICE=WMTS&REQUEST=GetTile&VERSION=1.0.0&LAYER=cva&STYLE=default&TILEMATRIXSET=w&FORMAT=tiles&TILEMATRIX={z}&TILEROW={y}&TILECOL={x}&tk=${TIANDITU_KEY}`;
 
 const TYPE_COLORS: Record<string, string> = {
   救援大队: '#f97316',
@@ -46,6 +48,10 @@ export default function RealGisMap() {
       L.tileLayer(TILE_URL, { subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'], maxZoom: 18 })
         .addTo(map)
         .getContainer()?.classList.add('gis-dark-filter'); // 深色滤镜见 globals.css
+      // 注记图层(地名/POI/道路名),同样套深色滤镜与底图一致
+      L.tileLayer(ANNO_URL, { subdomains: ['0', '1', '2', '3', '4', '5', '6', '7'], maxZoom: 18 })
+        .addTo(map)
+        .getContainer()?.classList.add('gis-dark-filter');
     }
     return () => {
       map.remove();
@@ -130,7 +136,7 @@ export default function RealGisMap() {
   }, []);
 
   return (
-    <div ref={rootRef} className="relative h-full w-full overflow-hidden bg-bg-grid">
+    <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
       {!TIANDITU_KEY && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
           天地图 key 未配置(env NEXT_PUBLIC_TIANDITU_KEY)——显示占位底图
