@@ -1,7 +1,7 @@
 'use client';
-// 态势总览 2D 地图:高德矢量底图(Leaflet,坐标系 GCJ02)+ 消防站图标(znya 真实)+ 水源点(zoom>=13)+ sceneLog 联动。
-// 坐标策略:站/水入库为 WGS84,显示层用 wgs84ToGcj02 转 GCJ02 与高德底图对齐(数据层不动)。
-// 高德裸瓦片免 key;tileerror 连续失败(>=5)降级为坐标网格占位 + 点位文字列表。
+// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站图标 + 水源点(zoom>=13)+ sceneLog 联动。
+// 坐标策略:站/水入库为 WGS84,显示层用 wgs84ToGcj02 转 GCJ02(数据层不动)。
+// 图层控制:底图切换(矢量/卫星)+ 消防站/水源显隐(MapLayerControl);tileerror 连续失败降级。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -13,9 +13,12 @@ import { fetchWaterSources } from '@/api/water';
 import { stationIconSvg, waterIconSvg, shouldShowWater } from '@/lib/map-icons';
 import { wgs84ToGcj02 } from '@/lib/geo-convert';
 import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
+import MapLayerControl from './MapLayerControl';
 
-// 高德矢量瓦片(GCJ02,自带中文地名/道路注记,单层;免 key,subdomains 1-4)
-const TILE_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
+// 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
+const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
+// 高德卫星影像(GCJ02;免 key)
+const SAT_URL = 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}';
 
 // 九江市中心(九江市消防救援支队 ~115.96, 29.67;WGS84,初始化时转 GCJ02)
 const DEFAULT_CENTER_WGS84: [number, number] = [29.67, 115.96];
@@ -26,16 +29,24 @@ const TILE_ERR_THRESHOLD = 5;
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const vectorLayerRef = useRef<L.TileLayer | null>(null);
+  const satLayerRef = useRef<L.TileLayer | null>(null);
+  const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
-  const stationsRef = useRef<Station[]>([]);
-  const [stations, setStations] = useState<Station[]>([]);
-  const [water, setWater] = useState<WaterSource[]>([]);
-  const waterRef = useRef<WaterSource[]>([]);
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
-  const [tilesFailed, setTilesFailed] = useState(false);
+  const stationsRef = useRef<Station[]>([]);
+  const waterRef = useRef<WaterSource[]>([]);
   const tileErrRef = useRef(0);
+
+  const [stations, setStations] = useState<Station[]>([]);
+  const [water, setWater] = useState<WaterSource[]>([]);
+  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
+  const [mapInited, setMapInited] = useState(false);
+  const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
+  const [showStations, setShowStations] = useState(true);
+  const [showWater, setShowWater] = useState(true);
+  const [tilesFailed, setTilesFailed] = useState(false);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
   useEffect(() => {
@@ -48,18 +59,43 @@ export default function RealGisMap() {
     });
     mapRef.current = map;
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    const tl = L.tileLayer(TILE_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 }).addTo(map);
-    tl.getContainer()?.classList.add('gis-dark-filter'); // 深色滤镜见 globals.css
-    // 瓦片连续失败 → 降级(高德不可达时)
-    tl.on('tileerror', () => {
-      tileErrRef.current += 1;
-      if (tileErrRef.current >= TILE_ERR_THRESHOLD) setTilesFailed(true);
-    });
+    stationsLayerRef.current = L.layerGroup().addTo(map);
+    waterLayerRef.current = L.layerGroup().addTo(map);
+    setMapInited(true);
     return () => {
       map.remove();
       mapRef.current = null;
+      setMapInited(false);
     };
   }, []);
+
+  // 底图切换:vector 加深色滤镜,satellite 不加;两者均监听 tileerror
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapInited) return;
+    const onTileError = () => {
+      tileErrRef.current += 1;
+      if (tileErrRef.current >= TILE_ERR_THRESHOLD) setTilesFailed(true);
+    };
+    if (baseMap === 'vector') {
+      satLayerRef.current?.remove();
+      if (!vectorLayerRef.current) {
+        const tl = L.tileLayer(VECTOR_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 });
+        tl.getContainer()?.classList.add('gis-dark-filter');
+        tl.on('tileerror', onTileError);
+        vectorLayerRef.current = tl;
+      }
+      vectorLayerRef.current.addTo(map);
+    } else {
+      vectorLayerRef.current?.remove();
+      if (!satLayerRef.current) {
+        const tl = L.tileLayer(SAT_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 });
+        tl.on('tileerror', onTileError);
+        satLayerRef.current = tl;
+      }
+      satLayerRef.current.addTo(map);
+    }
+  }, [baseMap, mapInited]);
 
   // 加载消防站真实点位
   useEffect(() => {
@@ -107,10 +143,12 @@ export default function RealGisMap() {
     });
   }, []);
 
-  // 消防站点位 → divIcon 图标(菱形"消"徽标,按站类型着色);WGS84→GCJ02 与高德底图对齐
+  // 消防站点位 → divIcon 图标(菱形"消"徽标);WGS84→GCJ02;入 stationsLayer(显隐受 showStations)
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
+    const layer = stationsLayerRef.current;
+    if (!layer || !mapInited) return;
+    layer.clearLayers();
+    markersRef.current.clear();
     for (const s of stations) {
       const g = wgs84ToGcj02(s.lng, s.lat);
       const marker = L.marker([g.lat, g.lng], {
@@ -122,24 +160,18 @@ export default function RealGisMap() {
           popupAnchor: [0, -24],
         }),
       })
-        .addTo(map)
         .bindPopup(`<b>${s.name}</b><br/>${s.type} · 在位 ${s.personnel} 人<br/>${s.address}<br/>${s.lng.toFixed(5)}, ${s.lat.toFixed(5)}(WGS84)`)
         .on('click', () => handleStationClick(s));
+      layer.addLayer(marker);
       markersRef.current.set(s.id, marker);
     }
-    return () => {
-      markersRef.current.forEach((m) => m.remove());
-      markersRef.current.clear();
-    };
-  }, [stations, handleStationClick]);
+  }, [stations, handleStationClick, mapInited]);
 
-  // 水源层:zoom>=13 显示(远景只显消防站,避免密集);zoomend 重渲染;WGS84→GCJ02
+  // 水源层:zoom>=13 显示(远景只显消防站,避免密集);zoomend 重渲染;WGS84→GCJ02;入 waterLayer(显隐受 showWater)
   useEffect(() => {
+    const layer = waterLayerRef.current;
     const map = mapRef.current;
-    if (!map) return;
-    const layer = L.layerGroup().addTo(map);
-    waterLayerRef.current = layer;
-
+    if (!layer || !map || !mapInited) return;
     const render = () => {
       layer.clearLayers();
       waterMarkersRef.current.clear();
@@ -163,18 +195,31 @@ export default function RealGisMap() {
         waterMarkersRef.current.set(w.id, m);
       }
     };
-
     render();
     const onZoom = () => render();
     map.on('zoomend', onZoom);
-
     return () => {
       map.off('zoomend', onZoom);
-      layer.remove();
-      waterLayerRef.current = null;
-      waterMarkersRef.current.clear();
     };
-  }, [water]);
+  }, [water, mapInited]);
+
+  // 消防站显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = stationsLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showStations) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showStations, mapInited]);
+
+  // 水源显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = waterLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showWater) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showWater, mapInited]);
 
   // sceneLog 联动:flyTo/addMarker → 地图定位(先查站,miss 再查水源;坐标 WGS84→GCJ02);resetView → 复位视角
   useEffect(() => {
@@ -186,8 +231,7 @@ export default function RealGisMap() {
         if (hit) {
           const g = wgs84ToGcj02(hit.lng, hit.lat);
           map.flyTo([g.lat, g.lng], Math.max(map.getZoom(), 14));
-          const m = markersRef.current.get(hit.id);
-          if (m) m.openPopup();
+          markersRef.current.get(hit.id)?.openPopup();
         } else {
           const w = waterRef.current.find((x) => latest.target?.includes(x.name));
           if (w) {
@@ -210,13 +254,21 @@ export default function RealGisMap() {
 
   return (
     <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
+      <MapLayerControl
+        baseMap={baseMap}
+        onBaseMapChange={setBaseMap}
+        showStations={showStations}
+        onToggleStations={() => setShowStations((v) => !v)}
+        showWater={showWater}
+        onToggleWater={() => setShowWater((v) => !v)}
+      />
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
           底图瓦片加载失败(高德不可达)——显示占位底图
         </div>
       )}
       {loadState === 'error' && (
-        <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-red-300">
+        <div className="absolute left-1/2 top-14 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-red-300">
           消防站点位加载失败
         </div>
       )}
