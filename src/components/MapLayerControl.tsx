@@ -1,5 +1,5 @@
 'use client';
-// 地图图层控制条:底图(矢量/卫星)切换 + 消防站/水源/边界/重点单位显隐开关。右上角深色常显。
+// 地图图层控制条:底图(矢量/卫星)切换 + 消防站/水源/边界/重点单位/重点建筑显隐开关。右上角深色常显。
 interface Props {
   baseMap: 'vector' | 'satellite';
   onBaseMapChange: (b: 'vector' | 'satellite') => void;
@@ -11,6 +11,8 @@ interface Props {
   onToggleBoundary: () => void;
   showKeyUnits: boolean;
   onToggleKeyUnits: () => void;
+  showBuildings: boolean;
+  onToggleBuildings: () => void;
 }
 
 export default function MapLayerControl({
@@ -24,6 +26,8 @@ export default function MapLayerControl({
   onToggleBoundary,
   showKeyUnits,
   onToggleKeyUnits,
+  showBuildings,
+  onToggleBuildings,
 }: Props) {
   return (
     <div className="absolute right-3 top-3 z-[500] flex flex-col gap-1.5 rounded border border-line bg-bg-panel/90 p-2 text-[12px] backdrop-blur">
@@ -76,6 +80,14 @@ export default function MapLayerControl({
           }`}
         >
           重点单位
+        </button>
+        <button
+          onClick={onToggleBuildings}
+          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
+            showBuildings ? 'text-amber-300' : 'text-text-3 line-through'
+          }`}
+        >
+          重点建筑
         </button>
       </div>
     </div>

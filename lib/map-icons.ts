@@ -53,3 +53,12 @@ export function keyUnitIconSvg(unitType: string, status: string): string {
   <text x="12" y="16" font-size="11" text-anchor="middle" fill="#0b1220" font-weight="700" font-family="sans-serif">重</text>
 </svg>`;
 }
+
+/** 重点建筑图标:圆角方块 + "建"字,22px;completed(已 3D 建模)金色。 */
+export function keyBuildingIconSvg(status: string): string {
+  const color = status === 'completed' ? '#fbbf24' : '#60a5fa';
+  return `<svg width="22" height="22" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="20" height="20" rx="3" fill="${color}" stroke="#0b1220" stroke-width="1.5"/>
+  <text x="12" y="16" font-size="11" text-anchor="middle" fill="#0b1220" font-weight="700" font-family="sans-serif">建</text>
+</svg>`;
+}

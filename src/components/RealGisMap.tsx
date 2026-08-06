@@ -1,8 +1,8 @@
 'use client';
-// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站 + 水源(zoom>=13)+ 市/区县边界 + 重点单位 + sceneLog 联动。
-// 坐标策略:站/水入库为 WGS84,显示层 wgs84ToGcj02 转 GCJ02;边界 GeoJSON 与重点单位坐标均为 GCJ02,直接使用。
-// 图层控制:底图切换 + 消防站/水源/边界/重点单位显隐(MapLayerControl);tileerror 连续失败降级。
-// 边界交互:低缩放区县 hover 高亮 + 点击适窗;重点单位 completed(已 3D 建模)金色标记。
+// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站 + 水源(zoom>=13)+ 市/区县边界 + 重点单位/建筑 + sceneLog 联动。
+// 坐标策略:站/水入库为 WGS84,显示层 wgs84ToGcj02 转 GCJ02;边界 GeoJSON / 重点单位 / 重点建筑坐标均为 GCJ02,直接使用。
+// 图层控制:底图切换 + 消防站/水源/边界/重点单位/重点建筑显隐(MapLayerControl);tileerror 连续失败降级。
+// 边界交互:低缩放区县 hover 高亮 + 点击适窗;重点单位 completed(已 3D 建模)金色。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -12,9 +12,11 @@ import type { Station, WaterSource } from '@/mock/types';
 import { fetchStations } from '@/api/force';
 import { fetchWaterSources } from '@/api/water';
 import { fetchKeyUnits } from '@/api/key-units';
-import { stationIconSvg, waterIconSvg, keyUnitIconSvg, shouldShowWater } from '@/lib/map-icons';
+import { fetchKeyBuildings } from '@/api/key-buildings';
+import { stationIconSvg, waterIconSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater } from '@/lib/map-icons';
 import { wgs84ToGcj02 } from '@/lib/geo-convert';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
+import type { KeyBuilding } from '@/lib/key-building-mapper';
 import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
 
@@ -53,6 +55,17 @@ function popupForKeyUnit(u: KeyUnit): string {
   );
 }
 
+/** 重点建筑 popup:类型/用途 + 所属单位 + 已建模标记。 */
+function popupForKeyBuilding(b: KeyBuilding, unitName?: string): string {
+  const built = b.status === 'completed' ? '<br/><span style="color:#fbbf24">★ 已 3D 建模</span>' : '';
+  return (
+    `<b>${b.name}</b><br/>重点建筑${b.buildingType ? ` · ${b.buildingType}` : ''}` +
+    `${b.buildingUsage ? `<br/>${b.buildingUsage}` : ''}` +
+    `${unitName ? `<br/>所属单位: ${unitName}` : ''}` +
+    `${built}<br/>${b.lng.toFixed(5)}, ${b.lat.toFixed(5)}`
+  );
+}
+
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -65,6 +78,7 @@ export default function RealGisMap() {
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
+  const buildingsLayerRef = useRef<L.LayerGroup | null>(null);
   const stationsRef = useRef<Station[]>([]);
   const waterRef = useRef<WaterSource[]>([]);
   const tileErrRef = useRef(0);
@@ -72,6 +86,7 @@ export default function RealGisMap() {
   const [stations, setStations] = useState<Station[]>([]);
   const [water, setWater] = useState<WaterSource[]>([]);
   const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
+  const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [mapInited, setMapInited] = useState(false);
   const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
@@ -79,6 +94,7 @@ export default function RealGisMap() {
   const [showWater, setShowWater] = useState(true);
   const [showBoundary, setShowBoundary] = useState(true);
   const [showKeyUnits, setShowKeyUnits] = useState(true);
+  const [showBuildings, setShowBuildings] = useState(true);
   const [tilesFailed, setTilesFailed] = useState(false);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
@@ -92,11 +108,12 @@ export default function RealGisMap() {
     });
     mapRef.current = map;
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    // 层序:边界 → 消防站/水源/重点单位(区县名 tooltip 在独立 pane 始终最上)
+    // 层序:边界 → 消防站/水源/重点单位/重点建筑(区县名 tooltip 在独立 pane 始终最上)
     boundaryLayerRef.current = L.layerGroup().addTo(map);
     stationsLayerRef.current = L.layerGroup().addTo(map);
     waterLayerRef.current = L.layerGroup().addTo(map);
     keyUnitsLayerRef.current = L.layerGroup().addTo(map);
+    buildingsLayerRef.current = L.layerGroup().addTo(map);
     setMapInited(true);
     return () => {
       map.remove();
@@ -179,6 +196,21 @@ export default function RealGisMap() {
       })
       .catch(() => {
         /* 重点单位加载失败仅静默 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 加载重点建筑(有坐标的;失败静默)
+  useEffect(() => {
+    let alive = true;
+    fetchKeyBuildings()
+      .then((bs) => {
+        if (alive) setBuildings(bs);
+      })
+      .catch(() => {
+        /* 重点建筑加载失败仅静默 */
       });
     return () => {
       alive = false;
@@ -357,6 +389,32 @@ export default function RealGisMap() {
     }
   }, [keyUnits, mapInited]);
 
+  // 重点建筑图层:key_buildings(有坐标,GCJ02);popup 显示所属单位(从 keyUnits 查 key_unit_id)
+  useEffect(() => {
+    const layer = buildingsLayerRef.current;
+    if (!layer || !mapInited) return;
+    layer.clearLayers();
+    for (const b of buildings) {
+      const unitName = b.keyUnitId ? keyUnits.find((u) => u.id === b.keyUnitId)?.name : undefined;
+      const marker = L.marker([b.lat, b.lng], {
+        icon: L.divIcon({
+          html: keyBuildingIconSvg(b.status),
+          className: 'map-icon-key-building',
+          iconSize: [22, 22],
+          iconAnchor: [11, 22],
+          popupAnchor: [0, -22],
+        }),
+      })
+        .bindPopup(popupForKeyBuilding(b, unitName))
+        .on('click', () => {
+          const map = mapRef.current;
+          if (map) map.flyTo([b.lat, b.lng], Math.max(map.getZoom(), 15));
+          addSceneAction({ action: 'flyTo', target: b.name, params: { lng: b.lng, lat: b.lat }, source: '面板' });
+        });
+      layer.addLayer(marker);
+    }
+  }, [buildings, keyUnits, mapInited]);
+
   // 边界显隐
   useEffect(() => {
     const map = mapRef.current;
@@ -392,6 +450,15 @@ export default function RealGisMap() {
     if (showKeyUnits) layer.addTo(map);
     else map.removeLayer(layer);
   }, [showKeyUnits, mapInited]);
+
+  // 重点建筑显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = buildingsLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showBuildings) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showBuildings, mapInited]);
 
   // sceneLog 联动:flyTo/addMarker → 地图定位(先查站,miss 再查水源;坐标 WGS84→GCJ02);resetView → 复位视角
   useEffect(() => {
@@ -437,6 +504,8 @@ export default function RealGisMap() {
         onToggleBoundary={() => setShowBoundary((v) => !v)}
         showKeyUnits={showKeyUnits}
         onToggleKeyUnits={() => setShowKeyUnits((v) => !v)}
+        showBuildings={showBuildings}
+        onToggleBuildings={() => setShowBuildings((v) => !v)}
       />
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
