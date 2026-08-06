@@ -468,7 +468,10 @@ export default function RealGisMap() {
         )
         .on('click', () => {
           const map = mapRef.current;
-          if (map) map.flyToBounds(poly.getBounds(), { padding: [24, 24], maxZoom: 14 });
+          if (!map) return;
+          // 手动区域:点击放大到区域中心(而非 flyToBounds 适窗整个区域——大区域会缩到区县级)
+          const center = poly.getBounds().getCenter();
+          map.flyTo(center, Math.max(map.getZoom() + 2, 15));
         });
       layer.addLayer(poly);
     }
