@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Archive, Database, Building2, Crosshair, FileText } from 'lucide-react';
+import { Archive, Database, Building2, Crosshair, Droplet, FileText } from 'lucide-react';
 import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
 import type { ModuleKey } from '@/components/SideNav';
@@ -15,6 +15,7 @@ const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
 import DraggablePanel from '@/components/DraggablePanel';
 import ToastHost from '@/components/Toast';
 import ForceResourcePanel from '@/components/panels/ForceResourcePanel';
+import WaterSourcePanel from '@/components/panels/WaterSourcePanel';
 import BuildingProfilePanel from '@/components/panels/BuildingProfilePanel';
 import ScenarioPanel from '@/components/panels/ScenarioPanel';
 import PlanOutputPanel from '@/components/panels/PlanOutputPanel';
@@ -31,6 +32,7 @@ export default function App() {
   const [module, setModule] = useState<ModuleKey>('overview');
   const [navCollapsed, setNavCollapsed] = useState(true);
   const [forcePanelOpen, setForcePanelOpen] = useState(true);
+  const [waterPanelOpen, setWaterPanelOpen] = useState(true);
   const [buildingPanelOpen, setBuildingPanelOpen] = useState(true);
   const [scenarioPanelOpen, setScenarioPanelOpen] = useState(true);
   const [planPanelOpen, setPlanPanelOpen] = useState(true);
@@ -68,7 +70,7 @@ export default function App() {
 
   const handleSelect = (k: ModuleKey) => {
     setModule(k);
-    if (k === 'overview') setForcePanelOpen(true);
+    if (k === 'overview') { setForcePanelOpen(true); setWaterPanelOpen(true); }
     if (k === 'objects') setBuildingPanelOpen(true);
     if (k === 'drill') {
       setScenarioPanelOpen(true);
@@ -195,6 +197,7 @@ export default function App() {
           </AnimatePresence>
 
           {module === 'overview' && (
+            <>
             <DraggablePanel
               panelId="force-resource"
               title="执勤力量资源库"
@@ -207,6 +210,19 @@ export default function App() {
             >
               <ForceResourcePanel />
             </DraggablePanel>
+            <DraggablePanel
+              panelId="water-source"
+              title="消防水源"
+              icon={Droplet}
+              width={380}
+              dock="left"
+              defaultPos={{ x: 16, y: 460 }}
+              open={waterPanelOpen}
+              onOpenChange={setWaterPanelOpen}
+            >
+              <WaterSourcePanel />
+            </DraggablePanel>
+            </>
           )}
           {module === 'objects' && (
             <DraggablePanel
