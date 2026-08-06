@@ -469,9 +469,9 @@ export default function RealGisMap() {
         .on('click', () => {
           const map = mapRef.current;
           if (!map) return;
-          // 手动区域:点击放大到区域中心(而非 flyToBounds 适窗整个区域——大区域会缩到区县级)
+          // 手动区域:点击放大到区域中心,固定 zoom 级别(每次一致,不随点击叠加无限放大)
           const center = poly.getBounds().getCenter();
-          map.flyTo(center, Math.max(map.getZoom() + 2, 15));
+          map.flyTo(center, 16);
         });
       layer.addLayer(poly);
     }
