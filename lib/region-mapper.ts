@@ -26,6 +26,6 @@ export function mapRegion(z: ZnyaRegion): Region {
     description: z.description ?? undefined,
     color: z.color,
     regionType: z.region_type ?? undefined,
-    polygon: z.polygon.map((p) => [p[0], p[1]] as [number, number]),
+    polygon: z.polygon.map((p) => [p[1], p[0]] as [number, number]), // [lng,lat](存储)→ [lat,lng](Leaflet 渲染顺序)
   };
 }

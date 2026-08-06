@@ -460,6 +460,12 @@ export default function RealGisMap() {
           sticky: true,
           className: 'boundary-label-tip',
         })
+        .on('mouseover', () =>
+          poly.setStyle({ color: r.color, weight: 3, fillColor: r.color, fillOpacity: 0.35 }),
+        )
+        .on('mouseout', () =>
+          poly.setStyle({ color: r.color, weight: 2, fillColor: r.color, fillOpacity: 0.15 }),
+        )
         .on('click', () => {
           const map = mapRef.current;
           if (map) map.flyToBounds(poly.getBounds(), { padding: [24, 24], maxZoom: 14 });
