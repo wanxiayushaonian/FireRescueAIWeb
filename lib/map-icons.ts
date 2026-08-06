@@ -40,3 +40,16 @@ export function waterIconSvg(waterType: string): string {
   <path d="M12 2 C12 2 4 12 4 16 a8 8 0 0 0 16 0 C20 12 12 2 12 2 Z" fill="${color}" stroke="#0b1220" stroke-width="1.2"/>
 </svg>`;
 }
+
+/** 重点单位图标:圆角方块徽标 + "重"字,24px;completed(已 3D 建模)金色,联动单位紫色。 */
+const KEY_UNIT_COLORS: Record<string, string> = {
+  重点单位: '#fb7185',
+  联动单位: '#a78bfa',
+};
+export function keyUnitIconSvg(unitType: string, status: string): string {
+  const color = status === 'completed' ? '#fbbf24' : KEY_UNIT_COLORS[unitType] ?? '#fb7185';
+  return `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="20" height="20" rx="4" fill="${color}" stroke="#0b1220" stroke-width="1.5"/>
+  <text x="12" y="16" font-size="11" text-anchor="middle" fill="#0b1220" font-weight="700" font-family="sans-serif">重</text>
+</svg>`;
+}

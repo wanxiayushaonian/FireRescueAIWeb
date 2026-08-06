@@ -1,8 +1,8 @@
 'use client';
-// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站图标 + 水源点(zoom>=13)+ 市/区县边界 + sceneLog 联动。
-// 坐标策略:站/水入库为 WGS84,显示层用 wgs84ToGcj02 转 GCJ02(数据层不动);边界 GeoJSON 为 DataV(GCJ02,天然对齐)。
-// 图层控制:底图切换(矢量/卫星)+ 消防站/水源/边界显隐(MapLayerControl);tileerror 连续失败降级。
-// 边界交互:低缩放(能俯瞰九江全境)区县 hover 高亮 + 点击 flyToBounds 适窗、市界点击复位;放大到区县级(zoom>BOUNDARY_INTERACT_MAX_ZOOM)自动关闭交互。
+// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站 + 水源(zoom>=13)+ 市/区县边界 + 重点单位 + sceneLog 联动。
+// 坐标策略:站/水入库为 WGS84,显示层 wgs84ToGcj02 转 GCJ02;边界 GeoJSON 与重点单位坐标均为 GCJ02,直接使用。
+// 图层控制:底图切换 + 消防站/水源/边界/重点单位显隐(MapLayerControl);tileerror 连续失败降级。
+// 边界交互:低缩放区县 hover 高亮 + 点击适窗;重点单位 completed(已 3D 建模)金色标记。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -11,8 +11,10 @@ import 'leaflet/dist/leaflet.css';
 import type { Station, WaterSource } from '@/mock/types';
 import { fetchStations } from '@/api/force';
 import { fetchWaterSources } from '@/api/water';
-import { stationIconSvg, waterIconSvg, shouldShowWater } from '@/lib/map-icons';
+import { fetchKeyUnits } from '@/api/key-units';
+import { stationIconSvg, waterIconSvg, keyUnitIconSvg, shouldShowWater } from '@/lib/map-icons';
 import { wgs84ToGcj02 } from '@/lib/geo-convert';
+import type { KeyUnit } from '@/lib/key-unit-mapper';
 import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
 
@@ -32,6 +34,25 @@ const TILE_ERR_THRESHOLD = 5;
 // 放大到区县级(zoom > 此值)后关闭交互,避免遮挡干扰。可调。
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
+/** 重点单位 popup:基础信息 + 微型站统计 + 已建模标记。 */
+function popupForKeyUnit(u: KeyUnit): string {
+  const micro = u.extra;
+  const microLines = [
+    micro.has_micro_station ? `微型站 ${micro.has_micro_station}` : '',
+    micro.duty_24h ? `24h执勤 ${micro.duty_24h}` : '',
+    micro.total_people ? `总人数 ${micro.total_people}` : '',
+    micro.has_equipment ? `器材 ${micro.has_equipment}` : '',
+    micro.has_control_room ? `控制室 ${micro.has_control_room}` : '',
+  ].filter(Boolean);
+  const built = u.status === 'completed' ? '<br/><span style="color:#fbbf24">★ 已 3D 建模</span>' : '';
+  return (
+    `<b>${u.name}</b><br/>${u.unitType} · ${u.district ?? ''}` +
+    `<br/>负责人 ${u.contactName ?? '-'}${u.contactPhone ? ` · ${u.contactPhone}` : ''}` +
+    (microLines.length ? `<br/>${microLines.join(' · ')}` : '') +
+    `${built}<br/>${u.lng.toFixed(5)}, ${u.lat.toFixed(5)}(GCJ02)`
+  );
+}
+
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -43,18 +64,21 @@ export default function RealGisMap() {
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
   const stationsRef = useRef<Station[]>([]);
   const waterRef = useRef<WaterSource[]>([]);
   const tileErrRef = useRef(0);
 
   const [stations, setStations] = useState<Station[]>([]);
   const [water, setWater] = useState<WaterSource[]>([]);
+  const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [mapInited, setMapInited] = useState(false);
   const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
   const [showStations, setShowStations] = useState(true);
   const [showWater, setShowWater] = useState(true);
   const [showBoundary, setShowBoundary] = useState(true);
+  const [showKeyUnits, setShowKeyUnits] = useState(true);
   const [tilesFailed, setTilesFailed] = useState(false);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
@@ -68,10 +92,11 @@ export default function RealGisMap() {
     });
     mapRef.current = map;
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    // 层序:边界在下 → 消防站/水源在上(区县名 tooltip 在独立 pane 始终最上)
+    // 层序:边界 → 消防站/水源/重点单位(区县名 tooltip 在独立 pane 始终最上)
     boundaryLayerRef.current = L.layerGroup().addTo(map);
     stationsLayerRef.current = L.layerGroup().addTo(map);
     waterLayerRef.current = L.layerGroup().addTo(map);
+    keyUnitsLayerRef.current = L.layerGroup().addTo(map);
     setMapInited(true);
     return () => {
       map.remove();
@@ -145,6 +170,21 @@ export default function RealGisMap() {
     };
   }, []);
 
+  // 加载重点单位(有坐标的;失败静默)
+  useEffect(() => {
+    let alive = true;
+    fetchKeyUnits()
+      .then((ks) => {
+        if (alive) setKeyUnits(ks);
+      })
+      .catch(() => {
+        /* 重点单位加载失败仅静默 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   // 市/区县行政边界:fetch 本地 GeoJSON → geoJSON 渲染;
   // 低缩放(能俯瞰九江全境)交互:区县 hover 高亮 + 点击 flyToBounds 适窗、市界点击复位全市;高缩放(区县级)关闭交互
   useEffect(() => {
@@ -153,7 +193,6 @@ export default function RealGisMap() {
     if (!layer || !map || !mapInited) return;
     let alive = true;
 
-    // 基础样式(按级别);mouseout 还原用
     const styleFor = (f: any) => {
       const isCity = f?.properties?.level === 'city';
       return {
@@ -165,7 +204,6 @@ export default function RealGisMap() {
       };
     };
 
-    // 按缩放级更新指针:低缩放可点(pointer) / 高缩放不可点(default)
     const onZoom = () => {
       const geo = boundaryGeoRef.current;
       if (!geo) return;
@@ -189,7 +227,6 @@ export default function RealGisMap() {
             }
             const path = l as L.Polygon;
             if (level === 'district') {
-              // 低缩放:区县 hover 高亮 + 点击 flyToBounds 适窗
               path.on('mouseover', () => {
                 if (map.getZoom() > BOUNDARY_INTERACT_MAX_ZOOM) return;
                 path.setStyle({
@@ -205,7 +242,6 @@ export default function RealGisMap() {
                 map.flyToBounds(path.getBounds(), { padding: [24, 24], maxZoom: 13 });
               });
             } else if (level === 'city') {
-              // 市界点击:复位到全市适窗
               path.on('click', () => {
                 map.flyToBounds(path.getBounds(), { padding: [24, 24] });
               });
@@ -213,7 +249,7 @@ export default function RealGisMap() {
           },
         }).addTo(layer);
         boundaryGeoRef.current = geo;
-        onZoom(); // 初始指针
+        onZoom();
       })
       .catch(() => {
         /* 边界加载失败仅静默 */
@@ -296,6 +332,31 @@ export default function RealGisMap() {
     };
   }, [water, mapInited]);
 
+  // 重点单位图层:key_units 坐标 GCJ02 直接使用;入 keyUnitsLayer(显隐受 showKeyUnits)
+  useEffect(() => {
+    const layer = keyUnitsLayerRef.current;
+    if (!layer || !mapInited) return;
+    layer.clearLayers();
+    for (const u of keyUnits) {
+      const marker = L.marker([u.lat, u.lng], {
+        icon: L.divIcon({
+          html: keyUnitIconSvg(u.unitType, u.status),
+          className: 'map-icon-key-unit',
+          iconSize: [24, 24],
+          iconAnchor: [12, 24],
+          popupAnchor: [0, -24],
+        }),
+      })
+        .bindPopup(popupForKeyUnit(u))
+        .on('click', () => {
+          const map = mapRef.current;
+          if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 15));
+          addSceneAction({ action: 'flyTo', target: u.name, params: { lng: u.lng, lat: u.lat }, source: '面板' });
+        });
+      layer.addLayer(marker);
+    }
+  }, [keyUnits, mapInited]);
+
   // 边界显隐
   useEffect(() => {
     const map = mapRef.current;
@@ -322,6 +383,15 @@ export default function RealGisMap() {
     if (showWater) layer.addTo(map);
     else map.removeLayer(layer);
   }, [showWater, mapInited]);
+
+  // 重点单位显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = keyUnitsLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showKeyUnits) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showKeyUnits, mapInited]);
 
   // sceneLog 联动:flyTo/addMarker → 地图定位(先查站,miss 再查水源;坐标 WGS84→GCJ02);resetView → 复位视角
   useEffect(() => {
@@ -365,6 +435,8 @@ export default function RealGisMap() {
         onToggleWater={() => setShowWater((v) => !v)}
         showBoundary={showBoundary}
         onToggleBoundary={() => setShowBoundary((v) => !v)}
+        showKeyUnits={showKeyUnits}
+        onToggleKeyUnits={() => setShowKeyUnits((v) => !v)}
       />
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
