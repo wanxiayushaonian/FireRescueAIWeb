@@ -1,5 +1,5 @@
 'use client';
-// 地图图层控制条:底图(矢量/卫星)切换 + 消防站/水源显隐开关。右上角深色常显。
+// 地图图层控制条:底图(矢量/卫星)切换 + 消防站/水源/边界显隐开关。右上角深色常显。
 interface Props {
   baseMap: 'vector' | 'satellite';
   onBaseMapChange: (b: 'vector' | 'satellite') => void;
@@ -7,6 +7,8 @@ interface Props {
   onToggleStations: () => void;
   showWater: boolean;
   onToggleWater: () => void;
+  showBoundary: boolean;
+  onToggleBoundary: () => void;
 }
 
 export default function MapLayerControl({
@@ -16,6 +18,8 @@ export default function MapLayerControl({
   onToggleStations,
   showWater,
   onToggleWater,
+  showBoundary,
+  onToggleBoundary,
 }: Props) {
   return (
     <div className="absolute right-3 top-3 z-[500] flex flex-col gap-1.5 rounded border border-line bg-bg-panel/90 p-2 text-[12px] backdrop-blur">
@@ -52,6 +56,14 @@ export default function MapLayerControl({
           }`}
         >
           水源
+        </button>
+        <button
+          onClick={onToggleBoundary}
+          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
+            showBoundary ? 'text-amber-300' : 'text-text-3 line-through'
+          }`}
+        >
+          边界
         </button>
       </div>
     </div>

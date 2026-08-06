@@ -1,7 +1,7 @@
 'use client';
-// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站图标 + 水源点(zoom>=13)+ sceneLog 联动。
-// 坐标策略:站/水入库为 WGS84,显示层用 wgs84ToGcj02 转 GCJ02(数据层不动)。
-// 图层控制:底图切换(矢量/卫星)+ 消防站/水源显隐(MapLayerControl);tileerror 连续失败降级。
+// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站图标 + 水源点(zoom>=13)+ 市/区县边界 + sceneLog 联动。
+// 坐标策略:站/水入库为 WGS84,显示层用 wgs84ToGcj02 转 GCJ02(数据层不动);边界 GeoJSON 为 DataV(GCJ02,天然对齐)。
+// 图层控制:底图切换(矢量/卫星)+ 消防站/水源/边界显隐(MapLayerControl);tileerror 连续失败降级。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -19,6 +19,8 @@ import MapLayerControl from './MapLayerControl';
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
 // 高德卫星影像(GCJ02;免 key)
 const SAT_URL = 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}';
+// 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
+const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 
 // 九江市中心(九江市消防救援支队 ~115.96, 29.67;WGS84,初始化时转 GCJ02)
 const DEFAULT_CENTER_WGS84: [number, number] = [29.67, 115.96];
@@ -31,6 +33,7 @@ export default function RealGisMap() {
   const mapRef = useRef<L.Map | null>(null);
   const vectorLayerRef = useRef<L.TileLayer | null>(null);
   const satLayerRef = useRef<L.TileLayer | null>(null);
+  const boundaryLayerRef = useRef<L.LayerGroup | null>(null);
   const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
@@ -46,6 +49,7 @@ export default function RealGisMap() {
   const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
   const [showStations, setShowStations] = useState(true);
   const [showWater, setShowWater] = useState(true);
+  const [showBoundary, setShowBoundary] = useState(true);
   const [tilesFailed, setTilesFailed] = useState(false);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
@@ -59,6 +63,8 @@ export default function RealGisMap() {
     });
     mapRef.current = map;
     L.control.zoom({ position: 'bottomright' }).addTo(map);
+    // 层序:边界在下 → 消防站/水源在上(区县名 tooltip 在独立 pane 始终最上)
+    boundaryLayerRef.current = L.layerGroup().addTo(map);
     stationsLayerRef.current = L.layerGroup().addTo(map);
     waterLayerRef.current = L.layerGroup().addTo(map);
     setMapInited(true);
@@ -134,6 +140,42 @@ export default function RealGisMap() {
     };
   }, []);
 
+  // 市/区县行政边界:fetch 本地 GeoJSON → geoJSON 渲染;显隐受 showBoundary
+  useEffect(() => {
+    const layer = boundaryLayerRef.current;
+    if (!layer || !mapInited) return;
+    let alive = true;
+    fetch(BOUNDARY_URL)
+      .then((r) => r.json())
+      .then((data: any) => {
+        if (!alive) return;
+        L.geoJSON(data, {
+          style: (f: any) => {
+            const isCity = f?.properties?.level === 'city';
+            return {
+              color: isCity ? 'rgba(34, 211, 238, 0.9)' : 'rgba(34, 211, 238, 0.45)',
+              weight: isCity ? 2.5 : 1,
+              fillColor: 'rgba(34, 211, 238, 0.05)',
+              fillOpacity: 0.04,
+              interactive: false,
+            };
+          },
+          onEachFeature: (f: any, l: L.Layer) => {
+            const name = f?.properties?.name;
+            if (name) {
+              l.bindTooltip(String(name), { permanent: true, direction: 'center', className: 'boundary-label-tip' });
+            }
+          },
+        }).addTo(layer);
+      })
+      .catch(() => {
+        /* 边界加载失败仅静默 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mapInited]);
+
   const handleStationClick = useCallback((s: Station) => {
     addSceneAction({
       action: 'flyTo',
@@ -203,6 +245,15 @@ export default function RealGisMap() {
     };
   }, [water, mapInited]);
 
+  // 边界显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = boundaryLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showBoundary) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showBoundary, mapInited]);
+
   // 消防站显隐
   useEffect(() => {
     const map = mapRef.current;
@@ -261,6 +312,8 @@ export default function RealGisMap() {
         onToggleStations={() => setShowStations((v) => !v)}
         showWater={showWater}
         onToggleWater={() => setShowWater((v) => !v)}
+        showBoundary={showBoundary}
+        onToggleBoundary={() => setShowBoundary((v) => !v)}
       />
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">

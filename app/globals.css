@@ -276,4 +276,19 @@
   .gis-dark-filter {
     filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9);
   }
+  /* 行政区划边界标注(市/区县名,permanent tooltip)覆盖 Leaflet 默认样式 */
+  .boundary-label-tip {
+    background: rgba(10, 20, 32, 0.55) !important;
+    border: none !important;
+    box-shadow: none !important;
+    color: rgba(157, 180, 200, 0.9) !important;
+    font-size: 11px !important;
+    font-weight: 500;
+    line-height: 1;
+    padding: 1px 4px;
+    pointer-events: none;
+  }
+  .boundary-label-tip::before {
+    display: none;
+  }
 }
