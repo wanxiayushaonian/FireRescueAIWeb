@@ -2,6 +2,7 @@
 // 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站图标 + 水源点(zoom>=13)+ 市/区县边界 + sceneLog 联动。
 // 坐标策略:站/水入库为 WGS84,显示层用 wgs84ToGcj02 转 GCJ02(数据层不动);边界 GeoJSON 为 DataV(GCJ02,天然对齐)。
 // 图层控制:底图切换(矢量/卫星)+ 消防站/水源/边界显隐(MapLayerControl);tileerror 连续失败降级。
+// 边界交互:低缩放(能俯瞰九江全境)区县 hover 高亮 + 点击 flyToBounds 适窗、市界点击复位;放大到区县级(zoom>BOUNDARY_INTERACT_MAX_ZOOM)自动关闭交互。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -27,6 +28,9 @@ const DEFAULT_CENTER_WGS84: [number, number] = [29.67, 115.96];
 const DEFAULT_ZOOM = 11;
 // tileerror 连续失败阈值 → 触发占位降级
 const TILE_ERR_THRESHOLD = 5;
+// 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效;
+// 放大到区县级(zoom > 此值)后关闭交互,避免遮挡干扰。可调。
+const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -34,6 +38,7 @@ export default function RealGisMap() {
   const vectorLayerRef = useRef<L.TileLayer | null>(null);
   const satLayerRef = useRef<L.TileLayer | null>(null);
   const boundaryLayerRef = useRef<L.LayerGroup | null>(null);
+  const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
@@ -140,39 +145,85 @@ export default function RealGisMap() {
     };
   }, []);
 
-  // 市/区县行政边界:fetch 本地 GeoJSON → geoJSON 渲染;显隐受 showBoundary
+  // 市/区县行政边界:fetch 本地 GeoJSON → geoJSON 渲染;
+  // 低缩放(能俯瞰九江全境)交互:区县 hover 高亮 + 点击 flyToBounds 适窗、市界点击复位全市;高缩放(区县级)关闭交互
   useEffect(() => {
     const layer = boundaryLayerRef.current;
-    if (!layer || !mapInited) return;
+    const map = mapRef.current;
+    if (!layer || !map || !mapInited) return;
     let alive = true;
+
+    // 基础样式(按级别);mouseout 还原用
+    const styleFor = (f: any) => {
+      const isCity = f?.properties?.level === 'city';
+      return {
+        color: isCity ? 'rgba(34, 211, 238, 0.9)' : 'rgba(34, 211, 238, 0.45)',
+        weight: isCity ? 2.5 : 1,
+        fillColor: 'rgba(34, 211, 238, 0.05)',
+        fillOpacity: 0.04,
+        cursor: '',
+      };
+    };
+
+    // 按缩放级更新指针:低缩放可点(pointer) / 高缩放不可点(default)
+    const onZoom = () => {
+      const geo = boundaryGeoRef.current;
+      if (!geo) return;
+      const active = map.getZoom() <= BOUNDARY_INTERACT_MAX_ZOOM;
+      geo.eachLayer((l: any) => {
+        if (l.setStyle) l.setStyle({ cursor: active ? 'pointer' : 'default' });
+      });
+    };
+
     fetch(BOUNDARY_URL)
       .then((r) => r.json())
       .then((data: any) => {
         if (!alive) return;
-        L.geoJSON(data, {
-          style: (f: any) => {
-            const isCity = f?.properties?.level === 'city';
-            return {
-              color: isCity ? 'rgba(34, 211, 238, 0.9)' : 'rgba(34, 211, 238, 0.45)',
-              weight: isCity ? 2.5 : 1,
-              fillColor: 'rgba(34, 211, 238, 0.05)',
-              fillOpacity: 0.04,
-              interactive: false,
-            };
-          },
+        const geo = L.geoJSON(data, {
+          style: styleFor,
+          interactive: true,
           onEachFeature: (f: any, l: L.Layer) => {
-            const name = f?.properties?.name;
+            const { name, level } = f?.properties ?? {};
             if (name) {
               l.bindTooltip(String(name), { permanent: true, direction: 'center', className: 'boundary-label-tip' });
             }
+            const path = l as L.Polygon;
+            if (level === 'district') {
+              // 低缩放:区县 hover 高亮 + 点击 flyToBounds 适窗
+              path.on('mouseover', () => {
+                if (map.getZoom() > BOUNDARY_INTERACT_MAX_ZOOM) return;
+                path.setStyle({
+                  color: 'rgba(34, 211, 238, 1)',
+                  weight: 3,
+                  fillColor: 'rgba(34, 211, 238, 0.18)',
+                  fillOpacity: 0.18,
+                });
+              });
+              path.on('mouseout', () => path.setStyle(styleFor(f)));
+              path.on('click', () => {
+                if (map.getZoom() > BOUNDARY_INTERACT_MAX_ZOOM) return;
+                map.flyToBounds(path.getBounds(), { padding: [24, 24], maxZoom: 13 });
+              });
+            } else if (level === 'city') {
+              // 市界点击:复位到全市适窗
+              path.on('click', () => {
+                map.flyToBounds(path.getBounds(), { padding: [24, 24] });
+              });
+            }
           },
         }).addTo(layer);
+        boundaryGeoRef.current = geo;
+        onZoom(); // 初始指针
       })
       .catch(() => {
         /* 边界加载失败仅静默 */
       });
+
+    map.on('zoomend', onZoom);
     return () => {
       alive = false;
+      map.off('zoomend', onZoom);
+      boundaryGeoRef.current = null;
     };
   }, [mapInited]);
 
