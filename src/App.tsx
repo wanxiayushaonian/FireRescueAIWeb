@@ -215,8 +215,8 @@ export default function App() {
               title="消防水源"
               icon={Droplet}
               width={380}
-              dock="left"
-              defaultPos={{ x: 16, y: 460 }}
+              dock="right"
+              defaultPos={{ x: 16, y: 16 }}
               open={waterPanelOpen}
               onOpenChange={setWaterPanelOpen}
             >
