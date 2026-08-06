@@ -1,22 +1,26 @@
 'use client';
-// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站 + 水源(zoom>=13)+ 市/区县边界 + 重点单位/建筑 + sceneLog 联动。
-// 坐标策略:站/水入库为 WGS84,显示层 wgs84ToGcj02 转 GCJ02;边界 GeoJSON / 重点单位 / 重点建筑坐标均为 GCJ02,直接使用。
-// 图层控制:底图切换 + 消防站/水源/边界/重点单位/重点建筑显隐(MapLayerControl);tileerror 连续失败降级。
-// 边界交互:低缩放区县 hover 高亮 + 点击适窗;重点单位 completed(已 3D 建模)金色。
+// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站 + 水源(zoom>=13)+ 市/区县边界 + 重点单位/建筑 + 重点区域 + sceneLog 联动。
+// 坐标策略:站/水入库为 WGS84,显示层 wgs84ToGcj02 转 GCJ02;边界 GeoJSON / 重点单位 / 重点建筑 / 重点区域坐标均为 GCJ02,直接使用。
+// 图层控制:底图切换 + 各图层显隐 + 划定区域(MapLayerControl);tileerror 连续失败降级。
+// 区域标注:leaflet-draw 画多边形 → createRegion 存 znya → 重新加载 L.polygon 高亮。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
 import { useCallback, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import 'leaflet-draw';
+import 'leaflet-draw/dist/leaflet.draw.css';
 import type { Station, WaterSource } from '@/mock/types';
 import { fetchStations } from '@/api/force';
 import { fetchWaterSources } from '@/api/water';
 import { fetchKeyUnits } from '@/api/key-units';
 import { fetchKeyBuildings } from '@/api/key-buildings';
+import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater } from '@/lib/map-icons';
 import { wgs84ToGcj02 } from '@/lib/geo-convert';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
+import type { Region } from '@/lib/region-mapper';
 import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
 
@@ -32,8 +36,7 @@ const DEFAULT_CENTER_WGS84: [number, number] = [29.67, 115.96];
 const DEFAULT_ZOOM = 11;
 // tileerror 连续失败阈值 → 触发占位降级
 const TILE_ERR_THRESHOLD = 5;
-// 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效;
-// 放大到区县级(zoom > 此值)后关闭交互,避免遮挡干扰。可调。
+// 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
 /** 重点单位 popup:基础信息 + 微型站统计 + 已建模标记。 */
@@ -79,6 +82,8 @@ export default function RealGisMap() {
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
   const buildingsLayerRef = useRef<L.LayerGroup | null>(null);
+  const regionsLayerRef = useRef<L.LayerGroup | null>(null);
+  const drawRef = useRef<L.Draw.Polygon | null>(null);
   const stationsRef = useRef<Station[]>([]);
   const waterRef = useRef<WaterSource[]>([]);
   const tileErrRef = useRef(0);
@@ -87,6 +92,7 @@ export default function RealGisMap() {
   const [water, setWater] = useState<WaterSource[]>([]);
   const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
   const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
+  const [regions, setRegions] = useState<Region[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [mapInited, setMapInited] = useState(false);
   const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
@@ -95,7 +101,24 @@ export default function RealGisMap() {
   const [showBoundary, setShowBoundary] = useState(true);
   const [showKeyUnits, setShowKeyUnits] = useState(true);
   const [showBuildings, setShowBuildings] = useState(true);
+  const [showRegions, setShowRegions] = useState(true);
+  const [drawMode, setDrawMode] = useState(false);
   const [tilesFailed, setTilesFailed] = useState(false);
+
+  // 绘制完成 → 保存区域到 znya 并刷新
+  const onDrawCreated = useCallback((e: any) => {
+    const layer = e.layer as L.Polygon;
+    drawRef.current = null;
+    setDrawMode(false);
+    const ring = layer.getLatLngs()[0] as L.LatLng[];
+    if (!ring || ring.length < 3) return;
+    const polygon = ring.map((ll) => [ll.lng, ll.lat]);
+    const name = window.prompt('区域名称');
+    if (!name) return;
+    createRegion({ name, polygon })
+      .then(() => fetchRegions().then(setRegions))
+      .catch(() => {});
+  }, []);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
   useEffect(() => {
@@ -108,21 +131,23 @@ export default function RealGisMap() {
     });
     mapRef.current = map;
     L.control.zoom({ position: 'bottomright' }).addTo(map);
-    // 层序:边界 → 消防站/水源/重点单位/重点建筑(区县名 tooltip 在独立 pane 始终最上)
     boundaryLayerRef.current = L.layerGroup().addTo(map);
     stationsLayerRef.current = L.layerGroup().addTo(map);
     waterLayerRef.current = L.layerGroup().addTo(map);
     keyUnitsLayerRef.current = L.layerGroup().addTo(map);
     buildingsLayerRef.current = L.layerGroup().addTo(map);
+    regionsLayerRef.current = L.layerGroup().addTo(map);
+    map.on('draw:created', onDrawCreated);
     setMapInited(true);
     return () => {
+      map.off('draw:created', onDrawCreated);
       map.remove();
       mapRef.current = null;
       setMapInited(false);
     };
-  }, []);
+  }, [onDrawCreated]);
 
-  // 底图切换:vector 加深色滤镜,satellite 不加;两者均监听 tileerror
+  // 底图切换
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !mapInited) return;
@@ -150,7 +175,7 @@ export default function RealGisMap() {
     }
   }, [baseMap, mapInited]);
 
-  // 加载消防站真实点位
+  // 加载消防站
   useEffect(() => {
     let alive = true;
     fetchStations()
@@ -169,7 +194,7 @@ export default function RealGisMap() {
     };
   }, []);
 
-  // 加载水源真实点位(失败不阻断站显示)
+  // 加载水源
   useEffect(() => {
     let alive = true;
     fetchWaterSources()
@@ -179,46 +204,52 @@ export default function RealGisMap() {
           setWater(ws);
         }
       })
-      .catch(() => {
-        /* 水源加载失败仅静默;地图仍显站 */
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
-  // 加载重点单位(有坐标的;失败静默)
+  // 加载重点单位
   useEffect(() => {
     let alive = true;
     fetchKeyUnits()
       .then((ks) => {
         if (alive) setKeyUnits(ks);
       })
-      .catch(() => {
-        /* 重点单位加载失败仅静默 */
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
-  // 加载重点建筑(有坐标的;失败静默)
+  // 加载重点建筑
   useEffect(() => {
     let alive = true;
     fetchKeyBuildings()
       .then((bs) => {
         if (alive) setBuildings(bs);
       })
-      .catch(() => {
-        /* 重点建筑加载失败仅静默 */
-      });
+      .catch(() => {});
     return () => {
       alive = false;
     };
   }, []);
 
-  // 市/区县行政边界:fetch 本地 GeoJSON → geoJSON 渲染;
-  // 低缩放(能俯瞰九江全境)交互:区县 hover 高亮 + 点击 flyToBounds 适窗、市界点击复位全市;高缩放(区县级)关闭交互
+  // 加载重点区域
+  useEffect(() => {
+    let alive = true;
+    fetchRegions()
+      .then((rs) => {
+        if (alive) setRegions(rs);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 市/区县行政边界
   useEffect(() => {
     const layer = boundaryLayerRef.current;
     const map = mapRef.current;
@@ -283,9 +314,7 @@ export default function RealGisMap() {
         boundaryGeoRef.current = geo;
         onZoom();
       })
-      .catch(() => {
-        /* 边界加载失败仅静默 */
-      });
+      .catch(() => {});
 
     map.on('zoomend', onZoom);
     return () => {
@@ -304,7 +333,7 @@ export default function RealGisMap() {
     });
   }, []);
 
-  // 消防站点位 → divIcon 图标(菱形"消"徽标);WGS84→GCJ02;入 stationsLayer(显隐受 showStations)
+  // 消防站
   useEffect(() => {
     const layer = stationsLayerRef.current;
     if (!layer || !mapInited) return;
@@ -328,7 +357,7 @@ export default function RealGisMap() {
     }
   }, [stations, handleStationClick, mapInited]);
 
-  // 水源层:zoom>=13 显示(远景只显消防站,避免密集);zoomend 重渲染;WGS84→GCJ02;入 waterLayer(显隐受 showWater)
+  // 水源
   useEffect(() => {
     const layer = waterLayerRef.current;
     const map = mapRef.current;
@@ -364,7 +393,7 @@ export default function RealGisMap() {
     };
   }, [water, mapInited]);
 
-  // 重点单位图层:key_units 坐标 GCJ02 直接使用;入 keyUnitsLayer(显隐受 showKeyUnits)
+  // 重点单位
   useEffect(() => {
     const layer = keyUnitsLayerRef.current;
     if (!layer || !mapInited) return;
@@ -389,7 +418,7 @@ export default function RealGisMap() {
     }
   }, [keyUnits, mapInited]);
 
-  // 重点建筑图层:key_buildings(有坐标,GCJ02);popup 显示所属单位(从 keyUnits 查 key_unit_id)
+  // 重点建筑
   useEffect(() => {
     const layer = buildingsLayerRef.current;
     if (!layer || !mapInited) return;
@@ -414,6 +443,30 @@ export default function RealGisMap() {
       layer.addLayer(marker);
     }
   }, [buildings, keyUnits, mapInited]);
+
+  // 重点区域图层:多边形高亮 + hover 名称;点击 flyToBounds 适窗
+  useEffect(() => {
+    const layer = regionsLayerRef.current;
+    if (!layer || !mapInited) return;
+    layer.clearLayers();
+    for (const r of regions) {
+      const poly = L.polygon(r.polygon as [number, number][], {
+        color: r.color,
+        weight: 2,
+        fillColor: r.color,
+        fillOpacity: 0.15,
+      })
+        .bindTooltip(`${r.name}${r.regionType ? ` · ${r.regionType}` : ''}`, {
+          sticky: true,
+          className: 'boundary-label-tip',
+        })
+        .on('click', () => {
+          const map = mapRef.current;
+          if (map) map.flyToBounds(poly.getBounds(), { padding: [24, 24], maxZoom: 14 });
+        });
+      layer.addLayer(poly);
+    }
+  }, [regions, mapInited]);
 
   // 边界显隐
   useEffect(() => {
@@ -460,7 +513,34 @@ export default function RealGisMap() {
     else map.removeLayer(layer);
   }, [showBuildings, mapInited]);
 
-  // sceneLog 联动:flyTo/addMarker → 地图定位(先查站,miss 再查水源;坐标 WGS84→GCJ02);resetView → 复位视角
+  // 重点区域显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = regionsLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showRegions) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showRegions, mapInited]);
+
+  // 划定区域:启用/取消 leaflet-draw 多边形绘制
+  const startDraw = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || drawMode) return;
+    setDrawMode(true);
+    const draw = new L.Draw.Polygon(map as any, {
+      shapeOptions: { color: '#22d3ee', weight: 2, fillColor: '#22d3ee', fillOpacity: 0.15 },
+    });
+    drawRef.current = draw;
+    draw.enable();
+  }, [drawMode]);
+
+  const cancelDraw = useCallback(() => {
+    drawRef.current?.disable();
+    drawRef.current = null;
+    setDrawMode(false);
+  }, []);
+
+  // sceneLog 联动
   useEffect(() => {
     const unsub = subscribeSceneLog((_list, latest) => {
       const map = mapRef.current;
@@ -476,7 +556,6 @@ export default function RealGisMap() {
           if (w) {
             const g = wgs84ToGcj02(w.lng, w.lat);
             map.flyTo([g.lat, g.lng], Math.max(map.getZoom(), 13));
-            // zoomend 后水源层重建,延迟开 popup
             window.setTimeout(() => waterMarkersRef.current.get(w.id)?.openPopup(), 350);
           }
         }
@@ -506,6 +585,11 @@ export default function RealGisMap() {
         onToggleKeyUnits={() => setShowKeyUnits((v) => !v)}
         showBuildings={showBuildings}
         onToggleBuildings={() => setShowBuildings((v) => !v)}
+        showRegions={showRegions}
+        onToggleRegions={() => setShowRegions((v) => !v)}
+        drawMode={drawMode}
+        onStartDraw={startDraw}
+        onCancelDraw={cancelDraw}
       />
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
@@ -517,7 +601,6 @@ export default function RealGisMap() {
           消防站点位加载失败
         </div>
       )}
-      {/* 瓦片失败降级:坐标网格占位 + 点位文字列表(站 + 水源) */}
       {tilesFailed && (
         <div className="pointer-events-none absolute inset-0 z-[400]">
           <div className="scene-grid-weak absolute inset-0" />
