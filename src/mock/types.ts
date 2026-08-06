@@ -79,3 +79,15 @@ export interface DrillPlan {
   routes: { attack: string[]; evacuate: string[] };
   safetyControls: string[];
 }
+
+export interface WaterSource {
+  id: string;
+  name: string;
+  type: string; // 市政消火栓 / 消防水池 / 天然水源
+  lat: number;
+  lng: number;
+  address: string;
+  districtCode: string;
+  district: string; // 区名(DISTRICT_NAME 映射)
+  status: string;
+}
