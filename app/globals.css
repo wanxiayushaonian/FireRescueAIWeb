@@ -292,3 +292,17 @@
     display: none;
   }
 }
+
+/* 到场路线信息 tooltip(贴路线中点,覆盖 leaflet 默认白底/箭头) */
+.route-info-tip.leaflet-tooltip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+}
+.route-info-tip.leaflet-tooltip::before {
+  display: none !important;
+}

@@ -19,6 +19,7 @@ const ACTION_COLORS: Record<SceneAction['action'], string> = {
   drawRoute: 'text-cyan',
   clearTactical: 'text-text-3',
   updatePlan: 'text-green',
+  updateCoord: 'text-amber',
 };
 
 const SOURCE_STYLES: Record<SceneAction['source'], string> = {

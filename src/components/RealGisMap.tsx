@@ -13,16 +13,23 @@ import 'leaflet-draw/dist/leaflet.draw.css';
 import type { Station, WaterSource } from '@/mock/types';
 import { fetchStations } from '@/api/force';
 import { fetchWaterSources } from '@/api/water';
-import { fetchKeyUnits } from '@/api/key-units';
-import { fetchKeyBuildings } from '@/api/key-buildings';
+import { fetchKeyUnits, updateKeyUnitCoords, geocodeMissingKeyUnits } from '@/api/key-units';
+import { fetchKeyBuildings, updateKeyBuildingCoords } from '@/api/key-buildings';
+import { fetchDrivingRoute } from '@/api/route';
+import { fetchGeocode, type GeoCandidate } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater } from '@/lib/map-icons';
 import { wgs84ToGcj02 } from '@/lib/geo-convert';
+import { haversineKm } from '@/lib/geo-query';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type { Region } from '@/lib/region-mapper';
 import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
+import CommandPalette, { type PaletteItem } from './gis/CommandPalette';
+import CoordinateFixPanel, { type CoordFixTarget } from './gis/CoordinateFixPanel';
+import RadialMenu, { type RadialAction } from './gis/RadialMenu';
+import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine } from 'lucide-react';
 
 // 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
@@ -78,12 +85,16 @@ export default function RealGisMap() {
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const keyUnitMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const buildingMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
   const buildingsLayerRef = useRef<L.LayerGroup | null>(null);
   const regionsLayerRef = useRef<L.LayerGroup | null>(null);
   const drawRef = useRef<L.Draw.Polygon | null>(null);
+  const routeLayerRef = useRef<L.LayerGroup | null>(null);
+  const tempLayerRef = useRef<L.LayerGroup | null>(null);
   const stationsRef = useRef<Station[]>([]);
   const waterRef = useRef<WaterSource[]>([]);
   const tileErrRef = useRef(0);
@@ -104,6 +115,28 @@ export default function RealGisMap() {
   const [showRegions, setShowRegions] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
   const [tilesFailed, setTilesFailed] = useState(false);
+  const [routeInfo, setRouteInfo] = useState<{
+    stationName: string;
+    distanceKm: number;
+    durationMin: number;
+    trafficLights: number;
+  } | null>(null);
+  // 坐标修正(点位治理)
+  const [coordFix, setCoordFix] = useState<CoordFixTarget | null>(null);
+  const [draftCoord, setDraftCoord] = useState<{ lng: number; lat: number } | null>(null);
+  const [pickMode, setPickMode] = useState(false);
+  const [geoCandidates, setGeoCandidates] = useState<GeoCandidate[]>([]);
+  const [geoQuerying, setGeoQuerying] = useState(false);
+  const [coordSaving, setCoordSaving] = useState(false);
+  const [coordError, setCoordError] = useState<string | null>(null);
+  const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
+  const [batching, setBatching] = useState(false);
+  const [batchMsg, setBatchMsg] = useState<string | null>(null);
+  const [radial, setRadial] = useState<{ target: CoordFixTarget; x: number; y: number } | null>(null);
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteQuery, setPaletteQuery] = useState('');
+  const [paletteItems, setPaletteItems] = useState<PaletteItem[]>([]);
+  const [paletteLoading, setPaletteLoading] = useState(false);
 
   // 绘制完成 → 保存区域到 znya 并刷新
   const onDrawCreated = useCallback((e: any) => {
@@ -137,6 +170,8 @@ export default function RealGisMap() {
     keyUnitsLayerRef.current = L.layerGroup().addTo(map);
     buildingsLayerRef.current = L.layerGroup().addTo(map);
     regionsLayerRef.current = L.layerGroup().addTo(map);
+    routeLayerRef.current = L.layerGroup().addTo(map);
+    tempLayerRef.current = L.layerGroup().addTo(map);
     map.on('draw:created', onDrawCreated);
     setMapInited(true);
     return () => {
@@ -333,6 +368,341 @@ export default function RealGisMap() {
     });
   }, []);
 
+  // 规划"最近消防站→重点单位/建筑"到场路线:站点 WGS84 先转 GCJ02(与目标统一坐标系)再排序取最近,
+  // 起点终点均 GCJ02 调高德 driving;返回 polyline 为 GCJ02,Leaflet 直接渲染。
+  const planArrivalRoute = useCallback(async (target: { lng: number; lat: number; name: string }) => {
+    const map = mapRef.current;
+    const routeLayer = routeLayerRef.current;
+    if (!map || !routeLayer) return;
+    const stations = stationsRef.current;
+    if (stations.length === 0) return;
+    const nearest = stations
+      .map((s) => {
+        const g = wgs84ToGcj02(s.lng, s.lat);
+        return { s, g, d: haversineKm(g.lng, g.lat, target.lng, target.lat) };
+      })
+      .sort((a, b) => a.d - b.d)[0];
+    try {
+      const route = await fetchDrivingRoute(nearest.g, { lng: target.lng, lat: target.lat });
+      routeLayer.clearLayers();
+      const distKm = (route.distance / 1000).toFixed(1);
+      const etaMin = Math.round(route.duration / 60);
+      const tipHtml =
+        `<div style="position:relative;background:rgba(10,20,32,.94);border:1px solid rgba(34,211,238,.4);border-radius:6px;padding:5px 9px;color:#e6edf3;font-size:12px;box-shadow:0 0 14px rgba(34,211,238,.22);white-space:nowrap">` +
+        `<div style="font-weight:700;color:#22d3ee;padding-right:14px">到场路线 · ${nearest.s.name}</div>` +
+        `<div style="color:#9db4c8;margin-top:1px">${distKm}km · 约 ${etaMin} 分钟 · ${route.trafficLights} 红绿灯</div>` +
+        `<button class="route-clear-btn" style="position:absolute;top:3px;right:5px;background:transparent;border:0;color:#9db4c8;cursor:pointer;font-size:13px;line-height:1">✕</button>` +
+        `</div>`;
+      const poly = L.polyline(route.polyline, {
+        color: '#22d3ee',
+        weight: 4,
+        dashArray: '8 6',
+        opacity: 0.9,
+      })
+        .bindTooltip(tipHtml, {
+          permanent: true,
+          direction: 'center',
+          className: 'route-info-tip',
+          interactive: true,
+        })
+        .addTo(routeLayer);
+      requestAnimationFrame(() => {
+        poly.getTooltip()?.getElement()?.querySelector('.route-clear-btn')?.addEventListener('click', clearRoute);
+      });
+      map.flyToBounds(L.latLngBounds(route.polyline), { padding: [60, 60] });
+      setRouteInfo({
+        stationName: nearest.s.name,
+        distanceKm: route.distance / 1000,
+        durationMin: etaMin,
+        trafficLights: route.trafficLights,
+      });
+      addSceneAction({
+        action: 'showRoute',
+        target: `到场路线:${nearest.s.name}→${target.name}`,
+        params: { distance: route.distance, duration: route.duration },
+        source: '面板',
+      });
+    } catch {
+      // 高德调用失败:降级为仅定位到该目标
+      setRouteInfo(null);
+      routeLayer.clearLayers();
+      map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 15));
+    }
+  }, []);
+
+  const clearRoute = useCallback(() => {
+    routeLayerRef.current?.clearLayers();
+    setRouteInfo(null);
+  }, []);
+
+  // ---- 点位治理:坐标修正 ----
+  const openCoordFix = useCallback((t: CoordFixTarget) => {
+    setCoordFix(t);
+    setDraftCoord(null);
+    setGeoCandidates([]);
+    setCoordError(null);
+    setPickMode(false);
+  }, []);
+
+  const closeCoordFix = useCallback(() => {
+    setCoordFix(null);
+    setDraftCoord(null);
+    setGeoCandidates([]);
+    setCoordError(null);
+    setPickMode(false);
+  }, []);
+
+  const queryAddress = useCallback(async (address: string) => {
+    setGeoQuerying(true);
+    setCoordError(null);
+    try {
+      setGeoCandidates(await fetchGeocode(address));
+    } catch {
+      setGeoCandidates([]);
+      setCoordError('地址查询失败');
+    } finally {
+      setGeoQuerying(false);
+    }
+  }, []);
+
+  const saveCoord = useCallback(async () => {
+    if (!coordFix || !draftCoord) return;
+    setCoordSaving(true);
+    setCoordError(null);
+    try {
+      if (coordFix.kind === 'unit') {
+        await updateKeyUnitCoords(coordFix.id, draftCoord.lng, draftCoord.lat);
+        setKeyUnits(await fetchKeyUnits());
+      } else {
+        await updateKeyBuildingCoords(coordFix.id, draftCoord.lng, draftCoord.lat);
+        setBuildings(await fetchKeyBuildings());
+      }
+      addSceneAction({
+        action: 'updateCoord',
+        target: `坐标修正 · ${coordFix.name} → ${draftCoord.lng.toFixed(5)},${draftCoord.lat.toFixed(5)}`,
+        params: { id: coordFix.id, lng: draftCoord.lng, lat: draftCoord.lat },
+        source: '面板',
+      });
+      setCoordFix(null);
+      setDraftCoord(null);
+      setGeoCandidates([]);
+    } catch {
+      setCoordError('保存失败(网络或权限)');
+    } finally {
+      setCoordSaving(false);
+    }
+  }, [coordFix, draftCoord]);
+
+  const batchGeocode = useCallback(async () => {
+    setBatching(true);
+    setBatchMsg(null);
+    try {
+      const n = await geocodeMissingKeyUnits();
+      setKeyUnits(await fetchKeyUnits());
+      setBatchMsg(`已补全 ${n} 个单位坐标`);
+    } catch {
+      setBatchMsg('批量补全失败');
+    } finally {
+      setBatching(false);
+    }
+  }, []);
+
+  // ---- 圆环菜单(点击 marker 弹出动作环,给操作增加摩擦)----
+  const closeRadial = useCallback(() => setRadial(null), []);
+
+  const openRadial = useCallback((target: CoordFixTarget, latlng: [number, number]) => {
+    const map = mapRef.current;
+    if (!map) return;
+    map.closePopup(); // 阻止 marker click 自动弹出的 popup,圆环为唯一入口
+    const p = map.latLngToContainerPoint(L.latLng(latlng[0], latlng[1]));
+    setRadial({ target, x: p.x, y: p.y });
+  }, []);
+
+  const radialActions = useCallback(
+    (t: CoordFixTarget): RadialAction[] => [
+      {
+        key: 'route',
+        icon: Route,
+        label: '路线',
+        color: '#22d3ee',
+        onClick: () => {
+          planArrivalRoute({ lng: t.lng, lat: t.lat, name: t.name });
+          setRadial(null);
+        },
+      },
+      {
+        key: 'fix',
+        icon: MapPin,
+        label: '修正',
+        color: '#fbbf24',
+        onClick: () => {
+          openCoordFix(t);
+          setRadial(null);
+        },
+      },
+      {
+        key: 'detail',
+        icon: Info,
+        label: '详情',
+        color: '#a78bfa',
+        onClick: () => {
+          const ref = t.kind === 'unit' ? keyUnitMarkersRef.current : buildingMarkersRef.current;
+          ref.get(t.id)?.openPopup();
+          setRadial(null);
+        },
+      },
+    ],
+    [planArrivalRoute, openCoordFix],
+  );
+
+  // 地图移动/缩放时关闭圆环(像素坐标已失效)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !radial) return;
+    const close = () => setRadial(null);
+    map.on('move zoom', close);
+    return () => {
+      map.off('move zoom', close);
+    };
+  }, [radial]);
+
+  // 划定区域:启用/取消 leaflet-draw 多边形绘制
+  const startDraw = useCallback(() => {
+    const map = mapRef.current;
+    if (!map || drawMode) return;
+    setDrawMode(true);
+    const draw = new L.Draw.Polygon(map as any, {
+      shapeOptions: { color: '#22d3ee', weight: 2, fillColor: '#22d3ee', fillOpacity: 0.15 },
+    });
+    drawRef.current = draw;
+    draw.enable();
+  }, [drawMode]);
+
+  const cancelDraw = useCallback(() => {
+    drawRef.current?.disable();
+    drawRef.current = null;
+    setDrawMode(false);
+  }, []);
+
+  // Ctrl/Cmd+K 唤出/收起命令面板
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // 命令面板:输入 → 合并 动作命令(本地过滤)+ 单位跳转(本地过滤)+ 地址候选(高德异步)
+  useEffect(() => {
+    if (!paletteOpen) return;
+    const q = paletteQuery.trim();
+    const close = () => setPaletteOpen(false);
+    // 动作命令
+    const actions: PaletteItem[] = [
+      {
+        id: 'toggle-base',
+        title: baseMap === 'vector' ? '切换卫星底图' : '切换矢量底图',
+        icon: baseMap === 'vector' ? Satellite : MapIcon,
+        group: '动作',
+        run: () => {
+          setBaseMap(baseMap === 'vector' ? 'satellite' : 'vector');
+          close();
+        },
+      },
+      {
+        id: 'batch-geocode',
+        title: '批量补全坐标',
+        subtitle: '给坐标缺失的重点单位地理编码',
+        icon: MapPin,
+        group: '动作',
+        run: () => {
+          batchGeocode();
+          close();
+        },
+      },
+    ];
+    if (routeInfo) {
+      actions.push({
+        id: 'clear-route',
+        title: '清空到场路线',
+        icon: Trash2,
+        group: '动作',
+        run: () => {
+          clearRoute();
+          close();
+        },
+      });
+    }
+    actions.push({
+      id: 'toggle-draw',
+      title: drawMode ? '取消划定区域' : '划定区域',
+      icon: PenLine,
+      group: '动作',
+      run: () => {
+        drawMode ? cancelDraw() : startDraw();
+        close();
+      },
+    });
+    const filteredActions = q ? actions.filter((a) => a.title.includes(q) || a.id.includes(q)) : actions;
+
+    // 单位跳转(本地过滤)
+    const unitItems: PaletteItem[] = q
+      ? keyUnits
+          .filter((u) => u.name.includes(q) || (u.unitType ?? '').includes(q))
+          .slice(0, 6)
+          .map((u) => ({
+            id: `unit-${u.id}`,
+            title: u.name,
+            subtitle: `${u.unitType}${u.district ? ` · ${u.district}` : ''}`,
+            icon: Building2,
+            group: '单位',
+            run: () => {
+              const map = mapRef.current;
+              if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 16));
+              close();
+            },
+          }))
+      : [];
+
+    setPaletteItems([...filteredActions, ...unitItems]);
+
+    // 地址查询(高德异步,≥2 字触发;结果到达后追加)
+    if (q.length >= 2) {
+      let alive = true;
+      setPaletteLoading(true);
+      fetchGeocode(q)
+        .then((cs) => {
+          if (!alive) return;
+          const addrItems: PaletteItem[] = cs.slice(0, 6).map((c) => ({
+            id: `addr-${c.lng}-${c.lat}`,
+            title: c.address,
+            subtitle: `${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} · ${c.level}`,
+            icon: MapPin,
+            group: '地址',
+            run: () => {
+              setQueryMarker({ lng: c.lng, lat: c.lat, address: c.address });
+              const map = mapRef.current;
+              if (map) map.flyTo([c.lat, c.lng], Math.max(map.getZoom(), 16));
+              close();
+            },
+          }));
+          setPaletteItems([...filteredActions, ...unitItems, ...addrItems]);
+        })
+        .catch(() => {})
+        .finally(() => {
+          if (alive) setPaletteLoading(false);
+        });
+      return () => {
+        alive = false;
+      };
+    }
+    setPaletteLoading(false);
+  }, [paletteOpen, paletteQuery, baseMap, routeInfo, keyUnits, clearRoute, batchGeocode, drawMode, startDraw, cancelDraw]);
+
   // 消防站
   useEffect(() => {
     const layer = stationsLayerRef.current;
@@ -398,6 +768,7 @@ export default function RealGisMap() {
     const layer = keyUnitsLayerRef.current;
     if (!layer || !mapInited) return;
     layer.clearLayers();
+    keyUnitMarkersRef.current.clear();
     for (const u of keyUnits) {
       const marker = L.marker([u.lat, u.lng], {
         icon: L.divIcon({
@@ -409,20 +780,18 @@ export default function RealGisMap() {
         }),
       })
         .bindPopup(popupForKeyUnit(u))
-        .on('click', () => {
-          const map = mapRef.current;
-          if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 15));
-          addSceneAction({ action: 'flyTo', target: u.name, params: { lng: u.lng, lat: u.lat }, source: '面板' });
-        });
+        .on('click', () => openRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]));
+      keyUnitMarkersRef.current.set(u.id, marker);
       layer.addLayer(marker);
     }
-  }, [keyUnits, mapInited]);
+  }, [keyUnits, mapInited, openRadial]);
 
   // 重点建筑
   useEffect(() => {
     const layer = buildingsLayerRef.current;
     if (!layer || !mapInited) return;
     layer.clearLayers();
+    buildingMarkersRef.current.clear();
     for (const b of buildings) {
       const unitName = b.keyUnitId ? keyUnits.find((u) => u.id === b.keyUnitId)?.name : undefined;
       const marker = L.marker([b.lat, b.lng], {
@@ -435,14 +804,11 @@ export default function RealGisMap() {
         }),
       })
         .bindPopup(popupForKeyBuilding(b, unitName))
-        .on('click', () => {
-          const map = mapRef.current;
-          if (map) map.flyTo([b.lat, b.lng], Math.max(map.getZoom(), 15));
-          addSceneAction({ action: 'flyTo', target: b.name, params: { lng: b.lng, lat: b.lat }, source: '面板' });
-        });
+        .on('click', () => openRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat }, [b.lat, b.lng]));
+      buildingMarkersRef.current.set(b.id, marker);
       layer.addLayer(marker);
     }
-  }, [buildings, keyUnits, mapInited]);
+  }, [buildings, keyUnits, mapInited, openRadial]);
 
   // 重点区域图层:多边形高亮 + hover 名称;点击 flyToBounds 适窗
   useEffect(() => {
@@ -531,24 +897,6 @@ export default function RealGisMap() {
     else map.removeLayer(layer);
   }, [showRegions, mapInited]);
 
-  // 划定区域:启用/取消 leaflet-draw 多边形绘制
-  const startDraw = useCallback(() => {
-    const map = mapRef.current;
-    if (!map || drawMode) return;
-    setDrawMode(true);
-    const draw = new L.Draw.Polygon(map as any, {
-      shapeOptions: { color: '#22d3ee', weight: 2, fillColor: '#22d3ee', fillOpacity: 0.15 },
-    });
-    drawRef.current = draw;
-    draw.enable();
-  }, [drawMode]);
-
-  const cancelDraw = useCallback(() => {
-    drawRef.current?.disable();
-    drawRef.current = null;
-    setDrawMode(false);
-  }, []);
-
   // sceneLog 联动
   useEffect(() => {
     const unsub = subscribeSceneLog((_list, latest) => {
@@ -579,6 +927,43 @@ export default function RealGisMap() {
     };
   }, []);
 
+  // 地图拾取模式:点击地图 → 回填 draft 坐标(GCJ02,高德瓦片原生坐标系)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapInited || !pickMode || !coordFix) return;
+    const onClick = (e: any) => {
+      setDraftCoord({ lng: e.latlng.lng, lat: e.latlng.lat });
+      setPickMode(false);
+    };
+    map.on('click', onClick);
+    map.getContainer().style.cursor = 'crosshair';
+    return () => {
+      map.off('click', onClick);
+      map.getContainer().style.cursor = '';
+    };
+  }, [pickMode, coordFix, mapInited]);
+
+  // 临时标记层:修正 draft(琥珀)+ 点位查询结果(青)
+  useEffect(() => {
+    const layer = tempLayerRef.current;
+    if (!layer) return;
+    layer.clearLayers();
+    if (draftCoord && coordFix) {
+      L.circleMarker([draftCoord.lat, draftCoord.lng], {
+        radius: 7, color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.85, weight: 2,
+      })
+        .bindTooltip('新坐标(待保存)', { direction: 'top' })
+        .addTo(layer);
+    }
+    if (queryMarker) {
+      L.circleMarker([queryMarker.lat, queryMarker.lng], {
+        radius: 7, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.85, weight: 2,
+      })
+        .bindTooltip(queryMarker.address, { direction: 'top' })
+        .addTo(layer);
+    }
+  }, [draftCoord, coordFix, queryMarker]);
+
   return (
     <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
       <MapLayerControl
@@ -596,10 +981,41 @@ export default function RealGisMap() {
         onToggleBuildings={() => setShowBuildings((v) => !v)}
         showRegions={showRegions}
         onToggleRegions={() => setShowRegions((v) => !v)}
-        drawMode={drawMode}
-        onStartDraw={startDraw}
-        onCancelDraw={cancelDraw}
       />
+      <CommandPalette
+        open={paletteOpen}
+        query={paletteQuery}
+        items={paletteItems}
+        loading={paletteLoading}
+        onQueryChange={setPaletteQuery}
+        onClose={() => setPaletteOpen(false)}
+      />
+      {coordFix && (
+        <CoordinateFixPanel
+          target={coordFix}
+          draft={draftCoord}
+          pickMode={pickMode}
+          candidates={geoCandidates}
+          querying={geoQuerying}
+          saving={coordSaving}
+          error={coordError}
+          onQuery={queryAddress}
+          onStartPick={() => setPickMode(true)}
+          onDraft={(lng, lat) => setDraftCoord({ lng, lat })}
+          onClearDraft={() => setDraftCoord(null)}
+          onSave={saveCoord}
+          onClose={closeCoordFix}
+        />
+      )}
+      {radial && (
+        <RadialMenu
+          x={radial.x}
+          y={radial.y}
+          actions={radialActions(radial.target)}
+          onClose={closeRadial}
+        />
+      )}
+      {routeInfo && null}
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
           底图瓦片加载失败(高德不可达)——显示占位底图

@@ -7,7 +7,9 @@ export type SceneActionName =
   // drawRoute 进攻路线绘制 / clearTactical 推演图层清除（换警情或熄灭时）
   | 'drawZone' | 'drawRoute' | 'clearTactical'
   // 预案库联动：改进措施确认落地 → 关联预案版本 +1（planLibrary.confirmImprovement）
-  | 'updatePlan';
+  | 'updatePlan'
+  // 点位治理:重点单位/建筑坐标修正(仅记录,无执行器)
+  | 'updateCoord';
 
 export interface SceneAction {
   ts: string;

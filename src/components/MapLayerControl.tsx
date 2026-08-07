@@ -1,5 +1,8 @@
 'use client';
-// 地图图层控制条:底图(矢量/卫星)切换 + 各图层显隐 + 划定区域。右上角深色常显。
+// 地图图层控制条:底图(矢量/卫星)+ 6 图层显隐。屏幕正上方居中,扁平药丸条。
+// 划定区域/补全坐标等低频动作移至 Ctrl+K 命令面板,本条只留高频查看项。
+import { Map as MapIcon, Satellite } from 'lucide-react';
+
 interface Props {
   baseMap: 'vector' | 'satellite';
   onBaseMapChange: (b: 'vector' | 'satellite') => void;
@@ -15,9 +18,6 @@ interface Props {
   onToggleBuildings: () => void;
   showRegions: boolean;
   onToggleRegions: () => void;
-  drawMode: boolean;
-  onStartDraw: () => void;
-  onCancelDraw: () => void;
 }
 
 export default function MapLayerControl({
@@ -35,96 +35,47 @@ export default function MapLayerControl({
   onToggleBuildings,
   showRegions,
   onToggleRegions,
-  drawMode,
-  onStartDraw,
-  onCancelDraw,
 }: Props) {
+  const layers = [
+    { label: '消防站', show: showStations, toggle: onToggleStations },
+    { label: '水源', show: showWater, toggle: onToggleWater },
+    { label: '边界', show: showBoundary, toggle: onToggleBoundary },
+    { label: '重点单位', show: showKeyUnits, toggle: onToggleKeyUnits },
+    { label: '重点建筑', show: showBuildings, toggle: onToggleBuildings },
+    { label: '区域', show: showRegions, toggle: onToggleRegions },
+  ];
+
   return (
-    <div className="absolute right-3 top-3 z-[500] flex flex-col gap-1.5 rounded border border-line bg-bg-panel/90 p-2 text-[12px] backdrop-blur">
-      <div className="flex items-center gap-1">
-        <span className="mr-0.5 text-text-3">底图</span>
+    <div className="absolute left-1/2 top-3 z-[500] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur">
+      {/* 底图 segmented */}
+      <div className="flex items-center gap-0.5">
         {(['vector', 'satellite'] as const).map((b) => (
           <button
             key={b}
             onClick={() => onBaseMapChange(b)}
-            className={`rounded px-2 py-0.5 transition-colors ${
-              baseMap === b
-                ? 'border border-amber-300/40 bg-amber-300/15 text-amber-300'
-                : 'border border-line text-text-3 hover:text-text-1'
+            className={`flex items-center gap-1 rounded-full px-2.5 py-0.5 transition ${
+              baseMap === b ? 'bg-amber-300/15 text-amber-300' : 'text-text-3 hover:text-text-1'
             }`}
           >
+            {b === 'vector' ? <MapIcon className="h-3 w-3" /> : <Satellite className="h-3 w-3" />}
             {b === 'vector' ? '矢量' : '卫星'}
           </button>
         ))}
       </div>
-      <div className="flex items-center gap-1.5">
-        <span className="mr-0.5 text-text-3">图层</span>
-        <button
-          onClick={onToggleStations}
-          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
-            showStations ? 'text-amber-300' : 'text-text-3 line-through'
-          }`}
-        >
-          消防站
-        </button>
-        <button
-          onClick={onToggleWater}
-          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
-            showWater ? 'text-amber-300' : 'text-text-3 line-through'
-          }`}
-        >
-          水源
-        </button>
-        <button
-          onClick={onToggleBoundary}
-          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
-            showBoundary ? 'text-amber-300' : 'text-text-3 line-through'
-          }`}
-        >
-          边界
-        </button>
-        <button
-          onClick={onToggleKeyUnits}
-          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
-            showKeyUnits ? 'text-amber-300' : 'text-text-3 line-through'
-          }`}
-        >
-          重点单位
-        </button>
-        <button
-          onClick={onToggleBuildings}
-          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
-            showBuildings ? 'text-amber-300' : 'text-text-3 line-through'
-          }`}
-        >
-          重点建筑
-        </button>
-        <button
-          onClick={onToggleRegions}
-          className={`rounded px-1.5 py-0.5 transition-colors hover:text-text-1 ${
-            showRegions ? 'text-amber-300' : 'text-text-3 line-through'
-          }`}
-        >
-          区域
-        </button>
-      </div>
-      <div className="flex items-center gap-1 border-t border-line/60 pt-1.5">
-        <span className="mr-0.5 text-text-3">标注</span>
-        {drawMode ? (
+      <span className="h-4 w-px bg-line/60" />
+      {/* 图层 toggle(紧凑横排;激活 cyan,隐藏灰) */}
+      <div className="flex items-center gap-0.5">
+        {layers.map((l) => (
           <button
-            onClick={onCancelDraw}
-            className="rounded px-2 py-0.5 border border-red-400/40 bg-red-400/10 text-red-300"
+            key={l.label}
+            onClick={l.toggle}
+            className={`rounded-full px-2 py-0.5 transition ${
+              l.show ? 'bg-cyan/12 text-cyan' : 'text-text-3 hover:text-text-1'
+            }`}
           >
-            取消划定
+            {l.label}
           </button>
-        ) : (
-          <button
-            onClick={onStartDraw}
-            className="rounded px-2 py-0.5 border border-amber-300/40 bg-amber-300/15 text-amber-300"
-          >
-            ✏️ 划定区域
-          </button>
-        )}
+        ))}
       </div>
     </div>
   );
