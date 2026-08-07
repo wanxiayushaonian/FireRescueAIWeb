@@ -39,3 +39,10 @@ export async function fetchResources(state?: FetchState): Promise<ResourceItem[]
   const items = await fetchAll<ZnyaForceItem>('/api/business/fire-force-items?ref_type=fire_station');
   return items.map(mapResource);
 }
+
+/** 按站 + 类型拉取执勤明细(只读查看):GET /fire-force-items?ref_id=&force_type=。 */
+export async function fetchStationForce(stationId: string, forceType: string): Promise<ResourceItem[]> {
+  const params = new URLSearchParams({ ref_type: 'fire_station', ref_id: stationId, force_type: forceType });
+  const items = await fetchAll<ZnyaForceItem>(`/api/business/fire-force-items?${params}`);
+  return items.map(mapResource);
+}

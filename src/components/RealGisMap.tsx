@@ -5,13 +5,13 @@
 // 区域标注:leaflet-draw 画多边形 → createRegion 存 znya → 重新加载 L.polygon 高亮。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
-import type { Station, WaterSource } from '@/mock/types';
-import { fetchStations } from '@/api/force';
+import type { Station, WaterSource, ResourceItem } from '@/mock/types';
+import { fetchStations, fetchResources } from '@/api/force';
 import { fetchWaterSources } from '@/api/water';
 import { fetchKeyUnits, updateKeyUnitCoords, geocodeMissingKeyUnits } from '@/api/key-units';
 import { fetchKeyBuildings, updateKeyBuildingCoords } from '@/api/key-buildings';
@@ -28,8 +28,10 @@ import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
 import CommandPalette, { type PaletteItem } from './gis/CommandPalette';
 import CoordinateFixPanel, { type CoordFixTarget } from './gis/CoordinateFixPanel';
+import ForceManagePanel, { type ForcePanelStation } from './gis/ForceManagePanel';
 import RadialMenu, { type RadialAction } from './gis/RadialMenu';
-import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine } from 'lucide-react';
+import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/DeployPanel';
+import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine, Navigation, Users } from 'lucide-react';
 
 // 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
@@ -100,6 +102,7 @@ export default function RealGisMap() {
   const tileErrRef = useRef(0);
 
   const [stations, setStations] = useState<Station[]>([]);
+  const [resources, setResources] = useState<ResourceItem[]>([]);
   const [water, setWater] = useState<WaterSource[]>([]);
   const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
   const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
@@ -115,12 +118,13 @@ export default function RealGisMap() {
   const [showRegions, setShowRegions] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
   const [tilesFailed, setTilesFailed] = useState(false);
-  const [routeInfo, setRouteInfo] = useState<{
-    stationName: string;
-    distanceKm: number;
-    durationMin: number;
-    trafficLights: number;
+  const [deploy, setDeploy] = useState<{
+    target: { name: string; lng: number; lat: number };
+    stations: DeployStation[];
+    anchor: { x: number; y: number; maxX: number };
   } | null>(null);
+  const [planned, setPlanned] = useState<PlannedRoute[]>([]);
+  const [planning, setPlanning] = useState(false);
   // 坐标修正(点位治理)
   const [coordFix, setCoordFix] = useState<CoordFixTarget | null>(null);
   const [draftCoord, setDraftCoord] = useState<{ lng: number; lat: number } | null>(null);
@@ -133,6 +137,7 @@ export default function RealGisMap() {
   const [batching, setBatching] = useState(false);
   const [batchMsg, setBatchMsg] = useState<string | null>(null);
   const [radial, setRadial] = useState<{ target: CoordFixTarget; x: number; y: number } | null>(null);
+  const [forcePanel, setForcePanel] = useState<{ station: ForcePanelStation; lng: number; lat: number; x: number; y: number; maxX: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [paletteItems, setPaletteItems] = useState<PaletteItem[]>([]);
@@ -163,6 +168,8 @@ export default function RealGisMap() {
       zoomControl: false,
     });
     mapRef.current = map;
+    // 禁用地图默认浏览器右键菜单(marker 用 contextmenu 唤出环形菜单)
+    map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
     L.control.zoom({ position: 'bottomright' }).addTo(map);
     boundaryLayerRef.current = L.layerGroup().addTo(map);
     stationsLayerRef.current = L.layerGroup().addTo(map);
@@ -224,6 +231,19 @@ export default function RealGisMap() {
       .catch(() => {
         if (alive) setLoadState('error');
       });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 加载执勤明细(用于聚合各站真实人员数,popup 动态显示)
+  useEffect(() => {
+    let alive = true;
+    fetchResources()
+      .then((rs) => {
+        if (alive) setResources(rs);
+      })
+      .catch(() => {});
     return () => {
       alive = false;
     };
@@ -359,6 +379,13 @@ export default function RealGisMap() {
     };
   }, [mapInited]);
 
+  // 各消防站真实人员数(从 fire_force_items 聚合,popup 动态显示)
+  const personnelCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of resources) if (r.category === '人员') m.set(r.stationId, (m.get(r.stationId) ?? 0) + 1);
+    return m;
+  }, [resources]);
+
   const handleStationClick = useCallback((s: Station) => {
     addSceneAction({
       action: 'flyTo',
@@ -368,71 +395,80 @@ export default function RealGisMap() {
     });
   }, []);
 
-  // 规划"最近消防站→重点单位/建筑"到场路线:站点 WGS84 先转 GCJ02(与目标统一坐标系)再排序取最近,
-  // 起点终点均 GCJ02 调高德 driving;返回 polyline 为 GCJ02,Leaflet 直接渲染。
-  const planArrivalRoute = useCallback(async (target: { lng: number; lat: number; name: string }) => {
+  // 派遣路线色板(多站各色)
+  const ROUTE_COLORS = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
+
+  // 打开派遣面板:站点 WGS84→GCJ02 统一坐标系后按到目标直线距离排序 + 算锚点
+  const openDeploy = useCallback((t: CoordFixTarget) => {
     const map = mapRef.current;
-    const routeLayer = routeLayerRef.current;
-    if (!map || !routeLayer) return;
-    const stations = stationsRef.current;
-    if (stations.length === 0) return;
-    const nearest = stations
+    if (!map) return;
+    map.closePopup();
+    const sorted = stationsRef.current
       .map((s) => {
         const g = wgs84ToGcj02(s.lng, s.lat);
-        return { s, g, d: haversineKm(g.lng, g.lat, target.lng, target.lat) };
+        return { ...s, distKm: haversineKm(g.lng, g.lat, t.lng, t.lat) };
       })
-      .sort((a, b) => a.d - b.d)[0];
-    try {
-      const route = await fetchDrivingRoute(nearest.g, { lng: target.lng, lat: target.lat });
-      routeLayer.clearLayers();
-      const distKm = (route.distance / 1000).toFixed(1);
-      const etaMin = Math.round(route.duration / 60);
-      const tipHtml =
-        `<div style="position:relative;background:rgba(10,20,32,.94);border:1px solid rgba(34,211,238,.4);border-radius:6px;padding:5px 9px;color:#e6edf3;font-size:12px;box-shadow:0 0 14px rgba(34,211,238,.22);white-space:nowrap">` +
-        `<div style="font-weight:700;color:#22d3ee;padding-right:14px">到场路线 · ${nearest.s.name}</div>` +
-        `<div style="color:#9db4c8;margin-top:1px">${distKm}km · 约 ${etaMin} 分钟 · ${route.trafficLights} 红绿灯</div>` +
-        `<button class="route-clear-btn" style="position:absolute;top:3px;right:5px;background:transparent;border:0;color:#9db4c8;cursor:pointer;font-size:13px;line-height:1">✕</button>` +
-        `</div>`;
-      const poly = L.polyline(route.polyline, {
-        color: '#22d3ee',
-        weight: 4,
-        dashArray: '8 6',
-        opacity: 0.9,
-      })
-        .bindTooltip(tipHtml, {
-          permanent: true,
-          direction: 'center',
-          className: 'route-info-tip',
-          interactive: true,
-        })
-        .addTo(routeLayer);
-      requestAnimationFrame(() => {
-        poly.getTooltip()?.getElement()?.querySelector('.route-clear-btn')?.addEventListener('click', clearRoute);
-      });
-      map.flyToBounds(L.latLngBounds(route.polyline), { padding: [60, 60] });
-      setRouteInfo({
-        stationName: nearest.s.name,
-        distanceKm: route.distance / 1000,
-        durationMin: etaMin,
-        trafficLights: route.trafficLights,
-      });
-      addSceneAction({
-        action: 'showRoute',
-        target: `到场路线:${nearest.s.name}→${target.name}`,
-        params: { distance: route.distance, duration: route.duration },
-        source: '面板',
-      });
-    } catch {
-      // 高德调用失败:降级为仅定位到该目标
-      setRouteInfo(null);
-      routeLayer.clearLayers();
-      map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 15));
-    }
+      .sort((a, b) => a.distKm - b.distKm);
+    const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
+    setDeploy({ target: { name: t.name, lng: t.lng, lat: t.lat }, stations: sorted, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } });
+    setPlanned([]);
+    setRadial(null);
   }, []);
 
-  const clearRoute = useCallback(() => {
+  // 多站到场路线规划:每站 driving(GCJ02)+ 各色 polyline + 贴线 tooltip + 适窗;写 showRoute scene action(MCP 通道)
+  const planRoutes = useCallback(
+    async (stationIds: string[]) => {
+      const map = mapRef.current;
+      const routeLayer = routeLayerRef.current;
+      if (!map || !routeLayer || !deploy) return;
+      setPlanning(true);
+      routeLayer.clearLayers();
+      setPlanned([]);
+      const allLatLngs: [number, number][] = [];
+      const results: PlannedRoute[] = [];
+      await Promise.all(
+        stationIds.map(async (id, idx) => {
+          const s = stationsRef.current.find((x) => x.id === id);
+          if (!s) return;
+          const from = wgs84ToGcj02(s.lng, s.lat);
+          try {
+            const route = await fetchDrivingRoute(from, { lng: deploy.target.lng, lat: deploy.target.lat });
+            const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
+            const distKm = (route.distance / 1000).toFixed(1);
+            const etaMin = Math.round(route.duration / 60);
+            const tipHtml = `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${s.name}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${route.trafficLights}灯</span></div>`;
+            L.polyline(route.polyline, { color, weight: 4, dashArray: '10 8', opacity: 0.9, className: 'route-flow' }).addTo(routeLayer);
+            // 信息标签锚定路线分段点(按 idx 错开,避免多条叠在中点)
+            const seg = Math.min(Math.floor(route.polyline.length * (0.3 + idx * 0.18)), route.polyline.length - 1);
+            L.marker(route.polyline[seg], {
+              icon: L.divIcon({ html: tipHtml, className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
+              interactive: false,
+              keyboard: false,
+            }).addTo(routeLayer);
+            route.polyline.forEach((pt) => allLatLngs.push(pt));
+            results.push({ stationId: id, stationName: s.name, distance: route.distance, duration: route.duration, trafficLights: route.trafficLights });
+          } catch {
+            // 单站失败跳过
+          }
+        }),
+      );
+      results.sort((a, b) => stationIds.indexOf(a.stationId) - stationIds.indexOf(b.stationId));
+      setPlanned(results);
+      setPlanning(false);
+      if (allLatLngs.length) map.flyToBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
+      addSceneAction({
+        action: 'showRoute',
+        target: `派遣路线:${deploy.target.name}(${results.length} 站)`,
+        params: { routes: results },
+        source: '面板',
+      });
+    },
+    [deploy],
+  );
+
+  const clearRoutes = useCallback(() => {
     routeLayerRef.current?.clearLayers();
-    setRouteInfo(null);
+    setPlanned([]);
   }, []);
 
   // ---- 点位治理:坐标修正 ----
@@ -519,40 +555,91 @@ export default function RealGisMap() {
   }, []);
 
   const radialActions = useCallback(
-    (t: CoordFixTarget): RadialAction[] => [
-      {
-        key: 'route',
-        icon: Route,
-        label: '路线',
-        color: '#22d3ee',
-        onClick: () => {
-          planArrivalRoute({ lng: t.lng, lat: t.lat, name: t.name });
-          setRadial(null);
+    (t: CoordFixTarget): RadialAction[] => {
+      // 消防站:定位 / 详情(人员·车辆·装备入口待管理面板 C)
+      if (t.kind === 'station') {
+        return [
+          {
+            key: 'locate',
+            icon: Navigation,
+            label: '定位',
+            color: '#22d3ee',
+            onClick: () => {
+              const map = mapRef.current;
+              if (map) map.flyTo([t.lat, t.lng], Math.max(map.getZoom(), 14));
+              setRadial(null);
+            },
+          },
+          {
+            key: 'detail',
+            icon: Info,
+            label: '详情',
+            color: '#a78bfa',
+            onClick: () => {
+              markersRef.current.get(t.id)?.openPopup();
+              setRadial(null);
+            },
+          },
+          {
+            key: 'force',
+            icon: Users,
+            label: '力量明细',
+            color: '#34d399',
+            onClick: () => {
+              // 锚定到消防站图标上方:实时算 marker 像素坐标
+              const map = mapRef.current;
+              if (map) {
+                const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
+                setForcePanel({
+                  station: { id: t.id, name: t.name, type: t.type ?? '' },
+                  lng: t.lng,
+                  lat: t.lat,
+                  x: p.x,
+                  y: p.y,
+                  maxX: map.getSize().x,
+                });
+              }
+              setRadial(null);
+            },
+          },
+        ];
+      }
+      // 重点单位 / 建筑:路线 / 修正 / 详情
+      return [
+        {
+          key: 'route',
+          icon: Route,
+          label: '路线',
+          color: '#22d3ee',
+          onClick: () => {
+            openDeploy(t);
+            setRadial(null);
+          },
         },
-      },
-      {
-        key: 'fix',
-        icon: MapPin,
-        label: '修正',
-        color: '#fbbf24',
-        onClick: () => {
-          openCoordFix(t);
-          setRadial(null);
+        {
+          key: 'fix',
+          icon: MapPin,
+          label: '修正',
+          color: '#fbbf24',
+          onClick: () => {
+            openCoordFix(t);
+            setRadial(null);
+          },
         },
-      },
-      {
-        key: 'detail',
-        icon: Info,
-        label: '详情',
-        color: '#a78bfa',
-        onClick: () => {
-          const ref = t.kind === 'unit' ? keyUnitMarkersRef.current : buildingMarkersRef.current;
-          ref.get(t.id)?.openPopup();
-          setRadial(null);
+        {
+          key: 'detail',
+          icon: Info,
+          label: '详情',
+          color: '#a78bfa',
+          onClick: () => {
+            const ref = t.kind === 'unit' ? keyUnitMarkersRef.current : buildingMarkersRef.current;
+            ref.get(t.id)?.openPopup();
+            setRadial(null);
+          },
         },
-      },
-    ],
-    [planArrivalRoute, openCoordFix],
+      ];
+    },
+    [openDeploy, openCoordFix],
   );
 
   // 地图移动/缩放时关闭圆环(像素坐标已失效)
@@ -565,6 +652,34 @@ export default function RealGisMap() {
       map.off('move zoom', close);
     };
   }, [radial]);
+
+  // 力量明细面板:地图移动/缩放时跟随消防站 marker 重算锚点(面板不飞开)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !forcePanel) return;
+    const update = () => {
+      const p = map.latLngToContainerPoint(L.latLng(forcePanel.lat, forcePanel.lng));
+      setForcePanel((prev) => (prev ? { ...prev, x: p.x, y: p.y, maxX: map.getSize().x } : prev));
+    };
+    map.on('move zoom', update);
+    return () => {
+      map.off('move zoom', update);
+    };
+  }, [forcePanel?.station?.id]);
+
+  // 派遣面板:地图移动/缩放时跟随目标重算锚点(不飞开)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !deploy) return;
+    const update = () => {
+      const p = map.latLngToContainerPoint(L.latLng(deploy.target.lat, deploy.target.lng));
+      setDeploy((prev) => (prev ? { ...prev, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } } : prev));
+    };
+    map.on('move zoom', update);
+    return () => {
+      map.off('move zoom', update);
+    };
+  }, [deploy?.target.lng, deploy?.target.lat]);
 
   // 划定区域:启用/取消 leaflet-draw 多边形绘制
   const startDraw = useCallback(() => {
@@ -625,14 +740,14 @@ export default function RealGisMap() {
         },
       },
     ];
-    if (routeInfo) {
+    if (planned.length) {
       actions.push({
         id: 'clear-route',
         title: '清空到场路线',
         icon: Trash2,
         group: '动作',
         run: () => {
-          clearRoute();
+          clearRoutes();
           close();
         },
       });
@@ -701,7 +816,7 @@ export default function RealGisMap() {
       };
     }
     setPaletteLoading(false);
-  }, [paletteOpen, paletteQuery, baseMap, routeInfo, keyUnits, clearRoute, batchGeocode, drawMode, startDraw, cancelDraw]);
+  }, [paletteOpen, paletteQuery, baseMap, planned, keyUnits, clearRoutes, batchGeocode, drawMode, startDraw, cancelDraw]);
 
   // 消防站
   useEffect(() => {
@@ -720,12 +835,13 @@ export default function RealGisMap() {
           popupAnchor: [0, -24],
         }),
       })
-        .bindPopup(`<b>${s.name}</b><br/>${s.type} · 在位 ${s.personnel} 人<br/>${s.address}<br/>${s.lng.toFixed(5)}, ${s.lat.toFixed(5)}(WGS84)`)
-        .on('click', () => handleStationClick(s));
+        .bindPopup(`<b>${s.name}</b><br/>${s.type} · 在位 ${personnelCounts.get(s.id) ?? 0} 人<br/>${s.address}<br/>${s.lng.toFixed(5)}, ${s.lat.toFixed(5)}(WGS84)`)
+        .on('click', () => handleStationClick(s))
+        .on('contextmenu', () => openRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng: g.lng, lat: g.lat }, [g.lat, g.lng]));
       layer.addLayer(marker);
       markersRef.current.set(s.id, marker);
     }
-  }, [stations, handleStationClick, mapInited]);
+  }, [stations, handleStationClick, mapInited, openRadial, personnelCounts]);
 
   // 水源
   useEffect(() => {
@@ -780,7 +896,7 @@ export default function RealGisMap() {
         }),
       })
         .bindPopup(popupForKeyUnit(u))
-        .on('click', () => openRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]));
+        .on('contextmenu', () => openRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]));
       keyUnitMarkersRef.current.set(u.id, marker);
       layer.addLayer(marker);
     }
@@ -804,7 +920,7 @@ export default function RealGisMap() {
         }),
       })
         .bindPopup(popupForKeyBuilding(b, unitName))
-        .on('click', () => openRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat }, [b.lat, b.lng]));
+        .on('contextmenu', () => openRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat }, [b.lat, b.lng]));
       buildingMarkersRef.current.set(b.id, marker);
       layer.addLayer(marker);
     }
@@ -921,6 +1037,37 @@ export default function RealGisMap() {
         const g = wgs84ToGcj02(DEFAULT_CENTER_WGS84[1], DEFAULT_CENTER_WGS84[0]);
         mapRef.current?.setView([g.lat, g.lng], DEFAULT_ZOOM);
       }
+      if (latest.action === 'showRoute' && latest.source !== '面板') {
+        // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
+        const routeLayer = routeLayerRef.current;
+        const routes = (latest.params as {
+          routes?: Array<{ polyline?: [number, number][]; stationName?: string; distance?: number; duration?: number; trafficLights?: number }>;
+        }).routes;
+        if (routeLayer && Array.isArray(routes) && routes.length) {
+          routeLayer.clearLayers();
+          const colors = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
+          const allLatLngs: [number, number][] = [];
+          const summary: PlannedRoute[] = [];
+          routes.forEach((r, idx) => {
+            if (!r.polyline?.length) return;
+            const color = colors[idx % colors.length];
+            const distKm = r.distance ? (r.distance / 1000).toFixed(1) : '?';
+            const etaMin = r.duration ? Math.round(r.duration / 60) : '?';
+            const tipHtml = `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${r.stationName ?? `路线 ${idx + 1}`}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${r.trafficLights ?? 0}灯</span></div>`;
+            L.polyline(r.polyline, { color, weight: 4, dashArray: '10 8', opacity: 0.9, className: 'route-flow' }).addTo(routeLayer);
+            const seg = Math.min(Math.floor(r.polyline.length * (0.3 + idx * 0.18)), r.polyline.length - 1);
+            L.marker(r.polyline[seg], {
+              icon: L.divIcon({ html: tipHtml, className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
+              interactive: false,
+              keyboard: false,
+            }).addTo(routeLayer);
+            r.polyline.forEach((pt) => allLatLngs.push(pt));
+            summary.push({ stationId: `ext-${idx}`, stationName: r.stationName ?? `路线 ${idx + 1}`, distance: r.distance ?? 0, duration: r.duration ?? 0, trafficLights: r.trafficLights ?? 0 });
+          });
+          setPlanned(summary);
+          if (allLatLngs.length) map.flyToBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
+        }
+      }
     });
     return () => {
       unsub();
@@ -990,6 +1137,13 @@ export default function RealGisMap() {
         onQueryChange={setPaletteQuery}
         onClose={() => setPaletteOpen(false)}
       />
+      {forcePanel && (
+        <ForceManagePanel
+          station={forcePanel.station}
+          anchor={forcePanel}
+          onClose={() => setForcePanel(null)}
+        />
+      )}
       {coordFix && (
         <CoordinateFixPanel
           target={coordFix}
@@ -1015,7 +1169,21 @@ export default function RealGisMap() {
           onClose={closeRadial}
         />
       )}
-      {routeInfo && null}
+      {deploy && (
+        <DeployPanel
+          targetName={deploy.target.name}
+          stations={deploy.stations}
+          planned={planned}
+          planning={planning}
+          anchor={deploy.anchor}
+          onPlan={(ids) => planRoutes(ids)}
+          onClear={clearRoutes}
+          onClose={() => {
+            setDeploy(null);
+            clearRoutes();
+          }}
+        />
+      )}
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
           底图瓦片加载失败(高德不可达)——显示占位底图

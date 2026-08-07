@@ -92,7 +92,7 @@ export function buildResourceTree(
     { category: '队站', children: groupBy(stations, (s) => s.type) },
     { category: '人员', children: groupBy(resources.filter((r) => r.category === '人员'), (r) => r.subtype) },
     { category: '车辆', children: groupBy(resources.filter((r) => r.category === '车辆'), (r) => r.subtype) },
-    { category: '装备', children: groupBy(resources.filter((r) => r.category === '装备'), (r) => r.subtype) },
+    { category: '装备', children: groupBy(resources.filter((r) => r.category === '装备'), (r) => r.name) },
   ].map((g) => g.category === '队站'
     ? { ...g, children: [...g.children].sort((a, b) => stationTypes.indexOf(a.name) - stationTypes.indexOf(b.name)) }
     : g);

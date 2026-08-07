@@ -6,9 +6,10 @@ import { MapPin, Search, Crosshair, Save, X, Loader2 } from 'lucide-react';
 import type { GeoCandidate } from '@/api/geocode';
 
 export interface CoordFixTarget {
-  kind: 'unit' | 'building';
+  kind: 'unit' | 'building' | 'station';
   id: string;
   name: string;
+  type?: string; // 消防站类型(仅 kind=station 用)
   lng: number; // GCJ02(当前坐标)
   lat: number;
 }

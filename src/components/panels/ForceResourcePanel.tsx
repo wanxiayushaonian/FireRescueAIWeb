@@ -42,7 +42,13 @@ export default function ForceResourcePanel() {
     setState('loading');
     try {
       const [st, rs] = await Promise.all([fetchStations(s), fetchResources(s)]);
-      setStations(st);
+      // 队站人员数:按 fire_force_items(ref_id + force_type=人员)聚合,不依赖 extra_attrs.personnel_count(未回填)
+      setStations(
+        st.map((station) => ({
+          ...station,
+          personnel: rs.filter((r) => r.stationId === station.id && r.category === '人员').length,
+        })),
+      );
       setResources(rs);
       setStats(buildForceStats(st, rs)); // {value, delta?}[] 顺序 队站/人员/车辆/装备
       setTree(buildResourceTree(st, rs));

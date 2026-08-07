@@ -52,12 +52,12 @@ describe('force-mapper', () => {
     const resources = [
       mapResource(RAW_VEHICLE),
       mapResource({ ...RAW_VEHICLE, id: 'f-2', force_type: '人员', subtype: '干部' }),
-      mapResource({ ...RAW_VEHICLE, id: 'f-3', force_type: '装备', subtype: '侦检' }),
+      mapResource({ ...RAW_VEHICLE, id: 'f-3', name: '可燃气体检测仪', force_type: '装备', subtype: '侦检' }),
     ];
     const tree = buildResourceTree(stations, resources);
     const stationNode = tree.find((g) => g.category === '队站');
     expect(stationNode?.children).toEqual([{ name: '特勤消防站', count: 1 }, { name: '普通消防站', count: 1 }]);
     expect(tree.find((g) => g.category === '人员')?.children).toEqual([{ name: '干部', count: 1 }]);
-    expect(tree.find((g) => g.category === '装备')?.children).toEqual([{ name: '侦检', count: 1 }]);
+    expect(tree.find((g) => g.category === '装备')?.children).toEqual([{ name: '可燃气体检测仪', count: 1 }]);
   });
 });

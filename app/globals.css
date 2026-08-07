@@ -306,3 +306,30 @@
 .route-info-tip.leaflet-tooltip::before {
   display: none !important;
 }
+
+/* 到场路线呼吸:虚线流动 + 轻微脉冲(多站派遣动效;dashArray '10 8' 总 18) */
+.leaflet-overlay-pane path.route-flow {
+  animation: route-flow 1.2s linear infinite, route-pulse 2.4s ease-in-out infinite;
+}
+@keyframes route-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+@keyframes route-pulse {
+  0%,
+  100% {
+    stroke-opacity: 0.7;
+  }
+  50% {
+    stroke-opacity: 1;
+  }
+}
+
+/* 路线信息标签(divIcon marker):透明容器,html 撑开不裁剪 */
+.route-tip-icon.leaflet-marker-icon {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  overflow: visible;
+}
