@@ -22,3 +22,13 @@ export async function fetchKeyBuildings(): Promise<KeyBuilding[]> {
     .map(mapKeyBuilding)
     .filter((x): x is KeyBuilding => x !== null);
 }
+
+/** 更新重点建筑坐标(GCJ02;只传经纬度,znya PUT 用 exclude_unset 不碰其他字段)。 */
+export async function updateKeyBuildingCoords(id: string, lng: number, lat: number): Promise<void> {
+  const res = await fetch(`/api/business/key-buildings/${id}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ longitude: lng, latitude: lat }),
+  });
+  if (!res.ok) throw new Error(`更新建筑坐标失败 ${res.status}`);
+}
