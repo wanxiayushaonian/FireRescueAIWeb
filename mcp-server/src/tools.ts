@@ -40,6 +40,18 @@ export const TOOLS = [
       required: ['target'],
     },
   },
+  {
+    name: 'show_route',
+    description: '在 2D 态势总览渲染多站派遣路线(routes: 路线数组,每项含 stationName/polyline[[lat,lng]]/distance/duration/trafficLights;业务查询/规划走 Python MCP,本工具只负责场景渲染)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        routes: { type: 'array', items: { type: 'object' } },
+        target: { type: 'string', description: '目标名称(可选)' },
+      },
+      required: ['routes'],
+    },
+  },
 ] as const;
 
 export async function handleToolCall(
@@ -135,6 +147,29 @@ export async function handleToolCall(
       content: [{
         type: 'text',
         text: `已下发 fly_to -> ${target}:命令经 /scene-events 推送至场景页面。仅当页面在线且场景 SDK 就绪时才会执行;命令通道为单向,无执行回执,实际效果需另行确认。`,
+      }],
+    };
+  }
+
+  if (name === 'show_route') {
+    const routes = Array.isArray(args.routes) ? (args.routes as unknown[]) : [];
+    if (routes.length === 0) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'show_route 缺少 routes:需提供路线数组(可先经业务 Python MCP 规划)' }],
+      };
+    }
+    const cmd: SceneCommand = {
+      id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tool: 'show_route',
+      args: { routes, target: String(args.target ?? '') },
+      ts: Date.now(),
+    };
+    publishCommand(cmd);
+    return {
+      content: [{
+        type: 'text',
+        text: `已下发 show_route(${routes.length} 站):命令经 /scene-events 推送至 2D 态势总览渲染。仅当页面在线且地图就绪时生效,通道为单向无回执。`,
       }],
     };
   }

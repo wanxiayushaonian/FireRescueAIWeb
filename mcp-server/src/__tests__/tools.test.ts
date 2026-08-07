@@ -88,4 +88,23 @@ describe('tools', () => {
     }));
     expect(res.content[0].text).toContain('已下发');
   });
+
+  it('TOOLS 含 show_route(场景命令;业务查询走 Python MCP,不塞 Node)', () => {
+    expect(TOOLS.map((t) => t.name)).toContain('show_route');
+  });
+
+  it('show_route 发布命令并返回已下发', async () => {
+    const routes = [{ stationName: '康泰路专职队', polyline: [[29.7, 115.96]], distance: 3300, duration: 480, trafficLights: 3 }];
+    const res = await handleToolCall('show_route', { routes, target: '乐盈广场' });
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'show_route', args: { routes, target: '乐盈广场' },
+    }));
+    expect(res.content[0].text).toContain('已下发');
+  });
+
+  it('show_route 空 routes → 标记错误且不发布命令', async () => {
+    const res = await handleToolCall('show_route', { routes: [] });
+    expect(res.isError).toBe(true);
+    expect(publishCommand).not.toHaveBeenCalled();
+  });
 });
