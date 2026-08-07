@@ -25,8 +25,8 @@ export function shouldShowWater(zoom: number): boolean {
 }
 
 /** 消防站图标:菱形徽标 + "消"字,24px,锚点底部中心。 */
-export function stationIconSvg(type: string): string {
-  const color = TYPE_COLORS[type] ?? DEFAULT_STATION_COLOR;
+export function stationIconSvg(type: string, status?: string): string {
+  const color = status && status !== 'normal' ? '#6b7280' : TYPE_COLORS[type] ?? DEFAULT_STATION_COLOR;
   return `<svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 1 L22 11 L12 23 L2 11 Z" fill="${color}" stroke="#0b1220" stroke-width="1.5"/>
   <text x="12" y="16" font-size="11" text-anchor="middle" fill="#0b1220" font-weight="700" font-family="sans-serif">消</text>

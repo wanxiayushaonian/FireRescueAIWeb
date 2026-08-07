@@ -14,13 +14,15 @@ import type { Station, WaterSource, ResourceItem } from '@/mock/types';
 import { fetchStations, fetchResources } from '@/api/force';
 import { fetchWaterSources } from '@/api/water';
 import { fetchKeyUnits, updateKeyUnitCoords, geocodeMissingKeyUnits } from '@/api/key-units';
+import { fetchIncidents } from '@/api/incidents';
+import type { Incident } from '@/lib/incident-mapper';
 import { fetchKeyBuildings, updateKeyBuildingCoords } from '@/api/key-buildings';
 import { fetchDrivingRoute } from '@/api/route';
 import { fetchGeocode, type GeoCandidate } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater } from '@/lib/map-icons';
 import { wgs84ToGcj02 } from '@/lib/geo-convert';
-import { haversineKm } from '@/lib/geo-query';
+import { haversineKm, filterByRadius } from '@/lib/geo-query';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type { Region } from '@/lib/region-mapper';
@@ -31,7 +33,7 @@ import CoordinateFixPanel, { type CoordFixTarget } from './gis/CoordinateFixPane
 import ForceManagePanel, { type ForcePanelStation } from './gis/ForceManagePanel';
 import RadialMenu, { type RadialAction } from './gis/RadialMenu';
 import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/DeployPanel';
-import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine, Navigation, Users } from 'lucide-react';
+import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine, Navigation, Users, Droplets, Rocket } from 'lucide-react';
 
 // 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
@@ -87,11 +89,14 @@ export default function RealGisMap() {
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
+  const incidentMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const buildingMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const waterLayerRef = useRef<L.LayerGroup | null>(null);
+  const highlightLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
+  const incidentsLayerRef = useRef<L.LayerGroup | null>(null);
   const buildingsLayerRef = useRef<L.LayerGroup | null>(null);
   const regionsLayerRef = useRef<L.LayerGroup | null>(null);
   const drawRef = useRef<L.Draw.Polygon | null>(null);
@@ -105,6 +110,7 @@ export default function RealGisMap() {
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [water, setWater] = useState<WaterSource[]>([]);
   const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
@@ -114,6 +120,7 @@ export default function RealGisMap() {
   const [showWater, setShowWater] = useState(true);
   const [showBoundary, setShowBoundary] = useState(true);
   const [showKeyUnits, setShowKeyUnits] = useState(true);
+  const [showIncidents, setShowIncidents] = useState(true);
   const [showBuildings, setShowBuildings] = useState(true);
   const [showRegions, setShowRegions] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
@@ -174,7 +181,9 @@ export default function RealGisMap() {
     boundaryLayerRef.current = L.layerGroup().addTo(map);
     stationsLayerRef.current = L.layerGroup().addTo(map);
     waterLayerRef.current = L.layerGroup().addTo(map);
+    highlightLayerRef.current = L.layerGroup().addTo(map);
     keyUnitsLayerRef.current = L.layerGroup().addTo(map);
+    incidentsLayerRef.current = L.layerGroup().addTo(map);
     buildingsLayerRef.current = L.layerGroup().addTo(map);
     regionsLayerRef.current = L.layerGroup().addTo(map);
     routeLayerRef.current = L.layerGroup().addTo(map);
@@ -271,6 +280,19 @@ export default function RealGisMap() {
     fetchKeyUnits()
       .then((ks) => {
         if (alive) setKeyUnits(ks);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 加载警情/事件
+  useEffect(() => {
+    let alive = true;
+    fetchIncidents()
+      .then((is) => {
+        if (alive) setIncidents(is);
       })
       .catch(() => {});
     return () => {
@@ -398,22 +420,46 @@ export default function RealGisMap() {
   // 派遣路线色板(多站各色)
   const ROUTE_COLORS = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
 
-  // 打开派遣面板:站点 WGS84→GCJ02 统一坐标系后按到目标直线距离排序 + 算锚点
-  const openDeploy = useCallback((t: CoordFixTarget) => {
+  // 周边水源高亮:500m 内水源画青色圈 + 适窗(独立可调,警情圆环"周边水源"复用)
+  const highlightNearbyWater = useCallback((t: { lng: number; lat: number }) => {
     const map = mapRef.current;
-    if (!map) return;
-    map.closePopup();
-    const sorted = stationsRef.current
-      .map((s) => {
-        const g = wgs84ToGcj02(s.lng, s.lat);
-        return { ...s, distKm: haversineKm(g.lng, g.lat, t.lng, t.lat) };
-      })
-      .sort((a, b) => a.distKm - b.distKm);
-    const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
-    setDeploy({ target: { name: t.name, lng: t.lng, lat: t.lat }, stations: sorted, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } });
-    setPlanned([]);
-    setRadial(null);
+    const highlight = highlightLayerRef.current;
+    if (!map || !highlight) return;
+    highlight.clearLayers();
+    const nearby = filterByRadius(waterRef.current, { lng: t.lng, lat: t.lat }, 500, (w) => {
+      const g = wgs84ToGcj02(w.lng, w.lat);
+      return { lng: g.lng, lat: g.lat };
+    });
+    const bounds = L.latLngBounds([L.latLng(t.lat, t.lng)]);
+    nearby.forEach((w) => {
+      const g = wgs84ToGcj02(w.lng, w.lat);
+      L.circleMarker([g.lat, g.lng], { radius: 10, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.3, weight: 2 })
+        .bindTooltip(`${w.name} · ${w.type}`, { direction: 'top' })
+        .addTo(highlight);
+      bounds.extend(L.latLng(g.lat, g.lng));
+    });
+    if (nearby.length) map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
   }, []);
+
+  // 打开派遣面板:站点 WGS84→GCJ02 统一坐标系后按到目标直线距离排序 + 算锚点 + 周边水源
+  const openDeploy = useCallback(
+    (t: { name: string; lng: number; lat: number }) => {
+      const map = mapRef.current;
+      if (!map) return;
+      const sorted = stationsRef.current
+        .map((s) => {
+          const g = wgs84ToGcj02(s.lng, s.lat);
+          return { ...s, distKm: haversineKm(g.lng, g.lat, t.lng, t.lat) };
+        })
+        .sort((a, b) => a.distKm - b.distKm);
+      const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
+      setDeploy({ target: { name: t.name, lng: t.lng, lat: t.lat }, stations: sorted, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } });
+      setPlanned([]);
+      setRadial(null);
+      highlightNearbyWater(t);
+    },
+    [highlightNearbyWater],
+  );
 
   // 多站到场路线规划:每站 driving(GCJ02)+ 各色 polyline + 贴线 tooltip + 适窗;写 showRoute scene action(MCP 通道)
   const planRoutes = useCallback(
@@ -468,6 +514,7 @@ export default function RealGisMap() {
 
   const clearRoutes = useCallback(() => {
     routeLayerRef.current?.clearLayers();
+    highlightLayerRef.current?.clearLayers();
     setPlanned([]);
   }, []);
 
@@ -605,6 +652,40 @@ export default function RealGisMap() {
         ];
       }
       // 重点单位 / 建筑:路线 / 修正 / 详情
+      if (t.kind === 'incident') {
+        return [
+          {
+            key: 'deploy',
+            icon: Rocket,
+            label: '派遣',
+            color: '#22d3ee',
+            onClick: () => {
+              openDeploy({ name: t.name, lng: t.lng, lat: t.lat });
+              setRadial(null);
+            },
+          },
+          {
+            key: 'water',
+            icon: Droplets,
+            label: '周边水源',
+            color: '#34d399',
+            onClick: () => {
+              highlightNearbyWater({ lng: t.lng, lat: t.lat });
+              setRadial(null);
+            },
+          },
+          {
+            key: 'detail',
+            icon: Info,
+            label: '详情',
+            color: '#a78bfa',
+            onClick: () => {
+              incidentMarkersRef.current.get(t.id)?.openPopup();
+              setRadial(null);
+            },
+          },
+        ];
+      }
       return [
         {
           key: 'route',
@@ -639,7 +720,7 @@ export default function RealGisMap() {
         },
       ];
     },
-    [openDeploy, openCoordFix],
+    [openDeploy, openCoordFix, highlightNearbyWater],
   );
 
   // 地图移动/缩放时关闭圆环(像素坐标已失效)
@@ -828,7 +909,7 @@ export default function RealGisMap() {
       const g = wgs84ToGcj02(s.lng, s.lat);
       const marker = L.marker([g.lat, g.lng], {
         icon: L.divIcon({
-          html: stationIconSvg(s.type),
+          html: stationIconSvg(s.type, s.status),
           className: 'map-icon-station',
           iconSize: [24, 24],
           iconAnchor: [12, 24],
@@ -885,22 +966,71 @@ export default function RealGisMap() {
     if (!layer || !mapInited) return;
     layer.clearLayers();
     keyUnitMarkersRef.current.clear();
+    // 该单位是否有活跃警情(关联 key_unit_id 且 status != 结束)
+    const incidentByUnit = new Map<string, Incident>();
+    for (const i of incidents) if (i.keyUnitId && i.status !== '结束') incidentByUnit.set(i.keyUnitId, i);
     for (const u of keyUnits) {
+      const inc = incidentByUnit.get(u.id);
+      const isHighRisk = !inc && /高层|化工|危化|超高层|大空间|地下/.test(u.unitType);
+      const iconHtml = inc
+        ? `<div class="unit-incident-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-incident-ring" data-level="${inc.level}"></span><span class="unit-incident-level">${inc.level}</span></div>`
+        : isHighRisk
+          ? `<div class="unit-risk-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-risk-badge" title="高风险">!</span></div>`
+          : keyUnitIconSvg(u.unitType, u.status);
+      const popupHtml =
+        popupForKeyUnit(u) +
+        (inc
+          ? `<br/><span style="color:#ef4444">⚠ 警情:${inc.incidentType} · ${inc.level} 级 · ${inc.status}${inc.description ? `(${inc.description})` : ''}</span>`
+          : '');
       const marker = L.marker([u.lat, u.lng], {
         icon: L.divIcon({
-          html: keyUnitIconSvg(u.unitType, u.status),
+          html: iconHtml,
           className: 'map-icon-key-unit',
           iconSize: [24, 24],
           iconAnchor: [12, 24],
           popupAnchor: [0, -24],
         }),
       })
-        .bindPopup(popupForKeyUnit(u))
+        .bindPopup(popupHtml)
+        .on('click', (e) => {
+          if (incidentByUnit.get(u.id)) {
+            openDeploy({ name: u.name, lng: u.lng, lat: u.lat });
+            e.target.closePopup(); // 有警情:只弹派遣面板,关闭自动 popup 避免与面板重合(单位详情走右键圆环)
+          }
+        })
         .on('contextmenu', () => openRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]));
       keyUnitMarkersRef.current.set(u.id, marker);
       layer.addLayer(marker);
     }
-  }, [keyUnits, mapInited, openRadial]);
+  }, [keyUnits, mapInited, openRadial, incidents, openDeploy]);
+
+  // 警情/事件(红色脉冲点位 + level 数字;GCJ02 直显)
+  useEffect(() => {
+    const layer = incidentsLayerRef.current;
+    if (!layer || !mapInited) return;
+    layer.clearLayers();
+    incidentMarkersRef.current.clear();
+    for (const i of incidents) {
+      if (i.keyUnitId) continue; // 关联单位的警情由单位 marker 警情态显示,不独立渲染
+      const marker = L.marker([i.lat, i.lng], {
+        icon: L.divIcon({
+          html: `<div class="incident-marker" data-level="${i.level}">${i.level}</div>`,
+          className: 'map-icon-incident',
+          iconSize: [28, 28],
+          iconAnchor: [14, 14],
+          popupAnchor: [0, -14],
+        }),
+      })
+        .bindPopup(
+          `<b>⚠ ${i.address}</b><br/>${i.incidentType} · ${i.level} 级 · ${i.status}` +
+            `${i.description ? `<br/>${i.description}` : ''}<br/>${i.lng.toFixed(5)}, ${i.lat.toFixed(5)}`,
+        )
+        .on('click', () => openDeploy({ name: i.address, lng: i.lng, lat: i.lat }))
+        .on('contextmenu', () => openRadial({ kind: 'incident', id: i.id, name: i.address, lng: i.lng, lat: i.lat }, [i.lat, i.lng]));
+      incidentMarkersRef.current.set(i.id, marker);
+      layer.addLayer(marker);
+    }
+  }, [incidents, mapInited, openDeploy, openRadial]);
 
   // 重点建筑
   useEffect(() => {
@@ -985,6 +1115,15 @@ export default function RealGisMap() {
     if (showWater) layer.addTo(map);
     else map.removeLayer(layer);
   }, [showWater, mapInited]);
+
+  // 警情显隐
+  useEffect(() => {
+    const map = mapRef.current;
+    const layer = incidentsLayerRef.current;
+    if (!map || !layer || !mapInited) return;
+    if (showIncidents) layer.addTo(map);
+    else map.removeLayer(layer);
+  }, [showIncidents, mapInited]);
 
   // 重点单位显隐
   useEffect(() => {
@@ -1124,6 +1263,8 @@ export default function RealGisMap() {
         onToggleBoundary={() => setShowBoundary((v) => !v)}
         showKeyUnits={showKeyUnits}
         onToggleKeyUnits={() => setShowKeyUnits((v) => !v)}
+        showIncidents={showIncidents}
+        onToggleIncidents={() => setShowIncidents((v) => !v)}
         showBuildings={showBuildings}
         onToggleBuildings={() => setShowBuildings((v) => !v)}
         showRegions={showRegions}

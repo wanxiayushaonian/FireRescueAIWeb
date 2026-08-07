@@ -18,6 +18,8 @@ interface Props {
   onToggleBuildings: () => void;
   showRegions: boolean;
   onToggleRegions: () => void;
+  showIncidents: boolean;
+  onToggleIncidents: () => void;
 }
 
 export default function MapLayerControl({
@@ -35,6 +37,8 @@ export default function MapLayerControl({
   onToggleBuildings,
   showRegions,
   onToggleRegions,
+  showIncidents,
+  onToggleIncidents,
 }: Props) {
   const layers = [
     { label: '消防站', show: showStations, toggle: onToggleStations },
@@ -43,6 +47,7 @@ export default function MapLayerControl({
     { label: '重点单位', show: showKeyUnits, toggle: onToggleKeyUnits },
     { label: '重点建筑', show: showBuildings, toggle: onToggleBuildings },
     { label: '区域', show: showRegions, toggle: onToggleRegions },
+    { label: '警情', show: showIncidents, toggle: onToggleIncidents },
   ];
 
   return (

@@ -44,6 +44,7 @@ export function mapStation(raw: ZnyaStation): Station {
     lat: raw.latitude ?? 0,
     personnel: raw.extra_attrs?.personnel_count ?? 0,
     vehicles: sumVehicle(raw.extra_attrs?.vehicle_summary),
+    status: raw.status ?? 'normal',
   };
 }
 

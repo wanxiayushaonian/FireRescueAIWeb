@@ -12,6 +12,7 @@ export interface Station {
   lat: number;
   personnel: number;
   vehicles: number;
+  status?: string; // normal/维修/停用(后端 fire_stations.status)
 }
 
 export interface ResourceItem {
