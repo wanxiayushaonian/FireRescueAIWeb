@@ -1,5 +1,6 @@
 import { registerSceneTool } from './registry';
 import { getSceneTreeForView } from './scene-tree';
+import { addSceneAction } from '@/mock/sceneLog';
 import type { SceneSdkLike } from './types';
 
 // 聚焦高亮色:与 FIRE_TYPE_COLORS 告警色一致,agent 不操心配色。
@@ -41,5 +42,20 @@ export function registerDefaultTools(_sdk: SceneSdkLike): void {
     const tree = await getSceneTreeForView(sceneId);
     // 隔离显示选中楼层;空数组 = 恢复全楼层。params 按引擎确认(默认 story 模式)。
     await sdk.setViewMode({ mode: 'story' }, tree, storyIds);
+  });
+
+  // 2D 态势总览:AI 派遣多站路线渲染(经 addSceneAction → RealGisMap subscribeSceneLog 的 showRoute 通道)
+  registerSceneTool('show_route', async (args) => {
+    const routes = (args as { routes?: unknown }).routes;
+    if (!Array.isArray(routes) || routes.length === 0) {
+      console.warn('[scene-bus] show_route missing routes');
+      return;
+    }
+    addSceneAction({
+      action: 'showRoute',
+      target: `AI 派遣路线(${routes.length} 站)`,
+      params: { routes },
+      source: '智能体',
+    });
   });
 }
