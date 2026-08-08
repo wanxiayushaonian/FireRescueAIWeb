@@ -29,6 +29,8 @@ export function renderKeyBuildings(
 ): Map<string, L.Marker> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const L: typeof import('leaflet') = require('leaflet');
+  // popup 保活:重建前(clearLayers 会经 layerremove 关闭 popup,故须在清空前捕获)记下打开中的 popup id,重建后恢复(同 render-water 模式)
+  const openId = [...opts.prevMarkers.entries()].find(([, m]) => m.isPopupOpen())?.[0];
   layer.clearLayers();
   const markers = new Map<string, L.Marker>();
 
@@ -70,8 +72,6 @@ export function renderKeyBuildings(
   };
 
   if (zoom >= MARKER_CLUSTER_MAX_ZOOM) {
-    // popup 保活:平移重建前记下打开中的 popup id,重建后恢复(同 render-water 模式)
-    const openId = [...opts.prevMarkers.entries()].find(([, m]) => m.isPopupOpen())?.[0];
     // 视口裁剪:只渲染视野内点位;超限回落聚合气泡(建筑无警情规则,回落时全部进气泡)
     const visible = cullToBounds(buildings, (b) => b.lng, (b) => b.lat, opts.bounds);
     if (decidePointRender(visible.length, opts.cap ?? POINT_CAP) === 'points') {

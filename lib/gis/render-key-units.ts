@@ -31,6 +31,8 @@ export function renderKeyUnits(
 ): Map<string, L.Marker> {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const L: typeof import('leaflet') = require('leaflet');
+  // popup 保活:重建前(clearLayers 会经 layerremove 关闭 popup,故须在清空前捕获)记下打开中的 popup id,重建后恢复(同 render-water 模式)
+  const openId = [...opts.prevMarkers.entries()].find(([, m]) => m.isPopupOpen())?.[0];
   layer.clearLayers();
   const markers = new Map<string, L.Marker>();
   // 该单位是否有活跃警情(关联 key_unit_id 且 status != 结束)
@@ -88,8 +90,6 @@ export function renderKeyUnits(
   };
 
   if (zoom >= MARKER_CLUSTER_MAX_ZOOM) {
-    // popup 保活:平移重建前记下打开中的 popup id,重建后恢复(同 render-water 模式)
-    const openId = [...opts.prevMarkers.entries()].find(([, m]) => m.isPopupOpen())?.[0];
     // 视口裁剪:只渲染视野内点位(警情单位始终逐点,不进气泡的规则不变)
     const visible = cullToBounds(units, (u) => u.lng, (u) => u.lat, opts.bounds);
     const withIncident = visible.filter((u) => incidentByUnit.has(u.id));
