@@ -11,12 +11,9 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import type { Station } from '@/mock/types';
-import { fetchNearbyWaterSources, fetchWaterSourcesPage, createWaterSource, updateWaterSource, deleteWaterSource } from '@/api/water';
-import { fetchKeyUnits, updateKeyUnitCoords, geocodeMissingKeyUnits, createKeyUnit, updateKeyUnit, deleteKeyUnit } from '@/api/key-units';
+import { fetchWaterSourcesPage } from '@/api/water';
+import { fetchGeocode } from '@/api/geocode';
 import type { Incident } from '@/lib/incident-mapper';
-import { fetchKeyBuildings, updateKeyBuildingCoords, fetchKeyBuildingDetail, createKeyBuilding, updateKeyBuilding, deleteKeyBuilding } from '@/api/key-buildings';
-import { fetchDrivingRoute } from '@/api/route';
-import { fetchGeocode, type GeoCandidate } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
 import { HIGH_RISK_PATTERN, keyUnitMarkerHtml, incidentMarkerHtml } from '@/lib/gis/marker-html';
@@ -25,7 +22,6 @@ import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { popupForKeyUnit, popupForKeyBuilding, popupForStation, popupForWater, popupForIncident, popupIncidentSuffix } from '@/lib/gis/popup-html';
 import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
-import { haversineKm } from '@/lib/geo-query';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type { Region } from '@/lib/region-mapper';
@@ -35,14 +31,16 @@ import CommandPalette, { type PaletteItem } from './gis/CommandPalette';
 import CoordinateFixPanel, { type CoordFixTarget } from './gis/CoordinateFixPanel';
 import ForceManagePanel, { type ForcePanelStation } from './gis/ForceManagePanel';
 import RadialMenu, { type RadialAction } from './gis/RadialMenu';
-import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/DeployPanel';
+import DeployPanel from './gis/DeployPanel';
 import EntityFormPanel from './gis/EntityFormPanel';
 import { useLeafletMap, DEFAULT_ZOOM } from './gis/hooks/use-leaflet-map';
 import { useGisData } from './gis/hooks/use-gis-data';
 import { useLayerVisibility } from './gis/hooks/use-layer-visibility';
-import { emptyEntityForm, buildWaterPayload, buildUnitPayload, buildBuildingPayload, type EntityFormValues, type EntityKind } from '@/lib/entity-form';
-import { showToast } from '@/components/Toast';
-import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Plus } from 'lucide-react';
+import { useDeployRoutes } from './gis/hooks/use-deploy-routes';
+import { useCoordFix } from './gis/hooks/use-coord-fix';
+import { useEntityForm } from './gis/hooks/use-entity-form';
+import { type EntityKind } from '@/lib/entity-form';
+import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil } from 'lucide-react';
 
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
@@ -72,30 +70,7 @@ export default function RealGisMap() {
   const [showBuildings, setShowBuildings] = useState(true);
   const [showRegions, setShowRegions] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
-  const [deploy, setDeploy] = useState<{
-    target: { name: string; lng: number; lat: number };
-    stations: DeployStation[];
-    anchor: { x: number; y: number; maxX: number };
-  } | null>(null);
-  const [planned, setPlanned] = useState<PlannedRoute[]>([]);
-  const [planning, setPlanning] = useState(false);
-  // 坐标修正(点位治理)
-  const [coordFix, setCoordFix] = useState<CoordFixTarget | null>(null);
-  const [draftCoord, setDraftCoord] = useState<{ lng: number; lat: number } | null>(null);
-  const [pickMode, setPickMode] = useState(false);
-  const [geoCandidates, setGeoCandidates] = useState<GeoCandidate[]>([]);
-  const [geoQuerying, setGeoQuerying] = useState(false);
-  const [coordSaving, setCoordSaving] = useState(false);
-  const [coordError, setCoordError] = useState<string | null>(null);
-  // 点位增删改表单(水源/重点单位/重点建筑)
-  const [entityForm, setEntityForm] = useState<{ mode: 'create' | 'edit'; id?: string; values: EntityFormValues } | null>(null);
-  const [entitySaving, setEntitySaving] = useState(false);
-  const [entityError, setEntityError] = useState<string | null>(null);
-  // 地图空白处右键 → 新增点位菜单
-  const [createMenu, setCreateMenu] = useState<{ x: number; y: number; lng: number; lat: number } | null>(null);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
-  const [batching, setBatching] = useState(false);
-  const [batchMsg, setBatchMsg] = useState<string | null>(null);
   const [radial, setRadial] = useState<{ target: CoordFixTarget; x: number; y: number } | null>(null);
   const [forcePanel, setForcePanel] = useState<{ station: ForcePanelStation; lng: number; lat: number; x: number; y: number; maxX: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -148,6 +123,42 @@ export default function RealGisMap() {
     keyUnits: showKeyUnits,
     buildings: showBuildings,
     regions: showRegions,
+  });
+
+  // 派遣面板 + 多站路线规划(见 gis/hooks/use-deploy-routes)
+  const {
+    deploy, openDeploy, closeDeploy,
+    planned, setPlanned,
+    planning, planRoutes, clearRoutes, highlightNearbyWater,
+  } = useDeployRoutes({
+    mapRef,
+    routeLayer: layers.route,
+    highlightLayer: layers.highlight,
+    stationsRef,
+    setRadial,
+  });
+
+  // 坐标修正/点位治理(见 gis/hooks/use-coord-fix)
+  const {
+    coordFix, setCoordFix,
+    draftCoord, setDraftCoord,
+    pickMode, setPickMode,
+    geoCandidates, setGeoCandidates,
+    geoQuerying, coordSaving, coordError,
+    openCoordFix, closeCoordFix, queryAddress, saveCoord, batchGeocode,
+  } = useCoordFix({ setKeyUnits, setBuildings });
+
+  // 点位增删改表单 + 右键创建菜单(见 gis/hooks/use-entity-form)
+  const {
+    entityForm, setEntityForm,
+    entitySaving, entityError, setEntityError,
+    createMenu, setCreateMenu,
+    openEntityCreate, openEntityEdit, saveEntity, deleteEntity,
+  } = useEntityForm({
+    keyUnits, setKeyUnits, setBuildings,
+    waterRef, bumpWater,
+    mapRef, mapInited,
+    setGeoCandidates, setPickMode, setCoordFix, setRadial,
   });
 
   // 市/区县行政边界
@@ -240,286 +251,6 @@ export default function RealGisMap() {
       source: '面板',
     });
   }, []);
-
-  // 周边水源高亮:500m 内水源画青色圈 + 适窗(独立可调,警情圆环"周边水源"复用)
-  const highlightNearbyWater = useCallback((t: { lng: number; lat: number }) => {
-    const map = mapRef.current;
-    const highlight = layers.highlight;
-    if (!map || !highlight) return;
-    highlight.clearLayers();
-    // 地图与库同为 GCJ02,直接调 nearby 半径查询
-    fetchNearbyWaterSources({ lng: t.lng, lat: t.lat, radius: 500 })
-      .then((nearby) => {
-        const bounds = L.latLngBounds([L.latLng(t.lat, t.lng)]);
-        nearby.forEach((w) => {
-          L.circleMarker([w.lat, w.lng], { radius: 10, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.3, weight: 2 })
-            .bindTooltip(`${w.name} · ${w.type} · ${Math.round(w.distanceM)}m`, { direction: 'top' })
-            .addTo(highlight);
-          bounds.extend(L.latLng(w.lat, w.lng));
-        });
-        if (nearby.length) map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
-      })
-      .catch(() => {});
-  }, []);
-
-  // 打开派遣面板:站点(已与地图同为 GCJ02)按到目标直线距离排序 + 算锚点 + 周边水源
-  const openDeploy = useCallback(
-    (t: { name: string; lng: number; lat: number }) => {
-      const map = mapRef.current;
-      if (!map) return;
-      const sorted = stationsRef.current
-        .map((s) => ({ ...s, distKm: haversineKm(s.lng, s.lat, t.lng, t.lat) }))
-        .sort((a, b) => a.distKm - b.distKm);
-      const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
-      setDeploy({ target: { name: t.name, lng: t.lng, lat: t.lat }, stations: sorted, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } });
-      setPlanned([]);
-      setRadial(null);
-      highlightNearbyWater(t);
-    },
-    [highlightNearbyWater],
-  );
-
-  // 多站到场路线规划:每站 driving(GCJ02)→ renderRoutes 统一渲染(色板/tipHtml 在 lib/gis/route-render);写 showRoute scene action(MCP 通道)
-  const planRoutes = useCallback(
-    async (stationIds: string[]) => {
-      const map = mapRef.current;
-      const routeLayer = layers.route;
-      if (!map || !routeLayer || !deploy) return;
-      setPlanning(true);
-      setPlanned([]);
-      // 并发拉各站 driving;失败站跳过;按 stationIds 顺序组装(原实现靠 sort 恢复顺序,等价)
-      const items = (
-        await Promise.all(
-          stationIds.map(async (id) => {
-            const s = stationsRef.current.find((x) => x.id === id);
-            if (!s) return null;
-            try {
-              const route = await fetchDrivingRoute({ lng: s.lng, lat: s.lat }, { lng: deploy.target.lng, lat: deploy.target.lat });
-              return { stationId: id, stationName: s.name, polyline: route.polyline, distance: route.distance, duration: route.duration, trafficLights: route.trafficLights } as RouteRenderItem;
-            } catch {
-              return null; // 单站失败跳过
-            }
-          }),
-        )
-      ).filter((x): x is RouteRenderItem => x !== null);
-      const { bounds, summary } = renderRoutes(routeLayer, items);
-      setPlanned(summary);
-      setPlanning(false);
-      if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
-      addSceneAction({
-        action: 'showRoute',
-        target: `派遣路线:${deploy.target.name}(${summary.length} 站)`,
-        params: { routes: summary },
-        source: '面板',
-      });
-    },
-    [deploy],
-  );
-
-  const clearRoutes = useCallback(() => {
-    layers.route?.clearLayers();
-    layers.highlight?.clearLayers();
-    setPlanned([]);
-  }, []);
-
-  // ---- 点位治理:坐标修正 ----
-  const openCoordFix = useCallback((t: CoordFixTarget) => {
-    setCoordFix(t);
-    setDraftCoord(null);
-    setGeoCandidates([]);
-    setCoordError(null);
-    setPickMode(false);
-  }, []);
-
-  const closeCoordFix = useCallback(() => {
-    setCoordFix(null);
-    setDraftCoord(null);
-    setGeoCandidates([]);
-    setCoordError(null);
-    setPickMode(false);
-  }, []);
-
-  const queryAddress = useCallback(async (address: string) => {
-    setGeoQuerying(true);
-    setCoordError(null);
-    try {
-      setGeoCandidates(await fetchGeocode(address));
-    } catch {
-      setGeoCandidates([]);
-      setCoordError('地址查询失败');
-    } finally {
-      setGeoQuerying(false);
-    }
-  }, []);
-
-  const saveCoord = useCallback(async () => {
-    if (!coordFix || !draftCoord) return;
-    setCoordSaving(true);
-    setCoordError(null);
-    try {
-      if (coordFix.kind === 'unit') {
-        await updateKeyUnitCoords(coordFix.id, draftCoord.lng, draftCoord.lat);
-        setKeyUnits(await fetchKeyUnits());
-      } else {
-        await updateKeyBuildingCoords(coordFix.id, draftCoord.lng, draftCoord.lat);
-        setBuildings(await fetchKeyBuildings());
-      }
-      addSceneAction({
-        action: 'updateCoord',
-        target: `坐标修正 · ${coordFix.name} → ${draftCoord.lng.toFixed(5)},${draftCoord.lat.toFixed(5)}`,
-        params: { id: coordFix.id, lng: draftCoord.lng, lat: draftCoord.lat },
-        source: '面板',
-      });
-      setCoordFix(null);
-      setDraftCoord(null);
-      setGeoCandidates([]);
-    } catch {
-      setCoordError('保存失败(网络或权限)');
-    } finally {
-      setCoordSaving(false);
-    }
-  }, [coordFix, draftCoord]);
-
-  const batchGeocode = useCallback(async () => {
-    setBatching(true);
-    setBatchMsg(null);
-    try {
-      const n = await geocodeMissingKeyUnits();
-      setKeyUnits(await fetchKeyUnits());
-      setBatchMsg(`已补全 ${n} 个单位坐标`);
-    } catch {
-      setBatchMsg('批量补全失败');
-    } finally {
-      setBatching(false);
-    }
-  }, []);
-
-  // ---- 点位增删改(水源/重点单位/重点建筑) ----
-  const openEntityCreate = useCallback((kind: EntityKind, lng: number, lat: number) => {
-    setEntityForm({ mode: 'create', values: { ...emptyEntityForm(kind), lng, lat } });
-    setEntityError(null);
-    setGeoCandidates([]);
-    setCreateMenu(null);
-    setRadial(null);
-    setCoordFix(null);
-  }, []);
-
-  const openEntityEdit = useCallback(
-    async (kind: EntityKind, id: string) => {
-      setEntityError(null);
-      setGeoCandidates([]);
-      let values: EntityFormValues | null = null;
-      if (kind === 'water') {
-        const w = waterRef.current.find((x) => x.id === id);
-        if (!w) return;
-        values = {
-          ...emptyEntityForm('water'),
-          name: w.name, waterType: w.type, districtCode: w.districtCode, address: w.address,
-          lng: w.lng, lat: w.lat,
-        };
-      } else if (kind === 'unit') {
-        const u = keyUnits.find((x) => x.id === id);
-        if (!u) return;
-        values = {
-          ...emptyEntityForm('unit'),
-          name: u.name, unitType: u.unitType, district: u.district ?? '',
-          contactName: u.contactName ?? '', contactPhone: u.contactPhone ?? '', address: u.address ?? '',
-          lng: u.lng, lat: u.lat,
-        };
-      } else {
-        // 建筑编辑需高度/面积/层数,列表响应没有,先拉详情预填
-        try {
-          const d = await fetchKeyBuildingDetail(id);
-          if (d.longitude == null || d.latitude == null) return;
-          values = {
-            ...emptyEntityForm('building'),
-            name: d.name, buildingType: d.building_type ?? '', buildingUsage: d.building_usage ?? '',
-            buildingHeight: d.building_height != null ? String(d.building_height) : '',
-            floorArea: d.floor_area != null ? String(d.floor_area) : '',
-            groundFloors: d.ground_floors != null ? String(d.ground_floors) : '',
-            undergroundFloors: d.underground_floors != null ? String(d.underground_floors) : '',
-            keyUnitId: d.key_unit_id ?? '', address: d.address ?? '',
-            lng: d.longitude, lat: d.latitude,
-          };
-        } catch {
-          showToast('加载建筑详情失败');
-          return;
-        }
-      }
-      setEntityForm({ mode: 'edit', id, values });
-      setRadial(null);
-      setCoordFix(null);
-    },
-    [keyUnits],
-  );
-
-  const saveEntity = useCallback(async () => {
-    if (!entityForm) return;
-    setEntitySaving(true);
-    setEntityError(null);
-    const { mode, id, values } = entityForm;
-    try {
-      if (values.kind === 'water') {
-        const body = buildWaterPayload(values, mode);
-        if (mode === 'create') await createWaterSource(body);
-        else await updateWaterSource(id!, body);
-        bumpWater(); // 触发 bbox/clusters 重取
-      } else if (values.kind === 'unit') {
-        const body = buildUnitPayload(values);
-        if (mode === 'create') await createKeyUnit(body);
-        else await updateKeyUnit(id!, body);
-        setKeyUnits(await fetchKeyUnits());
-      } else {
-        const body = buildBuildingPayload(values);
-        if (mode === 'create') await createKeyBuilding(body);
-        else await updateKeyBuilding(id!, body);
-        setBuildings(await fetchKeyBuildings());
-      }
-      addSceneAction({
-        action: 'editEntity',
-        target: `${mode === 'create' ? '新增' : '编辑'} · ${values.name}`,
-        params: { kind: values.kind, id, lng: values.lng, lat: values.lat },
-        source: '面板',
-      });
-      showToast(mode === 'create' ? '已创建' : '已保存');
-      setEntityForm(null);
-    } catch (e) {
-      setEntityError(e instanceof Error ? e.message : '保存失败(网络或权限)');
-    } finally {
-      setEntitySaving(false);
-    }
-  }, [entityForm]);
-
-  // 删除:圆环"删除"直删(带确认);表单内删除按钮也走这里
-  const deleteEntity = useCallback(
-    async (kind: EntityKind, id: string, name: string) => {
-      if (!window.confirm(`确认删除「${name}」?删除后不可恢复。`)) return;
-      setEntitySaving(true);
-      setEntityError(null);
-      try {
-        if (kind === 'water') {
-          await deleteWaterSource(id);
-          bumpWater();
-        } else if (kind === 'unit') {
-          await deleteKeyUnit(id);
-          setKeyUnits(await fetchKeyUnits());
-        } else {
-          await deleteKeyBuilding(id);
-          setBuildings(await fetchKeyBuildings());
-        }
-        addSceneAction({ action: 'editEntity', target: `删除 · ${name}`, params: { kind, id }, source: '面板' });
-        showToast('已删除');
-        setEntityForm(null);
-        setRadial(null);
-      } catch {
-        setEntityError('删除失败(网络或权限)');
-        showToast('删除失败');
-      } finally {
-        setEntitySaving(false);
-      }
-    },
-    [],
-  );
 
   // ---- 圆环菜单(点击 marker 弹出动作环,给操作增加摩擦)----
   const closeRadial = useCallback(() => setRadial(null), []);
@@ -719,20 +450,6 @@ export default function RealGisMap() {
       map.off('move zoom', update);
     };
   }, [forcePanel?.station?.id]);
-
-  // 派遣面板:地图移动/缩放时跟随目标重算锚点(不飞开)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !deploy) return;
-    const update = () => {
-      const p = map.latLngToContainerPoint(L.latLng(deploy.target.lat, deploy.target.lng));
-      setDeploy((prev) => (prev ? { ...prev, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } } : prev));
-    };
-    map.on('move zoom', update);
-    return () => {
-      map.off('move zoom', update);
-    };
-  }, [deploy?.target.lng, deploy?.target.lat]);
 
   // 划定区域:启用/取消 leaflet-draw 多边形绘制
   const startDraw = useCallback(() => {
@@ -1164,24 +881,6 @@ export default function RealGisMap() {
     };
   }, []);
 
-  // 地图空白处右键 → 新增点位菜单(marker 右键已 stopPropagation,不会到这)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    const onCtx = (e: any) => {
-      const p = map.latLngToContainerPoint(e.latlng);
-      setCreateMenu({ x: p.x, y: p.y, lng: e.latlng.lng, lat: e.latlng.lat });
-      setRadial(null);
-    };
-    const close = () => setCreateMenu(null);
-    map.on('contextmenu', onCtx);
-    map.on('move zoom click', close);
-    return () => {
-      map.off('contextmenu', onCtx);
-      map.off('move zoom click', close);
-    };
-  }, [mapInited]);
-
   // 地图拾取模式:点击地图 → 回填 draft 坐标(GCJ02,高德瓦片原生坐标系)
   useEffect(() => {
     const map = mapRef.current;
@@ -1350,10 +1049,7 @@ export default function RealGisMap() {
           anchor={deploy.anchor}
           onPlan={(ids) => planRoutes(ids)}
           onClear={clearRoutes}
-          onClose={() => {
-            setDeploy(null);
-            clearRoutes();
-          }}
+          onClose={closeDeploy}
         />
       )}
       {tilesFailed && (
