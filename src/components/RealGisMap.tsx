@@ -20,7 +20,8 @@ import { fetchKeyBuildings, updateKeyBuildingCoords, fetchKeyBuildingDetail, cre
 import { fetchDrivingRoute } from '@/api/route';
 import { fetchGeocode, type GeoCandidate } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
-import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
+import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
+import { HIGH_RISK_PATTERN, keyUnitMarkerHtml, incidentMarkerHtml } from '@/lib/gis/marker-html';
 import { gridCluster } from '@/lib/grid-cluster';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { popupForKeyUnit, popupForKeyBuilding, popupForStation, popupForWater, popupForIncident, popupIncidentSuffix } from '@/lib/gis/popup-html';
@@ -1196,13 +1197,14 @@ export default function RealGisMap() {
     const incidentByUnit = new Map<string, Incident>();
     for (const i of incidents) if (i.keyUnitId && i.status !== '结束') incidentByUnit.set(i.keyUnitId, i);
 
-    const renderUnit = (u: KeyUnit) => {      const inc = incidentByUnit.get(u.id);
-      const isHighRisk = !inc && /高层|化工|危化|超高层|大空间|地下/.test(u.unitType);
-      const iconHtml = inc
-        ? `<div class="unit-incident-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-incident-ring" data-level="${inc.level}"></span><span class="unit-incident-level">${inc.level}</span></div>`
-        : isHighRisk
-          ? `<div class="unit-risk-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-risk-badge" title="高风险">!</span></div>`
-          : keyUnitIconSvg(u.unitType, u.status);
+    const renderUnit = (u: KeyUnit) => {
+      const inc = incidentByUnit.get(u.id);
+      const iconHtml = keyUnitMarkerHtml({
+        unitType: u.unitType,
+        status: u.status,
+        incidentLevel: inc?.level ?? null,
+        highRisk: !inc && HIGH_RISK_PATTERN.test(u.unitType),
+      });
       const popupHtml = popupForKeyUnit(u) + (inc ? popupIncidentSuffix(inc) : '');
       const marker = L.marker([u.lat, u.lng], {
         icon: L.divIcon({
@@ -1259,7 +1261,7 @@ export default function RealGisMap() {
       if (i.keyUnitId) continue; // 关联单位的警情由单位 marker 警情态显示,不独立渲染
       const marker = L.marker([i.lat, i.lng], {
         icon: L.divIcon({
-          html: `<div class="incident-marker" data-level="${i.level}">${i.level}</div>`,
+          html: incidentMarkerHtml(i.level),
           className: 'map-icon-incident',
           iconSize: [28, 28],
           iconAnchor: [14, 14],
