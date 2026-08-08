@@ -29,6 +29,21 @@ export interface ResponseState {
 }
 
 const RESPONSE_RADIUS_KM = 5;
+const DRIVING_CONCURRENCY = 3; // 高德免费 key 并发上限(超限 → CUQPS_HAS_EXCEEDED_THE_LIMIT → 502)
+
+/** 有限并发执行(避免高德 CUQPS),保留入参顺序。 */
+async function poolMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const ret: R[] = new Array(items.length);
+  let idx = 0;
+  const worker = async () => {
+    while (idx < items.length) {
+      const i = idx++;
+      ret[i] = await fn(items[i]);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return ret;
+}
 
 export function useIncidentResponse(deps: {
   mapRef: React.MutableRefObject<L.Map | null>;
@@ -85,10 +100,11 @@ export function useIncidentResponse(deps: {
         return;
       }
 
-      // 并发:每站→灾情点 driving;单站失败跳过
+      // 有限并发 driving(高德免费 key 并发超限返回 CUQPS_HAS_EXCEEDED_THE_LIMIT → 502);
+      // 单站失败重试 1 次(300ms 退避),仍失败跳过
       const results = (
-        await Promise.all(
-          within.map(async (s) => {
+        await poolMap(within, DRIVING_CONCURRENCY, async (s) => {
+          for (let attempt = 0; attempt < 2; attempt++) {
             try {
               const r = await fetchDrivingRoute(
                 { lng: s.lng, lat: s.lat },
@@ -103,10 +119,11 @@ export function useIncidentResponse(deps: {
                 distanceM: r.distance,
               } as EtaItem;
             } catch {
-              return null;
+              if (attempt === 0) await new Promise((res) => setTimeout(res, 300));
             }
-          }),
-        )
+          }
+          return null;
+        })
       ).filter((x): x is EtaItem => x !== null);
 
       const ranked = rankByEta(results);
