@@ -25,6 +25,7 @@ export function useGisData(deps: {
   resources: ResourceItem[];
   water: WaterSource[]; waterRef: React.MutableRefObject<WaterSource[]>;
   waterClusters: WaterCluster[];
+  waterLoading: boolean; // 水源 bbox/clusters 请求进行中,受 seq/alive 守卫(过期响应不得误关)
   keyUnits: KeyUnit[]; setKeyUnits: React.Dispatch<React.SetStateAction<KeyUnit[]>>;
   incidents: Incident[];
   buildings: KeyBuilding[]; setBuildings: React.Dispatch<React.SetStateAction<KeyBuilding[]>>;
@@ -42,6 +43,7 @@ export function useGisData(deps: {
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [water, setWater] = useState<WaterSource[]>([]);
   const [waterClusters, setWaterClusters] = useState<WaterCluster[]>([]);
+  const [waterLoading, setWaterLoading] = useState(false);
   const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
@@ -99,6 +101,7 @@ export function useGisData(deps: {
         waterClustersRef.current = [];
         setWater([]);
         setWaterClusters([]);
+        setWaterLoading(false);
         return;
       }
       const b = map.getBounds().pad(0.25); // 外扩,平移小距离不重复请求(地图与库同为 GCJ02,直接用)
@@ -110,9 +113,11 @@ export function useGisData(deps: {
       };
       const mySeq = ++seq;
       if (shouldShowWaterPoints(zoom)) {
+        setWaterLoading(true);
         fetchWaterSourcesInBbox(bbox)
           .then((ws) => {
             if (!alive || mySeq !== seq) return;
+            setWaterLoading(false);
             // 数据集没变就跳过 setWater,避免触发重渲染把已打开的 popup 销毁
             const cur = waterRef.current;
             if (cur.length !== ws.length || !cur.every((c, i) => c.id === ws[i]?.id)) {
@@ -124,11 +129,16 @@ export function useGisData(deps: {
               setWaterClusters([]);
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            if (!alive || mySeq !== seq) return;
+            setWaterLoading(false);
+          });
       } else {
+        setWaterLoading(true);
         fetchWaterClusters(bbox, waterClusterCell(zoom), hiddenWaterDistricts)
           .then((cs) => {
             if (!alive || mySeq !== seq) return;
+            setWaterLoading(false);
             const cur = waterClustersRef.current;
             if (
               cur.length !== cs.length ||
@@ -142,7 +152,10 @@ export function useGisData(deps: {
               setWater([]);
             }
           })
-          .catch(() => {});
+          .catch(() => {
+            if (!alive || mySeq !== seq) return;
+            setWaterLoading(false);
+          });
       }
     };
     const debounced = () => {
@@ -215,6 +228,7 @@ export function useGisData(deps: {
     resources,
     water, waterRef,
     waterClusters,
+    waterLoading,
     keyUnits, setKeyUnits,
     incidents,
     buildings, setBuildings,

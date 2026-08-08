@@ -16,7 +16,7 @@ import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import { fetchGeocode } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
-import { MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
+import { MARKER_CLUSTER_MAX_ZOOM, shouldShowWater } from '@/lib/map-icons';
 import { renderStations, type RenderStation } from '@/lib/gis/render-stations';
 import { renderWater } from '@/lib/gis/render-water';
 import { renderKeyUnits } from '@/lib/gis/render-key-units';
@@ -106,6 +106,7 @@ export default function RealGisMap() {
     resources,
     water, waterRef,
     waterClusters,
+    waterLoading,
     keyUnits, setKeyUnits,
     incidents,
     buildings, setBuildings,
@@ -114,6 +115,10 @@ export default function RealGisMap() {
     bumpWater,
   } = useGisData({ mapRef, mapInited, hiddenWaterDistricts: layerPrefs.hiddenWaterDistricts });
   setRegionsRef.current = setRegions;
+
+  // 水源加载/空态轻量指示:加载中优先级高于空态
+  const waterEmpty =
+    !waterLoading && shouldShowWater(zoom) && water.length === 0 && waterClusters.length === 0;
 
   // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions,见 gis/hooks/use-layer-visibility)
   useLayerVisibility(mapRef, layers, mapInited, {
@@ -810,6 +815,18 @@ export default function RealGisMap() {
       {tilesFailed && (
         <div className="absolute left-1/2 top-3 z-[500] -translate-x-1/2 rounded border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] text-amber-300">
           底图瓦片加载失败(高德不可达)——显示占位底图
+        </div>
+      )}
+      {showWater && (waterLoading || waterEmpty) && (
+        <div className="absolute bottom-3 right-14 z-[500] flex items-center rounded border border-line bg-bg-panel/90 px-2.5 py-1 text-[11px] text-text-2">
+          {waterLoading ? (
+            <>
+              <span className="gis-loading-dot" />
+              水源加载中…
+            </>
+          ) : (
+            '当前区域无水源数据'
+          )}
         </div>
       )}
       {loadState === 'error' && (

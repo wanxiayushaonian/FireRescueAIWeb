@@ -508,3 +508,17 @@
 .map-icon-building-cluster {
   animation: marker-fade-in 0.25s ease-out;
 }
+/* 水源加载指示点 */
+.gis-loading-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22d3ee;
+  margin-right: 6px;
+  animation: gis-loading-pulse 1s ease-in-out infinite;
+}
+@keyframes gis-loading-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
