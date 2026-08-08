@@ -51,7 +51,7 @@ export function renderKeyUnits(
         popupAnchor: [0, -24],
       }),
     })
-      .bindPopup(popupHtml)
+      .bindPopup(popupHtml, { className: 'gis-popup' })
       .on('click', (e) => {
         if (incidentByUnit.get(u.id)) {
           opts.onDeploy({ name: u.name, lng: u.lng, lat: u.lat });
@@ -81,7 +81,7 @@ export function renderKeyUnits(
         iconAnchor: [size / 2, size / 2],
       }),
     })
-      .bindTooltip(`${c.count} 个重点单位,放大地图查看`, { direction: 'top' })
+      .bindTooltip(`${c.count} 个重点单位,放大地图查看`, { direction: 'top', className: 'gis-tip' })
       .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
       .addTo(layer);
   }

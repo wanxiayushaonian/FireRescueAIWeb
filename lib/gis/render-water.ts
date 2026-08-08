@@ -60,7 +60,7 @@ export function renderWater(
           popupAnchor: [0, -18],
         }),
       })
-        .bindPopup(popupForWater(w))
+        .bindPopup(popupForWater(w), { className: 'gis-popup' })
         .on('click', () => opts.onWaterClick(w))
         .on('contextmenu', (e) => {
           L.DomEvent.stopPropagation(e.originalEvent as Event);
@@ -81,7 +81,7 @@ export function renderWater(
           iconAnchor: [size / 2, size / 2],
         }),
       })
-        .bindTooltip(`${c.count} 个水源,放大地图查看`, { direction: 'top' })
+        .bindTooltip(`${c.count} 个水源,放大地图查看`, { direction: 'top', className: 'gis-tip' })
         .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
         .addTo(layer);
     }

@@ -39,7 +39,7 @@ export function renderKeyBuildings(
         popupAnchor: [0, -22],
       }),
     })
-      .bindPopup(popupForKeyBuilding(b, unitName))
+      .bindPopup(popupForKeyBuilding(b, unitName), { className: 'gis-popup' })
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat }, [b.lat, b.lng]); });
     markers.set(b.id, marker);
     layer.addLayer(marker);
@@ -59,7 +59,7 @@ export function renderKeyBuildings(
         iconAnchor: [size / 2, size / 2],
       }),
     })
-      .bindTooltip(`${c.count} 个重点建筑,放大地图查看`, { direction: 'top' })
+      .bindTooltip(`${c.count} 个重点建筑,放大地图查看`, { direction: 'top', className: 'gis-tip' })
       .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
       .addTo(layer);
   }

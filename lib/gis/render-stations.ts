@@ -46,7 +46,7 @@ export function renderStations(
         popupAnchor: [0, -24],
       }),
     })
-      .bindPopup(popupForStation(s, opts.personnelCounts.get(s.id) ?? 0))
+      .bindPopup(popupForStation(s, opts.personnelCounts.get(s.id) ?? 0), { className: 'gis-popup' })
       .on('click', () => opts.onStationClick(s))
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng: s.lng, lat: s.lat }, [s.lat, s.lng]); });
     layer.addLayer(marker);
