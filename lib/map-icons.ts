@@ -7,6 +7,15 @@ export const TYPE_COLORS: Record<string, string> = {
   专职消防站: '#3b82f6',
   微型消防站: '#34d399',
   水上消防站: '#a78bfa',
+  // 平台导入的真实类型
+  支队: '#eab308',
+  救援大队: '#f97316',
+  救援站: '#22d3ee',
+  政府专职站: '#3b82f6',
+  企业专职站: '#6366f1',
+  单位专职站: '#60a5fa',
+  其他专职站: '#94a3b8',
+  志愿消防站: '#34d399',
 };
 
 export const WATER_COLORS: Record<string, string> = {
@@ -18,10 +27,35 @@ export const WATER_COLORS: Record<string, string> = {
 const DEFAULT_STATION_COLOR = '#22d3ee';
 const DEFAULT_WATER_COLOR = '#60a5fa';
 const WATER_ZOOM_THRESHOLD = 13;
+// zoom>=15 视口内点位数量有界(市区约百级),可逐点渲染;13-14 走聚合气泡
+const WATER_POINTS_ZOOM = 15;
 
-/** zoom>=13 时显示水源点(远景只显消防站,避免密集)。 */
+/** zoom>=13 时显示水源图层(聚合气泡或点位;远景只显消防站,避免密集)。 */
 export function shouldShowWater(zoom: number): boolean {
   return zoom >= WATER_ZOOM_THRESHOLD;
+}
+
+/** zoom>=15 时逐点渲染水源;13-14 渲染聚合气泡。 */
+export function shouldShowWaterPoints(zoom: number): boolean {
+  return zoom >= WATER_POINTS_ZOOM;
+}
+
+/** 聚合气泡网格边长(度):约 64px 屏幕宽度对应的经度跨度。 */
+export function waterClusterCell(zoom: number): number {
+  return (360 / Math.pow(2, zoom)) * (64 / 256);
+}
+
+// zoom<14 重点单位/重点建筑合并为聚合气泡;>=14 逐点渲染
+export const MARKER_CLUSTER_MAX_ZOOM = 14;
+
+/** 通用聚合气泡:圆形计数徽标,尺寸随数量分档,color 取图层主题色。 */
+export function clusterBubbleSvg(count: number, color: string): { html: string; size: number } {
+  const size = count >= 100 ? 44 : count >= 20 ? 38 : 32;
+  const html = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="${color}2e" stroke="${color}" stroke-width="1.5"/>
+  <text x="${size / 2}" y="${size / 2 + 4}" font-size="${count >= 100 ? 12 : 13}" text-anchor="middle" fill="${color}" font-weight="700" font-family="sans-serif">${count}</text>
+</svg>`;
+  return { html, size };
 }
 
 /** 消防站图标:菱形徽标 + "消"字,24px,锚点底部中心。 */
@@ -39,6 +73,16 @@ export function waterIconSvg(waterType: string): string {
   return `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
   <path d="M12 2 C12 2 4 12 4 16 a8 8 0 0 0 16 0 C20 12 12 2 12 2 Z" fill="${color}" stroke="#0b1220" stroke-width="1.2"/>
 </svg>`;
+}
+
+/** 水源聚合气泡:圆形计数徽标,尺寸随数量分档。 */
+export function waterClusterSvg(count: number): { html: string; size: number } {
+  const size = count >= 100 ? 44 : count >= 20 ? 38 : 32;
+  const html = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="rgba(56,189,248,0.28)" stroke="#38bdf8" stroke-width="1.5"/>
+  <text x="${size / 2}" y="${size / 2 + 4}" font-size="${count >= 100 ? 12 : 13}" text-anchor="middle" fill="#bae6fd" font-weight="700" font-family="sans-serif">${count}</text>
+</svg>`;
+  return { html, size };
 }
 
 /** 重点单位图标:圆角方块徽标 + "重"字,24px;completed(已 3D 建模)金色,联动单位紫色。 */

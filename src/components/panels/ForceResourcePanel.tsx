@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Flag, Users, Truck, Package, Search, ChevronDown, ChevronRight, Copy, MapPin } from 'lucide-react';
+import { Flag, Users, Truck, Package, Search, ChevronDown, ChevronRight, Copy, MapPin, Eye, EyeOff } from 'lucide-react';
 import type { FetchState, ResourceItem, Station } from '@/mock/types';
 import { fetchStations, fetchResources } from '@/api/force';
 import { buildForceStats, buildResourceTree, type ResourceTreeGroup } from '@/lib/force-mapper';
+import { useMapLayerPrefs, toggleStationTypeVisible } from '@/lib/map-layer-store';
 import { addSceneAction } from '@/mock/sceneLog';
 import StatCard from '@/components/StatCard';
 import StatusBadge, { statusVariantOf } from '@/components/StatusBadge';
@@ -36,6 +37,7 @@ export default function ForceResourcePanel() {
   const [appending, setAppending] = useState(false);
   const [dialog, setDialog] = useState<Station | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const layerPrefs = useMapLayerPrefs();
 
   const load = useCallback(async (s: FetchState) => {
     if (s === 'loading') { setState('loading'); return; }
@@ -93,8 +95,8 @@ export default function ForceResourcePanel() {
   };
 
   const writeLinkage = (s: Station) => {
-    addSceneAction({ action: 'addMarker', target: `${s.name} @${s.lng},${s.lat}`, params: { lng: s.lng, lat: s.lat }, source: '面板' });
-    addSceneAction({ action: 'flyTo', target: `${s.name} (${s.lng}, ${s.lat})`, params: { lng: s.lng, lat: s.lat }, source: '面板' });
+    addSceneAction({ action: 'addMarker', target: `${s.name} @${s.lng},${s.lat}`, params: { id: s.id, lng: s.lng, lat: s.lat }, source: '面板' });
+    addSceneAction({ action: 'flyTo', target: `${s.name} (${s.lng}, ${s.lat})`, params: { id: s.id, lng: s.lng, lat: s.lat }, source: '面板' });
     showToast('已写入场景动作日志');
   };
 
@@ -171,18 +173,31 @@ export default function ForceResourcePanel() {
                     >
                       {group.children.map((ch) => {
                         const sel = treeSel?.category === group.category && treeSel.subtype === ch.name;
+                        // 队站类型行带"眼睛":控制该类型是否显示在地图上(默认只开国家队)
+                        const isStationRow = group.category === '队站';
+                        const hiddenOnMap = isStationRow && !layerPrefs.visibleStationTypes.includes(ch.name);
                         return (
-                          <button
-                            key={ch.name}
-                            onClick={() => { setTreeSel(sel ? { category: group.category } : { category: group.category, subtype: ch.name }); setVisible(20); }}
-                            className={`relative flex w-full items-center justify-between py-1.5 pl-7 pr-2 text-[12px] transition-colors hover:bg-bg-panel-2 ${
-                              sel ? 'text-cyan' : 'text-text-2'
-                            }`}
-                          >
-                            {sel && <span className="absolute left-0 top-0 h-full w-[2px] bg-cyan" />}
-                            {ch.name}
-                            <span className="font-num text-text-3">{ch.count.toLocaleString()}</span>
-                          </button>
+                          <div key={ch.name} className="relative flex items-center">
+                            <button
+                              onClick={() => { setTreeSel(sel ? { category: group.category } : { category: group.category, subtype: ch.name }); setVisible(20); }}
+                              className={`relative flex min-w-0 flex-1 items-center justify-between py-1.5 pl-7 pr-1 text-[12px] transition-colors hover:bg-bg-panel-2 ${
+                                sel ? 'text-cyan' : 'text-text-2'
+                              }`}
+                            >
+                              {sel && <span className="absolute left-0 top-0 h-full w-[2px] bg-cyan" />}
+                              <span className={`truncate ${hiddenOnMap ? 'line-through opacity-50' : ''}`}>{ch.name}</span>
+                              <span className="font-num text-text-3">{ch.count.toLocaleString()}</span>
+                            </button>
+                            {isStationRow && (
+                              <button
+                                onClick={() => toggleStationTypeVisible(ch.name)}
+                                title={hiddenOnMap ? '在地图上显示该类队站' : '在地图上隐藏该类队站'}
+                                className={`shrink-0 px-1.5 py-1.5 transition ${hiddenOnMap ? 'text-text-3' : 'text-cyan hover:text-cyan/70'}`}
+                              >
+                                {hiddenOnMap ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                              </button>
+                            )}
+                          </div>
                         );
                       })}
                     </motion.div>

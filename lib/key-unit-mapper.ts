@@ -19,6 +19,7 @@ export interface KeyUnit {
   name: string;
   unitType: string;
   district?: string;
+  address?: string;
   lng: number;
   lat: number;
   contactName?: string;
@@ -35,6 +36,7 @@ export function mapKeyUnit(z: ZnyaKeyUnit): KeyUnit | null {
     name: z.name,
     unitType: z.unit_type,
     district: z.district ?? undefined,
+    address: z.address ?? undefined,
     lng: z.longitude,
     lat: z.latitude,
     contactName: z.contact_name ?? undefined,

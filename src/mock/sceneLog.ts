@@ -9,7 +9,9 @@ export type SceneActionName =
   // 预案库联动：改进措施确认落地 → 关联预案版本 +1（planLibrary.confirmImprovement）
   | 'updatePlan'
   // 点位治理:重点单位/建筑坐标修正(仅记录,无执行器)
-  | 'updateCoord';
+  | 'updateCoord'
+  // 点位增删改:水源/重点单位/重点建筑(仅记录,无执行器)
+  | 'editEntity';
 
 export interface SceneAction {
   ts: string;

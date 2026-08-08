@@ -87,8 +87,8 @@ export function buildResourceTree(
     for (const t of list) map.set(key(t), (map.get(key(t)) ?? 0) + 1);
     return [...map.entries()].map(([name, count]) => ({ name, count }));
   };
-  // 固定顺序(队站类型)→ 树显示稳定;与 mock RESOURCE_TREE 一致(救援大队在前)。
-  const stationTypes = ['特勤消防站', '普通消防站', '专职消防站', '微型消防站', '水上消防站'];
+  // 固定顺序(队站类型)→ 树显示稳定;国家队在前,专职/志愿在后(兼容旧 mock 类型名追加在尾)
+  const stationTypes = ['支队', '救援大队', '救援站', '政府专职站', '企业专职站', '单位专职站', '其他专职站', '志愿消防站', '特勤消防站', '普通消防站', '专职消防站', '微型消防站', '水上消防站'];
   return [
     { category: '队站', children: groupBy(stations, (s) => s.type) },
     { category: '人员', children: groupBy(resources.filter((r) => r.category === '人员'), (r) => r.subtype) },

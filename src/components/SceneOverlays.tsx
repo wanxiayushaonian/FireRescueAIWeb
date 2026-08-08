@@ -20,6 +20,7 @@ const ACTION_COLORS: Record<SceneAction['action'], string> = {
   clearTactical: 'text-text-3',
   updatePlan: 'text-green',
   updateCoord: 'text-amber',
+  editEntity: 'text-amber',
 };
 
 const SOURCE_STYLES: Record<SceneAction['source'], string> = {

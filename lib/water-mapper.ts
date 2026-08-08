@@ -12,12 +12,21 @@ export interface ZnyaWaterSource {
   district_code?: string | null;
 }
 
-/** 区划码 → 区名(九江 4 区,水源覆盖范围)。 */
+/** 区划码 → 区名(九江 13 区县,GB/T 2260;平台数据使用同一套码)。 */
 export const DISTRICT_NAME: Record<string, string> = {
-  '360404': '濂溪区',
-  '360411': '柴桑区',
-  '360410': '浔阳区',
-  '360406': '彭泽县',
+  '360402': '濂溪区',
+  '360403': '浔阳区',
+  '360404': '柴桑区',
+  '360423': '武宁县',
+  '360424': '修水县',
+  '360425': '永修县',
+  '360426': '德安县',
+  '360428': '都昌县',
+  '360429': '湖口县',
+  '360430': '彭泽县',
+  '360481': '瑞昌市',
+  '360482': '共青城市',
+  '360483': '庐山市',
 };
 
 export function mapWaterSource(raw: ZnyaWaterSource): WaterSource {
@@ -49,7 +58,7 @@ export function buildWaterDistrictStats(list: WaterSource[]): WaterDistrictStat[
     cur.count += 1;
     map.set(w.districtCode, cur);
   }
-  const order = ['360404', '360411', '360410', '360406'];
+  const order = ['360402', '360403', '360404', '360423', '360424', '360425', '360426', '360428', '360429', '360430', '360481', '360482', '360483'];
   return order.map((c) => map.get(c)).filter((x): x is WaterDistrictStat => !!x);
 }
 

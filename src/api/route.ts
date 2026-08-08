@@ -1,5 +1,5 @@
 // 驾车路线数据访问层:web /api/business/route/driving(BFF 代理 znya)→ Route。
-// 输入坐标须为 GCJ02(站点 WGS84 需调用方先 wgs84ToGcj02;重点单位已是 GCJ02 可直传)。
+// 输入坐标须为 GCJ02(全库已统一 GCJ02,库内坐标直接传)。
 import { mapRoute, type ZnyaDrivingRoute, type Route } from '@/lib/route-mapper';
 
 /** 消防站→重点单位 驾车到场路线。from/to 均为 GCJ02 {lng,lat}。 */

@@ -41,3 +41,26 @@ export async function geocodeMissingKeyUnits(): Promise<number> {
   const data = (await res.json()) as { updated: number };
   return data.updated;
 }
+
+// ---- 增删改(地图点位表单) ----
+
+async function mutate(path: string, method: string, body?: unknown): Promise<void> {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { 'content-type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) throw new Error(`操作失败 ${res.status}: ${path}`);
+}
+
+export async function createKeyUnit(body: unknown): Promise<void> {
+  await mutate('/api/business/key-units/', 'POST', body);
+}
+
+export async function updateKeyUnit(id: string, body: unknown): Promise<void> {
+  await mutate(`/api/business/key-units/${id}`, 'PUT', body);
+}
+
+export async function deleteKeyUnit(id: string): Promise<void> {
+  await mutate(`/api/business/key-units/${id}`, 'DELETE');
+}
