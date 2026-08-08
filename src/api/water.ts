@@ -3,12 +3,7 @@
 // 周边高亮走 nearby 半径查询。
 import type { FetchState, WaterSource } from '@/mock/types';
 import { mapWaterSource, type ZnyaWaterSource } from '@/lib/water-mapper';
-
-async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(path);
-  if (!res.ok) throw new Error(`请求失败 ${res.status}: ${path}`);
-  return res.json() as Promise<T>;
-}
+import { getJson, mutate, fetchAll } from '@/lib/http';
 
 export interface WaterStats {
   total: number;
@@ -31,14 +26,7 @@ export interface WaterBbox {
 /** 视口 bbox 内水源(单页上限 2000,视口内数据有界,超出时翻页拼齐)。 */
 export async function fetchWaterSourcesInBbox(bbox: WaterBbox): Promise<WaterSource[]> {
   const q = `min_lng=${bbox.minLng}&min_lat=${bbox.minLat}&max_lng=${bbox.maxLng}&max_lat=${bbox.maxLat}`;
-  const pageUrl = (page: number) => `/api/business/water-sources?${q}&page=${page}&page_size=2000`;
-  const first = await getJson<{ items: ZnyaWaterSource[]; total: number }>(pageUrl(1));
-  const items = [...first.items];
-  const pages = Math.ceil(first.total / 2000);
-  for (let p = 2; p <= pages; p++) {
-    const rest = await getJson<{ items: ZnyaWaterSource[] }>(pageUrl(p));
-    items.push(...(rest.items ?? []));
-  }
+  const items = await fetchAll<ZnyaWaterSource>(`/api/business/water-sources?${q}`, 2000);
   return items.map(mapWaterSource);
 }
 
@@ -104,15 +92,6 @@ export async function fetchWaterSources(state?: FetchState): Promise<WaterSource
 }
 
 // ---- 增删改(地图点位表单) ----
-
-async function mutate(path: string, method: string, body?: unknown): Promise<void> {
-  const res = await fetch(path, {
-    method,
-    headers: body ? { 'content-type': 'application/json' } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`操作失败 ${res.status}: ${path}`);
-}
 
 /** 新增水源(body 由 buildWaterPayload 组装,含 ref_type/ref_id)。 */
 export async function createWaterSource(body: unknown): Promise<void> {

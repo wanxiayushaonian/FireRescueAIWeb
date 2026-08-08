@@ -34,7 +34,7 @@ let entries: SceneAction[] = [];
 let sceneState: SceneState = {
   view: '园区俯瞰',
   floor: '全部楼层',
-  center: '118.7968, 32.0603',
+  center: '115.96498, 29.66734',
 };
 
 type Listener = (entries: SceneAction[], latest: SceneAction | null, state: SceneState) => void;
@@ -59,7 +59,7 @@ function applyActionToState(a: SceneAction) {
     };
   }
   if (a.action === 'resetView') {
-    sceneState = { view: '园区俯瞰', floor: '全部楼层', center: '118.7968, 32.0603' };
+    sceneState = { view: '园区俯瞰', floor: '全部楼层', center: '115.96498, 29.66734' };
   }
 }
 

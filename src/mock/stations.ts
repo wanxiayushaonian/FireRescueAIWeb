@@ -33,8 +33,8 @@ export const STATIONS: Station[] = stationSeed.map(([name, type, personnel, vehi
   dutyPhone: `025-83${String(11 + i)}****`,
   address: `${streets[i % streets.length]} ${100 + i * 7} 号`,
   // 伪随机散布（确定性），避免打点呈对角线扎堆；接入真实数据后由后端经纬度替换
-  lng: +(118.742 + (((i * 37 + 13) % 100) / 100) * 0.096).toFixed(4),
-  lat: +(32.028 + (((i * 53 + 29) % 100) / 100) * 0.062).toFixed(4),
+  lng: +(115.96 + (((i * 37 + 13) % 100) / 100) * 0.096).toFixed(4),
+  lat: +(29.66 + (((i * 53 + 29) % 100) / 100) * 0.062).toFixed(4),
   personnel,
   vehicles,
 }));

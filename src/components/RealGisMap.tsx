@@ -1,7 +1,11 @@
 'use client';
-// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站(类型显隐由执勤力量面板经 map-layer-store 控制)+ 水源(三级:zoom<13 不加载 / 13-14 网格聚合气泡 / >=15 水滴图标逐点;区划显隐由水源面板控制)+ 市/区县边界 + 重点单位/建筑(zoom<14 客户端网格聚合气泡,警情单位始终逐点)+ 重点区域 + sceneLog 联动。
-// 坐标策略:自 znya c8d4e5f6a7b8 迁移起全库坐标统一 GCJ02(高德),前端不再做基准转换,库内坐标直接使用。
-// 图层控制:底图切换 + 各图层显隐 + 划定区域(MapLayerControl);tileerror 连续失败降级。
+// 态势总览 2D 地图编排者:状态声明 + hook 组装 + JSX 接线(圆环菜单/命令面板/面板群)。
+// 结构:地图底座/底图/瓦片降级在 gis/hooks/use-leaflet-map;数据加载在 use-gis-data,图层显隐在 use-layer-visibility;
+// 派遣/坐标修正/实体表单面板状态在 use-deploy-routes/use-coord-fix/use-entity-form;sceneLog 联动在 use-scene-bridge;
+// popup/marker 图标/命令面板条目/各图层渲染函数体是纯函数,统一下沉 lib/gis/(node 可测)。
+// 图层:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站(类型显隐经 map-layer-store)+ 水源(zoom 三级:
+// <13 不加载 / 13-14 网格聚合气泡 / >=15 逐点)+ 市/区县边界 + 重点单位/建筑(zoom<14 客户端网格聚合)+ 重点区域。
+// 坐标策略:全库坐标统一 GCJ02(高德),前端不做基准转换,库内坐标直接使用。
 // 区域标注:leaflet-draw 画多边形 → createRegion 存 znya → 重新加载 L.polygon 高亮。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
@@ -10,122 +14,55 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
-import type { Station, WaterSource, ResourceItem } from '@/mock/types';
-import { fetchStations, fetchResources } from '@/api/force';
-import { fetchWaterSourcesInBbox, fetchNearbyWaterSources, fetchWaterSourcesPage, fetchWaterClusters, createWaterSource, updateWaterSource, deleteWaterSource, type WaterCluster } from '@/api/water';
-import { fetchKeyUnits, updateKeyUnitCoords, geocodeMissingKeyUnits, createKeyUnit, updateKeyUnit, deleteKeyUnit } from '@/api/key-units';
-import { fetchIncidents } from '@/api/incidents';
-import type { Incident } from '@/lib/incident-mapper';
-import { fetchKeyBuildings, updateKeyBuildingCoords, fetchKeyBuildingDetail, createKeyBuilding, updateKeyBuilding, deleteKeyBuilding } from '@/api/key-buildings';
-import { fetchDrivingRoute } from '@/api/route';
-import { fetchGeocode, type GeoCandidate } from '@/api/geocode';
+import { fetchGeocode } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
-import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
-import { gridCluster } from '@/lib/grid-cluster';
+import { MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
+import { renderStations, type RenderStation } from '@/lib/gis/render-stations';
+import { renderWater } from '@/lib/gis/render-water';
+import { renderKeyUnits } from '@/lib/gis/render-key-units';
+import { renderIncidents } from '@/lib/gis/render-incidents';
+import { renderKeyBuildings } from '@/lib/gis/render-key-buildings';
+import { renderRegions } from '@/lib/gis/render-regions';
+import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
-import { haversineKm } from '@/lib/geo-query';
-import type { KeyUnit } from '@/lib/key-unit-mapper';
-import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type { Region } from '@/lib/region-mapper';
-import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
+import { addSceneAction } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
 import CommandPalette, { type PaletteItem } from './gis/CommandPalette';
 import CoordinateFixPanel, { type CoordFixTarget } from './gis/CoordinateFixPanel';
 import ForceManagePanel, { type ForcePanelStation } from './gis/ForceManagePanel';
 import RadialMenu, { type RadialAction } from './gis/RadialMenu';
-import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/DeployPanel';
+import DeployPanel from './gis/DeployPanel';
 import EntityFormPanel from './gis/EntityFormPanel';
-import { emptyEntityForm, buildWaterPayload, buildUnitPayload, buildBuildingPayload, type EntityFormValues, type EntityKind } from '@/lib/entity-form';
-import { showToast } from '@/components/Toast';
-import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine, Navigation, Users, Droplets, Rocket, Pencil, Plus } from 'lucide-react';
+import { useLeafletMap, DEFAULT_ZOOM } from './gis/hooks/use-leaflet-map';
+import { DEFAULT_CENTER } from '@/lib/gis/map-constants';
+import { useGisData } from './gis/hooks/use-gis-data';
+import { useLayerVisibility } from './gis/hooks/use-layer-visibility';
+import { useDeployRoutes } from './gis/hooks/use-deploy-routes';
+import { useCoordFix } from './gis/hooks/use-coord-fix';
+import { useEntityForm } from './gis/hooks/use-entity-form';
+import { useSceneBridge } from './gis/hooks/use-scene-bridge';
+import { type EntityKind } from '@/lib/entity-form';
+import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil } from 'lucide-react';
 
-// 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
-const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
-// 高德卫星影像(GCJ02;免 key)
-const SAT_URL = 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}';
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 
-// 九江市中心(九江市消防救援支队附近,GCJ02)
-const DEFAULT_CENTER: [number, number] = [29.66734, 115.96498];
-const DEFAULT_ZOOM = 11;
-// tileerror 连续失败阈值 → 触发占位降级
-const TILE_ERR_THRESHOLD = 5;
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-/** 重点单位 popup:基础信息 + 微型站统计 + 已建模标记。 */
-function popupForKeyUnit(u: KeyUnit): string {
-  const micro = u.extra;
-  const microLines = [
-    micro.has_micro_station ? `微型站 ${micro.has_micro_station}` : '',
-    micro.duty_24h ? `24h执勤 ${micro.duty_24h}` : '',
-    micro.total_people ? `总人数 ${micro.total_people}` : '',
-    micro.has_equipment ? `器材 ${micro.has_equipment}` : '',
-    micro.has_control_room ? `控制室 ${micro.has_control_room}` : '',
-  ].filter(Boolean);
-  const built = u.status === 'completed' ? '<br/><span style="color:#fbbf24">★ 已 3D 建模</span>' : '';
-  return (
-    `<b>${u.name}</b><br/>${u.unitType} · ${u.district ?? ''}` +
-    `<br/>负责人 ${u.contactName ?? '-'}${u.contactPhone ? ` · ${u.contactPhone}` : ''}` +
-    (microLines.length ? `<br/>${microLines.join(' · ')}` : '') +
-    `${built}<br/>${u.lng.toFixed(5)}, ${u.lat.toFixed(5)}(GCJ02)`
-  );
-}
-
-/** 重点建筑 popup:类型/用途 + 所属单位 + 已建模标记。 */
-function popupForKeyBuilding(b: KeyBuilding, unitName?: string): string {
-  const built = b.status === 'completed' ? '<br/><span style="color:#fbbf24">★ 已 3D 建模</span>' : '';
-  return (
-    `<b>${b.name}</b><br/>重点建筑${b.buildingType ? ` · ${b.buildingType}` : ''}` +
-    `${b.buildingUsage ? `<br/>${b.buildingUsage}` : ''}` +
-    `${unitName ? `<br/>所属单位: ${unitName}` : ''}` +
-    `${built}<br/>${b.lng.toFixed(5)}, ${b.lat.toFixed(5)}`
-  );
-}
-
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const vectorLayerRef = useRef<L.TileLayer | null>(null);
-  const satLayerRef = useRef<L.TileLayer | null>(null);
-  const boundaryLayerRef = useRef<L.LayerGroup | null>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
-  const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const incidentMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const buildingMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const waterLayerRef = useRef<L.LayerGroup | null>(null);
-  const highlightLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
-  const incidentsLayerRef = useRef<L.LayerGroup | null>(null);
-  const buildingsLayerRef = useRef<L.LayerGroup | null>(null);
-  const regionsLayerRef = useRef<L.LayerGroup | null>(null);
   const drawRef = useRef<L.Draw.Polygon | null>(null);
-  const routeLayerRef = useRef<L.LayerGroup | null>(null);
-  const tempLayerRef = useRef<L.LayerGroup | null>(null);
-  const stationsRef = useRef<Station[]>([]);
-  const waterRef = useRef<WaterSource[]>([]);
-  const waterClustersRef = useRef<WaterCluster[]>([]);
-  const tileErrRef = useRef(0);
 
-  const [stations, setStations] = useState<Station[]>([]);
-  const [resources, setResources] = useState<ResourceItem[]>([]);
-  const [water, setWater] = useState<WaterSource[]>([]);
-  const [waterClusters, setWaterClusters] = useState<WaterCluster[]>([]);
   // 图层偏好(队站类型/水源区划显隐)来自共享 store,由执勤力量/水源面板维护
   const layerPrefs = useMapLayerPrefs();
-  const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
-  const [regions, setRegions] = useState<Region[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
-  const [mapInited, setMapInited] = useState(false);
-  // 当前整数 zoom(zoomend 同步):单位/建筑在 <14 时切聚合气泡
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
   const [showStations, setShowStations] = useState(true);
   const [showWater, setShowWater] = useState(true);
   const [showBoundary, setShowBoundary] = useState(true);
@@ -134,39 +71,16 @@ export default function RealGisMap() {
   const [showBuildings, setShowBuildings] = useState(true);
   const [showRegions, setShowRegions] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
-  const [tilesFailed, setTilesFailed] = useState(false);
-  const [deploy, setDeploy] = useState<{
-    target: { name: string; lng: number; lat: number };
-    stations: DeployStation[];
-    anchor: { x: number; y: number; maxX: number };
-  } | null>(null);
-  const [planned, setPlanned] = useState<PlannedRoute[]>([]);
-  const [planning, setPlanning] = useState(false);
-  // 坐标修正(点位治理)
-  const [coordFix, setCoordFix] = useState<CoordFixTarget | null>(null);
-  const [draftCoord, setDraftCoord] = useState<{ lng: number; lat: number } | null>(null);
-  const [pickMode, setPickMode] = useState(false);
-  const [geoCandidates, setGeoCandidates] = useState<GeoCandidate[]>([]);
-  const [geoQuerying, setGeoQuerying] = useState(false);
-  const [coordSaving, setCoordSaving] = useState(false);
-  const [coordError, setCoordError] = useState<string | null>(null);
-  // 点位增删改表单(水源/重点单位/重点建筑)
-  const [entityForm, setEntityForm] = useState<{ mode: 'create' | 'edit'; id?: string; values: EntityFormValues } | null>(null);
-  const [entitySaving, setEntitySaving] = useState(false);
-  const [entityError, setEntityError] = useState<string | null>(null);
-  // 地图空白处右键 → 新增点位菜单
-  const [createMenu, setCreateMenu] = useState<{ x: number; y: number; lng: number; lat: number } | null>(null);
-  // 水源数据变更后 bump 触发 bbox/clusters 重取
-  const [waterTick, setWaterTick] = useState(0);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
-  const [batching, setBatching] = useState(false);
-  const [batchMsg, setBatchMsg] = useState<string | null>(null);
   const [radial, setRadial] = useState<{ target: CoordFixTarget; x: number; y: number } | null>(null);
   const [forcePanel, setForcePanel] = useState<{ station: ForcePanelStation; lng: number; lat: number; x: number; y: number; maxX: number } | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState('');
   const [paletteItems, setPaletteItems] = useState<PaletteItem[]>([]);
   const [paletteLoading, setPaletteLoading] = useState(false);
+
+  // setRegions 来自 useGisData(在其后调用),onDrawCreated 须先定义 → 经 ref 间接引用(useState setter 引用稳定)
+  const setRegionsRef = useRef<(rs: Region[]) => void>(() => {});
 
   // 绘制完成 → 保存区域到 znya 并刷新
   const onDrawCreated = useCallback((e: any) => {
@@ -179,242 +93,78 @@ export default function RealGisMap() {
     const name = window.prompt('区域名称');
     if (!name) return;
     createRegion({ name, polygon })
-      .then(() => fetchRegions().then(setRegions))
+      .then(() => fetchRegions().then((rs) => setRegionsRef.current(rs)))
       .catch(() => {});
   }, []);
 
-  // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
-  useEffect(() => {
-    if (!rootRef.current || mapRef.current) return;
-    const map = L.map(rootRef.current, {
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-      zoomControl: false,
-    });
-    mapRef.current = map;
-    // 禁用地图默认浏览器右键菜单(marker 用 contextmenu 唤出环形菜单)
-    map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-    boundaryLayerRef.current = L.layerGroup().addTo(map);
-    stationsLayerRef.current = L.layerGroup().addTo(map);
-    waterLayerRef.current = L.layerGroup().addTo(map);
-    highlightLayerRef.current = L.layerGroup().addTo(map);
-    keyUnitsLayerRef.current = L.layerGroup().addTo(map);
-    incidentsLayerRef.current = L.layerGroup().addTo(map);
-    buildingsLayerRef.current = L.layerGroup().addTo(map);
-    regionsLayerRef.current = L.layerGroup().addTo(map);
-    routeLayerRef.current = L.layerGroup().addTo(map);
-    tempLayerRef.current = L.layerGroup().addTo(map);
-    map.on('draw:created', onDrawCreated);
-    setMapInited(true);
-    return () => {
-      map.off('draw:created', onDrawCreated);
-      map.remove();
-      mapRef.current = null;
-      setMapInited(false);
-    };
-  }, [onDrawCreated]);
+  // 地图初始化/底图切换/tileerror 降级/zoom 同步(见 gis/hooks/use-leaflet-map)
+  const { mapRef, layers, mapInited, zoom, baseMap, setBaseMap, tilesFailed } = useLeafletMap(rootRef, onDrawCreated);
 
-  // zoom 状态同步(单位/建筑聚合气泡模式切换用)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    const onZoom = () => setZoom(map.getZoom());
-    map.on('zoomend', onZoom);
-    return () => {
-      map.off('zoomend', onZoom);
-    };
-  }, [mapInited]);
+  // 数据加载(站/资源/水源视口/重点单位/警情/重点建筑/重点区域,见 gis/hooks/use-gis-data)
+  const {
+    stations, stationsRef,
+    resources,
+    water, waterRef,
+    waterClusters,
+    keyUnits, setKeyUnits,
+    incidents,
+    buildings, setBuildings,
+    regions, setRegions,
+    loadState,
+    bumpWater,
+  } = useGisData({ mapRef, mapInited, hiddenWaterDistricts: layerPrefs.hiddenWaterDistricts });
+  setRegionsRef.current = setRegions;
 
-  // 底图切换
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    const onTileError = () => {
-      tileErrRef.current += 1;
-      if (tileErrRef.current >= TILE_ERR_THRESHOLD) setTilesFailed(true);
-    };
-    if (baseMap === 'vector') {
-      satLayerRef.current?.remove();
-      if (!vectorLayerRef.current) {
-        const tl = L.tileLayer(VECTOR_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 });
-        tl.getContainer()?.classList.add('gis-dark-filter');
-        tl.on('tileerror', onTileError);
-        vectorLayerRef.current = tl;
-      }
-      vectorLayerRef.current.addTo(map);
-    } else {
-      vectorLayerRef.current?.remove();
-      if (!satLayerRef.current) {
-        const tl = L.tileLayer(SAT_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 });
-        tl.on('tileerror', onTileError);
-        satLayerRef.current = tl;
-      }
-      satLayerRef.current.addTo(map);
-    }
-  }, [baseMap, mapInited]);
+  // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions,见 gis/hooks/use-layer-visibility)
+  useLayerVisibility(mapRef, layers, mapInited, {
+    boundary: showBoundary,
+    stations: showStations,
+    water: showWater,
+    incidents: showIncidents,
+    keyUnits: showKeyUnits,
+    buildings: showBuildings,
+    regions: showRegions,
+  });
 
-  // 加载消防站
-  useEffect(() => {
-    let alive = true;
-    fetchStations()
-      .then((st) => {
-        if (alive) {
-          stationsRef.current = st;
-          setStations(st);
-          setLoadState('ok');
-        }
-      })
-      .catch(() => {
-        if (alive) setLoadState('error');
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 派遣面板 + 多站路线规划(见 gis/hooks/use-deploy-routes)
+  const {
+    deploy, openDeploy, closeDeploy,
+    planned, setPlanned,
+    planning, planRoutes, clearRoutes, highlightNearbyWater,
+  } = useDeployRoutes({
+    mapRef,
+    routeLayer: layers.route,
+    highlightLayer: layers.highlight,
+    stationsRef,
+    setRadial,
+  });
 
-  // 加载执勤明细(用于聚合各站真实人员数,popup 动态显示)
-  useEffect(() => {
-    let alive = true;
-    fetchResources()
-      .then((rs) => {
-        if (alive) setResources(rs);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 坐标修正/点位治理(见 gis/hooks/use-coord-fix)
+  const {
+    coordFix, setCoordFix,
+    draftCoord, setDraftCoord,
+    pickMode, setPickMode,
+    geoCandidates, setGeoCandidates,
+    geoQuerying, coordSaving, coordError,
+    openCoordFix, closeCoordFix, queryAddress, saveCoord, batchGeocode,
+  } = useCoordFix({ setKeyUnits, setBuildings });
 
-  // 加载水源:视口驱动(bbox),moveend 防抖 300ms;按 zoom 分三级——
-  // <13 不加载;13-14 网格聚合气泡(clusters 端点,一次请求);>=15 bbox 明细点位。
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    let alive = true;
-    let timer: number | undefined;
-    let seq = 0;
-    const load = () => {
-      const zoom = map.getZoom();
-      if (!shouldShowWater(zoom)) {
-        waterRef.current = [];
-        waterClustersRef.current = [];
-        setWater([]);
-        setWaterClusters([]);
-        return;
-      }
-      const b = map.getBounds().pad(0.25); // 外扩,平移小距离不重复请求(地图与库同为 GCJ02,直接用)
-      const bbox = {
-        minLng: b.getWest(),
-        minLat: b.getSouth(),
-        maxLng: b.getEast(),
-        maxLat: b.getNorth(),
-      };
-      const mySeq = ++seq;
-      if (shouldShowWaterPoints(zoom)) {
-        fetchWaterSourcesInBbox(bbox)
-          .then((ws) => {
-            if (!alive || mySeq !== seq) return;
-            // 数据集没变就跳过 setWater,避免触发重渲染把已打开的 popup 销毁
-            const cur = waterRef.current;
-            if (cur.length !== ws.length || !cur.every((c, i) => c.id === ws[i]?.id)) {
-              waterRef.current = ws;
-              setWater(ws);
-            }
-            if (waterClustersRef.current.length) {
-              waterClustersRef.current = [];
-              setWaterClusters([]);
-            }
-          })
-          .catch(() => {});
-      } else {
-        fetchWaterClusters(bbox, waterClusterCell(zoom), layerPrefs.hiddenWaterDistricts)
-          .then((cs) => {
-            if (!alive || mySeq !== seq) return;
-            const cur = waterClustersRef.current;
-            if (
-              cur.length !== cs.length ||
-              !cur.every((c, i) => c.lng === cs[i]?.lng && c.lat === cs[i]?.lat && c.count === cs[i]?.count)
-            ) {
-              waterClustersRef.current = cs;
-              setWaterClusters(cs);
-            }
-            if (waterRef.current.length) {
-              waterRef.current = [];
-              setWater([]);
-            }
-          })
-          .catch(() => {});
-      }
-    };
-    const debounced = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(load, 300);
-    };
-    load();
-    map.on('moveend', debounced);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      map.off('moveend', debounced);
-    };
-  }, [mapInited, layerPrefs.hiddenWaterDistricts, waterTick]);
-
-  // 加载重点单位
-  useEffect(() => {
-    let alive = true;
-    fetchKeyUnits()
-      .then((ks) => {
-        if (alive) setKeyUnits(ks);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载警情/事件
-  useEffect(() => {
-    let alive = true;
-    fetchIncidents()
-      .then((is) => {
-        if (alive) setIncidents(is);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载重点建筑
-  useEffect(() => {
-    let alive = true;
-    fetchKeyBuildings()
-      .then((bs) => {
-        if (alive) setBuildings(bs);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载重点区域
-  useEffect(() => {
-    let alive = true;
-    fetchRegions()
-      .then((rs) => {
-        if (alive) setRegions(rs);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 点位增删改表单 + 右键创建菜单(见 gis/hooks/use-entity-form)
+  const {
+    entityForm, setEntityForm,
+    entitySaving, entityError, setEntityError,
+    createMenu, setCreateMenu,
+    openEntityCreate, openEntityEdit, saveEntity, deleteEntity,
+  } = useEntityForm({
+    keyUnits, setKeyUnits, setBuildings,
+    waterRef, bumpWater,
+    mapRef, mapInited,
+    setGeoCandidates, setPickMode, setCoordFix, setRadial,
+  });
 
   // 市/区县行政边界
   useEffect(() => {
-    const layer = boundaryLayerRef.current;
+    const layer = layers.boundary;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
     let alive = true;
@@ -494,7 +244,7 @@ export default function RealGisMap() {
     return m;
   }, [resources]);
 
-  const handleStationClick = useCallback((s: Station) => {
+  const handleStationClick = useCallback((s: RenderStation) => {
     addSceneAction({
       action: 'flyTo',
       target: s.name,
@@ -502,303 +252,6 @@ export default function RealGisMap() {
       source: '面板',
     });
   }, []);
-
-  // 派遣路线色板(多站各色)
-  const ROUTE_COLORS = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
-
-  // 周边水源高亮:500m 内水源画青色圈 + 适窗(独立可调,警情圆环"周边水源"复用)
-  const highlightNearbyWater = useCallback((t: { lng: number; lat: number }) => {
-    const map = mapRef.current;
-    const highlight = highlightLayerRef.current;
-    if (!map || !highlight) return;
-    highlight.clearLayers();
-    // 地图与库同为 GCJ02,直接调 nearby 半径查询
-    fetchNearbyWaterSources({ lng: t.lng, lat: t.lat, radius: 500 })
-      .then((nearby) => {
-        const bounds = L.latLngBounds([L.latLng(t.lat, t.lng)]);
-        nearby.forEach((w) => {
-          L.circleMarker([w.lat, w.lng], { radius: 10, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.3, weight: 2 })
-            .bindTooltip(`${w.name} · ${w.type} · ${Math.round(w.distanceM)}m`, { direction: 'top' })
-            .addTo(highlight);
-          bounds.extend(L.latLng(w.lat, w.lng));
-        });
-        if (nearby.length) map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
-      })
-      .catch(() => {});
-  }, []);
-
-  // 打开派遣面板:站点(已与地图同为 GCJ02)按到目标直线距离排序 + 算锚点 + 周边水源
-  const openDeploy = useCallback(
-    (t: { name: string; lng: number; lat: number }) => {
-      const map = mapRef.current;
-      if (!map) return;
-      const sorted = stationsRef.current
-        .map((s) => ({ ...s, distKm: haversineKm(s.lng, s.lat, t.lng, t.lat) }))
-        .sort((a, b) => a.distKm - b.distKm);
-      const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
-      setDeploy({ target: { name: t.name, lng: t.lng, lat: t.lat }, stations: sorted, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } });
-      setPlanned([]);
-      setRadial(null);
-      highlightNearbyWater(t);
-    },
-    [highlightNearbyWater],
-  );
-
-  // 多站到场路线规划:每站 driving(GCJ02)+ 各色 polyline + 贴线 tooltip + 适窗;写 showRoute scene action(MCP 通道)
-  const planRoutes = useCallback(
-    async (stationIds: string[]) => {
-      const map = mapRef.current;
-      const routeLayer = routeLayerRef.current;
-      if (!map || !routeLayer || !deploy) return;
-      setPlanning(true);
-      routeLayer.clearLayers();
-      setPlanned([]);
-      const allLatLngs: [number, number][] = [];
-      const results: PlannedRoute[] = [];
-      await Promise.all(
-        stationIds.map(async (id, idx) => {
-          const s = stationsRef.current.find((x) => x.id === id);
-          if (!s) return;
-          const from = { lng: s.lng, lat: s.lat };
-          try {
-            const route = await fetchDrivingRoute(from, { lng: deploy.target.lng, lat: deploy.target.lat });
-            const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
-            const distKm = (route.distance / 1000).toFixed(1);
-            const etaMin = Math.round(route.duration / 60);
-            const tipHtml = `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${s.name}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${route.trafficLights}灯</span></div>`;
-            L.polyline(route.polyline, { color, weight: 4, dashArray: '10 8', opacity: 0.9, className: 'route-flow' }).addTo(routeLayer);
-            // 信息标签锚定路线分段点(按 idx 错开,避免多条叠在中点)
-            const seg = Math.min(Math.floor(route.polyline.length * (0.3 + idx * 0.18)), route.polyline.length - 1);
-            L.marker(route.polyline[seg], {
-              icon: L.divIcon({ html: tipHtml, className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
-              interactive: false,
-              keyboard: false,
-            }).addTo(routeLayer);
-            route.polyline.forEach((pt) => allLatLngs.push(pt));
-            results.push({ stationId: id, stationName: s.name, distance: route.distance, duration: route.duration, trafficLights: route.trafficLights });
-          } catch {
-            // 单站失败跳过
-          }
-        }),
-      );
-      results.sort((a, b) => stationIds.indexOf(a.stationId) - stationIds.indexOf(b.stationId));
-      setPlanned(results);
-      setPlanning(false);
-      if (allLatLngs.length) map.flyToBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
-      addSceneAction({
-        action: 'showRoute',
-        target: `派遣路线:${deploy.target.name}(${results.length} 站)`,
-        params: { routes: results },
-        source: '面板',
-      });
-    },
-    [deploy],
-  );
-
-  const clearRoutes = useCallback(() => {
-    routeLayerRef.current?.clearLayers();
-    highlightLayerRef.current?.clearLayers();
-    setPlanned([]);
-  }, []);
-
-  // ---- 点位治理:坐标修正 ----
-  const openCoordFix = useCallback((t: CoordFixTarget) => {
-    setCoordFix(t);
-    setDraftCoord(null);
-    setGeoCandidates([]);
-    setCoordError(null);
-    setPickMode(false);
-  }, []);
-
-  const closeCoordFix = useCallback(() => {
-    setCoordFix(null);
-    setDraftCoord(null);
-    setGeoCandidates([]);
-    setCoordError(null);
-    setPickMode(false);
-  }, []);
-
-  const queryAddress = useCallback(async (address: string) => {
-    setGeoQuerying(true);
-    setCoordError(null);
-    try {
-      setGeoCandidates(await fetchGeocode(address));
-    } catch {
-      setGeoCandidates([]);
-      setCoordError('地址查询失败');
-    } finally {
-      setGeoQuerying(false);
-    }
-  }, []);
-
-  const saveCoord = useCallback(async () => {
-    if (!coordFix || !draftCoord) return;
-    setCoordSaving(true);
-    setCoordError(null);
-    try {
-      if (coordFix.kind === 'unit') {
-        await updateKeyUnitCoords(coordFix.id, draftCoord.lng, draftCoord.lat);
-        setKeyUnits(await fetchKeyUnits());
-      } else {
-        await updateKeyBuildingCoords(coordFix.id, draftCoord.lng, draftCoord.lat);
-        setBuildings(await fetchKeyBuildings());
-      }
-      addSceneAction({
-        action: 'updateCoord',
-        target: `坐标修正 · ${coordFix.name} → ${draftCoord.lng.toFixed(5)},${draftCoord.lat.toFixed(5)}`,
-        params: { id: coordFix.id, lng: draftCoord.lng, lat: draftCoord.lat },
-        source: '面板',
-      });
-      setCoordFix(null);
-      setDraftCoord(null);
-      setGeoCandidates([]);
-    } catch {
-      setCoordError('保存失败(网络或权限)');
-    } finally {
-      setCoordSaving(false);
-    }
-  }, [coordFix, draftCoord]);
-
-  const batchGeocode = useCallback(async () => {
-    setBatching(true);
-    setBatchMsg(null);
-    try {
-      const n = await geocodeMissingKeyUnits();
-      setKeyUnits(await fetchKeyUnits());
-      setBatchMsg(`已补全 ${n} 个单位坐标`);
-    } catch {
-      setBatchMsg('批量补全失败');
-    } finally {
-      setBatching(false);
-    }
-  }, []);
-
-  // ---- 点位增删改(水源/重点单位/重点建筑) ----
-  const openEntityCreate = useCallback((kind: EntityKind, lng: number, lat: number) => {
-    setEntityForm({ mode: 'create', values: { ...emptyEntityForm(kind), lng, lat } });
-    setEntityError(null);
-    setGeoCandidates([]);
-    setCreateMenu(null);
-    setRadial(null);
-    setCoordFix(null);
-  }, []);
-
-  const openEntityEdit = useCallback(
-    async (kind: EntityKind, id: string) => {
-      setEntityError(null);
-      setGeoCandidates([]);
-      let values: EntityFormValues | null = null;
-      if (kind === 'water') {
-        const w = waterRef.current.find((x) => x.id === id);
-        if (!w) return;
-        values = {
-          ...emptyEntityForm('water'),
-          name: w.name, waterType: w.type, districtCode: w.districtCode, address: w.address,
-          lng: w.lng, lat: w.lat,
-        };
-      } else if (kind === 'unit') {
-        const u = keyUnits.find((x) => x.id === id);
-        if (!u) return;
-        values = {
-          ...emptyEntityForm('unit'),
-          name: u.name, unitType: u.unitType, district: u.district ?? '',
-          contactName: u.contactName ?? '', contactPhone: u.contactPhone ?? '', address: u.address ?? '',
-          lng: u.lng, lat: u.lat,
-        };
-      } else {
-        // 建筑编辑需高度/面积/层数,列表响应没有,先拉详情预填
-        try {
-          const d = await fetchKeyBuildingDetail(id);
-          if (d.longitude == null || d.latitude == null) return;
-          values = {
-            ...emptyEntityForm('building'),
-            name: d.name, buildingType: d.building_type ?? '', buildingUsage: d.building_usage ?? '',
-            buildingHeight: d.building_height != null ? String(d.building_height) : '',
-            floorArea: d.floor_area != null ? String(d.floor_area) : '',
-            groundFloors: d.ground_floors != null ? String(d.ground_floors) : '',
-            undergroundFloors: d.underground_floors != null ? String(d.underground_floors) : '',
-            keyUnitId: d.key_unit_id ?? '', address: d.address ?? '',
-            lng: d.longitude, lat: d.latitude,
-          };
-        } catch {
-          showToast('加载建筑详情失败');
-          return;
-        }
-      }
-      setEntityForm({ mode: 'edit', id, values });
-      setRadial(null);
-      setCoordFix(null);
-    },
-    [keyUnits],
-  );
-
-  const saveEntity = useCallback(async () => {
-    if (!entityForm) return;
-    setEntitySaving(true);
-    setEntityError(null);
-    const { mode, id, values } = entityForm;
-    try {
-      if (values.kind === 'water') {
-        const body = buildWaterPayload(values, mode);
-        if (mode === 'create') await createWaterSource(body);
-        else await updateWaterSource(id!, body);
-        setWaterTick((t) => t + 1); // 触发 bbox/clusters 重取
-      } else if (values.kind === 'unit') {
-        const body = buildUnitPayload(values);
-        if (mode === 'create') await createKeyUnit(body);
-        else await updateKeyUnit(id!, body);
-        setKeyUnits(await fetchKeyUnits());
-      } else {
-        const body = buildBuildingPayload(values);
-        if (mode === 'create') await createKeyBuilding(body);
-        else await updateKeyBuilding(id!, body);
-        setBuildings(await fetchKeyBuildings());
-      }
-      addSceneAction({
-        action: 'editEntity',
-        target: `${mode === 'create' ? '新增' : '编辑'} · ${values.name}`,
-        params: { kind: values.kind, id, lng: values.lng, lat: values.lat },
-        source: '面板',
-      });
-      showToast(mode === 'create' ? '已创建' : '已保存');
-      setEntityForm(null);
-    } catch (e) {
-      setEntityError(e instanceof Error ? e.message : '保存失败(网络或权限)');
-    } finally {
-      setEntitySaving(false);
-    }
-  }, [entityForm]);
-
-  // 删除:圆环"删除"直删(带确认);表单内删除按钮也走这里
-  const deleteEntity = useCallback(
-    async (kind: EntityKind, id: string, name: string) => {
-      if (!window.confirm(`确认删除「${name}」?删除后不可恢复。`)) return;
-      setEntitySaving(true);
-      setEntityError(null);
-      try {
-        if (kind === 'water') {
-          await deleteWaterSource(id);
-          setWaterTick((t) => t + 1);
-        } else if (kind === 'unit') {
-          await deleteKeyUnit(id);
-          setKeyUnits(await fetchKeyUnits());
-        } else {
-          await deleteKeyBuilding(id);
-          setBuildings(await fetchKeyBuildings());
-        }
-        addSceneAction({ action: 'editEntity', target: `删除 · ${name}`, params: { kind, id }, source: '面板' });
-        showToast('已删除');
-        setEntityForm(null);
-        setRadial(null);
-      } catch {
-        setEntityError('删除失败(网络或权限)');
-        showToast('删除失败');
-      } finally {
-        setEntitySaving(false);
-      }
-    },
-    [],
-  );
 
   // ---- 圆环菜单(点击 marker 弹出动作环,给操作增加摩擦)----
   const closeRadial = useCallback(() => setRadial(null), []);
@@ -999,20 +452,6 @@ export default function RealGisMap() {
     };
   }, [forcePanel?.station?.id]);
 
-  // 派遣面板:地图移动/缩放时跟随目标重算锚点(不飞开)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !deploy) return;
-    const update = () => {
-      const p = map.latLngToContainerPoint(L.latLng(deploy.target.lat, deploy.target.lng));
-      setDeploy((prev) => (prev ? { ...prev, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } } : prev));
-    };
-    map.on('move zoom', update);
-    return () => {
-      map.off('move zoom', update);
-    };
-  }, [deploy?.target.lng, deploy?.target.lat]);
-
   // 划定区域:启用/取消 leaflet-draw 多边形绘制
   const startDraw = useCallback(() => {
     const map = mapRef.current;
@@ -1048,72 +487,41 @@ export default function RealGisMap() {
     if (!paletteOpen) return;
     const q = paletteQuery.trim();
     const close = () => setPaletteOpen(false);
-    // 动作命令
-    const actions: PaletteItem[] = [
-      {
-        id: 'toggle-base',
-        title: baseMap === 'vector' ? '切换卫星底图' : '切换矢量底图',
-        icon: baseMap === 'vector' ? Satellite : MapIcon,
-        group: '动作',
-        run: () => {
-          setBaseMap(baseMap === 'vector' ? 'satellite' : 'vector');
-          close();
-        },
+    // 动作命令:def 由 lib 产出,组件用 id → run 映射表附加执行逻辑
+    const actionRuns: Record<string, () => void> = {
+      'toggle-base': () => {
+        setBaseMap(baseMap === 'vector' ? 'satellite' : 'vector');
+        close();
       },
-      {
-        id: 'batch-geocode',
-        title: '批量补全坐标',
-        subtitle: '给坐标缺失的重点单位地理编码',
-        icon: MapPin,
-        group: '动作',
-        run: () => {
-          batchGeocode();
-          close();
-        },
+      'batch-geocode': () => {
+        batchGeocode();
+        close();
       },
-    ];
-    if (planned.length) {
-      actions.push({
-        id: 'clear-route',
-        title: '清空到场路线',
-        icon: Trash2,
-        group: '动作',
-        run: () => {
-          clearRoutes();
-          close();
-        },
-      });
-    }
-    actions.push({
-      id: 'toggle-draw',
-      title: drawMode ? '取消划定区域' : '划定区域',
-      icon: PenLine,
-      group: '动作',
-      run: () => {
+      'clear-route': () => {
+        clearRoutes();
+        close();
+      },
+      'toggle-draw': () => {
         drawMode ? cancelDraw() : startDraw();
         close();
       },
-    });
-    const filteredActions = q ? actions.filter((a) => a.title.includes(q) || a.id.includes(q)) : actions;
+    };
+    const actionDefs = buildActionItems({ baseMap, hasPlanned: planned.length > 0, drawMode });
+    const filteredActions: PaletteItem[] = filterActionItems(actionDefs, q).map((d) => ({ ...d, run: actionRuns[d.id] }));
 
     // 单位跳转(本地过滤)
-    const unitItems: PaletteItem[] = q
-      ? keyUnits
-          .filter((u) => u.name.includes(q) || (u.unitType ?? '').includes(q))
-          .slice(0, 6)
-          .map((u) => ({
-            id: `unit-${u.id}`,
-            title: u.name,
-            subtitle: `${u.unitType}${u.district ? ` · ${u.district}` : ''}`,
-            icon: Building2,
-            group: '单位',
-            run: () => {
-              const map = mapRef.current;
-              if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 16));
-              close();
-            },
-          }))
-      : [];
+    const unitItems: PaletteItem[] = filterUnits(keyUnits, q).map((u) => ({
+      id: `unit-${u.id}`,
+      title: u.name,
+      subtitle: `${u.unitType}${u.district ? ` · ${u.district}` : ''}`,
+      icon: Building2,
+      group: '单位',
+      run: () => {
+        const map = mapRef.current;
+        if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 16));
+        close();
+      },
+    }));
 
     setPaletteItems([...filteredActions, ...unitItems]);
 
@@ -1124,19 +532,19 @@ export default function RealGisMap() {
       fetchGeocode(q)
         .then((cs) => {
           if (!alive) return;
-          const addrItems: PaletteItem[] = cs.slice(0, 6).map((c) => ({
-            id: `addr-${c.lng}-${c.lat}`,
-            title: c.address,
-            subtitle: `${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} · ${c.level}`,
-            icon: MapPin,
-            group: '地址',
-            run: () => {
-              setQueryMarker({ lng: c.lng, lat: c.lat, address: c.address });
-              const map = mapRef.current;
-              if (map) map.flyTo([c.lat, c.lng], Math.max(map.getZoom(), 16));
-              close();
-            },
-          }));
+          const addrItems: PaletteItem[] = buildAddressDefs(cs).map((d, i) => {
+            const c = cs[i];
+            return {
+              ...d,
+              icon: MapPin,
+              run: () => {
+                setQueryMarker({ lng: c.lng, lat: c.lat, address: c.address });
+                const map = mapRef.current;
+                if (map) map.flyTo([c.lat, c.lng], Math.max(map.getZoom(), 16));
+                close();
+              },
+            };
+          });
           setPaletteItems([...filteredActions, ...unitItems, ...addrItems]);
         })
         .catch(() => {})
@@ -1150,433 +558,83 @@ export default function RealGisMap() {
     setPaletteLoading(false);
   }, [paletteOpen, paletteQuery, baseMap, planned, keyUnits, clearRoutes, batchGeocode, drawMode, startDraw, cancelDraw]);
 
-  // 消防站
+  // 消防站(渲染函数体在 lib/gis/render-stations)
   useEffect(() => {
-    const layer = stationsLayerRef.current;
+    const layer = layers.stations;
     if (!layer || !mapInited) return;
-    layer.clearLayers();
-    markersRef.current.clear();
-    for (const s of stations) {
-      if (!layerPrefs.visibleStationTypes.includes(s.type)) continue;
-      const marker = L.marker([s.lat, s.lng], {
-        icon: L.divIcon({
-          html: stationIconSvg(s.type, s.status),
-          className: 'map-icon-station',
-          iconSize: [24, 24],
-          iconAnchor: [12, 24],
-          popupAnchor: [0, -24],
-        }),
-      })
-        .bindPopup(`<b>${s.name}</b><br/>${s.type} · 在位 ${personnelCounts.get(s.id) ?? 0} 人<br/>${s.address}<br/>${s.lng.toFixed(5)}, ${s.lat.toFixed(5)}(GCJ02)`)
-        .on('click', () => handleStationClick(s))
-        .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); openRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng: s.lng, lat: s.lat }, [s.lat, s.lng]); });
-      layer.addLayer(marker);
-      markersRef.current.set(s.id, marker);
-    }
+    markersRef.current = renderStations(layer, stations, {
+      visibleTypes: layerPrefs.visibleStationTypes,
+      personnelCounts,
+      onStationClick: handleStationClick,
+      onRadial: openRadial,
+    });
   }, [stations, handleStationClick, mapInited, openRadial, personnelCounts, layerPrefs.visibleStationTypes]);
 
-  // 水源渲染:>=15 水滴图标逐点(带 popup,按区划开关过滤);13-14 聚合气泡(点击气泡放大进点位级)
+  // 水源渲染:>=15 水滴图标逐点(带 popup,按区划开关过滤);13-14 聚合气泡(点击气泡放大进点位级)。渲染函数体在 lib/gis/render-water
   useEffect(() => {
-    const layer = waterLayerRef.current;
+    const layer = layers.water;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
-    // 记录当前打开的 popup,重建后在新 marker 实例上恢复(clearLayers 会销毁 popup)
-    const openId = [...waterMarkersRef.current.entries()].find(([, m]) => m.isPopupOpen())?.[0];
-    layer.clearLayers();
-    waterMarkersRef.current.clear();
-    const zoom = map.getZoom();
-    if (shouldShowWaterPoints(zoom)) {
-      const hidden = layerPrefs.hiddenWaterDistricts;
-      for (const w of water) {
-        if (hidden.includes(w.districtCode)) continue;
-        const m = L.marker([w.lat, w.lng], {
-          icon: L.divIcon({
-            html: waterIconSvg(w.type),
-            className: 'map-icon-water',
-            iconSize: [18, 18],
-            iconAnchor: [9, 18],
-            popupAnchor: [0, -18],
-          }),
-        })
-          .bindPopup(`<b>${w.name}</b><br/>${w.type} · ${w.district}<br/>${w.address}<br/>${w.lng.toFixed(5)}, ${w.lat.toFixed(5)}(GCJ02)`)
-          .on('click', () =>
-            addSceneAction({ action: 'flyTo', target: w.name, params: { lng: w.lng, lat: w.lat }, source: '面板' }),
-          )
-          .on('contextmenu', (e) => {
-            L.DomEvent.stopPropagation(e.originalEvent as Event);
-            openRadial({ kind: 'water', id: w.id, name: w.name, lng: w.lng, lat: w.lat }, [w.lat, w.lng]);
-          });
-        layer.addLayer(m);
-        waterMarkersRef.current.set(w.id, m);
-      }
-      if (openId) waterMarkersRef.current.get(openId)?.openPopup();
-    } else if (shouldShowWater(zoom)) {
-      for (const c of waterClusters) {
-        const { html, size } = waterClusterSvg(c.count);
-        L.marker([c.lat, c.lng], {
-          icon: L.divIcon({
-            html,
-            className: 'map-icon-water-cluster',
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2],
-          }),
-        })
-          .bindTooltip(`${c.count} 个水源,放大地图查看`, { direction: 'top' })
-          .on('click', () => map.flyTo([c.lat, c.lng], map.getZoom() + 1))
-          .addTo(layer);
-      }
-    }
+    waterMarkersRef.current = renderWater(layer, water, waterClusters, {
+      map,
+      zoom: map.getZoom(),
+      hiddenDistricts: layerPrefs.hiddenWaterDistricts,
+      prevMarkers: waterMarkersRef.current,
+      onWaterClick: (w) =>
+        addSceneAction({ action: 'flyTo', target: w.name, params: { lng: w.lng, lat: w.lat }, source: '面板' }),
+      onRadial: openRadial,
+    });
   }, [water, waterClusters, mapInited, layerPrefs.hiddenWaterDistricts, openRadial]);
 
-  // 重点单位:zoom<14 网格聚合气泡(有警情的单位始终逐点,警情态不进气泡);>=14 逐点
+  // 重点单位:zoom<14 网格聚合气泡(有警情的单位始终逐点,警情态不进气泡);>=14 逐点。渲染函数体在 lib/gis/render-key-units
   // unitClusterMode:>=14 恒定 'points'(缩放不再重建千级 marker);<14 每级重建气泡(格宽随 zoom 变)
   const unitClusterMode: string | number = zoom >= MARKER_CLUSTER_MAX_ZOOM ? 'points' : zoom;
   useEffect(() => {
-    const layer = keyUnitsLayerRef.current;
+    const layer = layers.keyUnits;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
-    layer.clearLayers();
-    keyUnitMarkersRef.current.clear();
-    // 该单位是否有活跃警情(关联 key_unit_id 且 status != 结束)
-    const incidentByUnit = new Map<string, Incident>();
-    for (const i of incidents) if (i.keyUnitId && i.status !== '结束') incidentByUnit.set(i.keyUnitId, i);
-
-    const renderUnit = (u: KeyUnit) => {      const inc = incidentByUnit.get(u.id);
-      const isHighRisk = !inc && /高层|化工|危化|超高层|大空间|地下/.test(u.unitType);
-      const iconHtml = inc
-        ? `<div class="unit-incident-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-incident-ring" data-level="${inc.level}"></span><span class="unit-incident-level">${inc.level}</span></div>`
-        : isHighRisk
-          ? `<div class="unit-risk-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-risk-badge" title="高风险">!</span></div>`
-          : keyUnitIconSvg(u.unitType, u.status);
-      const popupHtml =
-        popupForKeyUnit(u) +
-        (inc
-          ? `<br/><span style="color:#ef4444">⚠ 警情:${inc.incidentType} · ${inc.level} 级 · ${inc.status}${inc.description ? `(${inc.description})` : ''}</span>`
-          : '');
-      const marker = L.marker([u.lat, u.lng], {
-        icon: L.divIcon({
-          html: iconHtml,
-          className: 'map-icon-key-unit',
-          iconSize: [24, 24],
-          iconAnchor: [12, 24],
-          popupAnchor: [0, -24],
-        }),
-      })
-        .bindPopup(popupHtml)
-        .on('click', (e) => {
-          if (incidentByUnit.get(u.id)) {
-            openDeploy({ name: u.name, lng: u.lng, lat: u.lat });
-            e.target.closePopup(); // 有警情:只弹派遣面板,关闭自动 popup 避免与面板重合(单位详情走右键圆环)
-          }
-        })
-        .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); openRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]); });
-      keyUnitMarkersRef.current.set(u.id, marker);
-      layer.addLayer(marker);
-    };
-
-    if (zoom >= MARKER_CLUSTER_MAX_ZOOM) {
-      keyUnits.forEach(renderUnit);
-      return;
-    }
-    // 聚合模式:警情单位逐点(警情第一优先),其余按格聚合
-    const withIncident = keyUnits.filter((u) => incidentByUnit.has(u.id));
-    const rest = keyUnits.filter((u) => !incidentByUnit.has(u.id));
-    withIncident.forEach(renderUnit);
-    for (const c of gridCluster(rest, (u) => u.lng, (u) => u.lat, waterClusterCell(zoom))) {
-      const { html, size } = clusterBubbleSvg(c.count, '#fb7185');
-      L.marker([c.lat, c.lng], {
-        icon: L.divIcon({
-          html,
-          className: 'map-icon-unit-cluster',
-          iconSize: [size, size],
-          iconAnchor: [size / 2, size / 2],
-        }),
-      })
-        .bindTooltip(`${c.count} 个重点单位,放大地图查看`, { direction: 'top' })
-        .on('click', () => map.flyTo([c.lat, c.lng], map.getZoom() + 1))
-        .addTo(layer);
-    }
+    keyUnitMarkersRef.current = renderKeyUnits(layer, keyUnits, incidents, zoom, {
+      map,
+      onRadial: openRadial,
+      onDeploy: openDeploy,
+    });
   }, [keyUnits, mapInited, openRadial, incidents, openDeploy, unitClusterMode]);
 
-  // 警情/事件(红色脉冲点位 + level 数字;GCJ02 直显)
+  // 警情/事件(红色脉冲点位 + level 数字;GCJ02 直显)。渲染函数体在 lib/gis/render-incidents
   useEffect(() => {
-    const layer = incidentsLayerRef.current;
+    const layer = layers.incidents;
     if (!layer || !mapInited) return;
-    layer.clearLayers();
-    incidentMarkersRef.current.clear();
-    for (const i of incidents) {
-      if (i.keyUnitId) continue; // 关联单位的警情由单位 marker 警情态显示,不独立渲染
-      const marker = L.marker([i.lat, i.lng], {
-        icon: L.divIcon({
-          html: `<div class="incident-marker" data-level="${i.level}">${i.level}</div>`,
-          className: 'map-icon-incident',
-          iconSize: [28, 28],
-          iconAnchor: [14, 14],
-          popupAnchor: [0, -14],
-        }),
-      })
-        .bindPopup(
-          `<b>⚠ ${i.address}</b><br/>${i.incidentType} · ${i.level} 级 · ${i.status}` +
-            `${i.description ? `<br/>${i.description}` : ''}<br/>${i.lng.toFixed(5)}, ${i.lat.toFixed(5)}`,
-        )
-        .on('click', () => openDeploy({ name: i.address, lng: i.lng, lat: i.lat }))
-        .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); openRadial({ kind: 'incident', id: i.id, name: i.address, lng: i.lng, lat: i.lat }, [i.lat, i.lng]); });
-      incidentMarkersRef.current.set(i.id, marker);
-      layer.addLayer(marker);
-    }
+    incidentMarkersRef.current = renderIncidents(layer, incidents, { onDeploy: openDeploy, onRadial: openRadial });
   }, [incidents, mapInited, openDeploy, openRadial]);
 
-  // 重点建筑:zoom<14 网格聚合气泡;>=14 逐点(与重点单位同套机制)
+  // 重点建筑:zoom<14 网格聚合气泡;>=14 逐点(与重点单位同套机制)。渲染函数体在 lib/gis/render-key-buildings
   useEffect(() => {
-    const layer = buildingsLayerRef.current;
+    const layer = layers.buildings;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
-    layer.clearLayers();
-    buildingMarkersRef.current.clear();
-
-    const renderBuilding = (b: KeyBuilding) => {
-      const unitName = b.keyUnitId ? keyUnits.find((u) => u.id === b.keyUnitId)?.name : undefined;
-      const marker = L.marker([b.lat, b.lng], {
-        icon: L.divIcon({
-          html: keyBuildingIconSvg(b.status),
-          className: 'map-icon-key-building',
-          iconSize: [22, 22],
-          iconAnchor: [11, 22],
-          popupAnchor: [0, -22],
-        }),
-      })
-        .bindPopup(popupForKeyBuilding(b, unitName))
-        .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); openRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat }, [b.lat, b.lng]); });
-      buildingMarkersRef.current.set(b.id, marker);
-      layer.addLayer(marker);
-    };
-
-    if (zoom >= MARKER_CLUSTER_MAX_ZOOM) {
-      buildings.forEach(renderBuilding);
-      return;
-    }
-    for (const c of gridCluster(buildings, (b) => b.lng, (b) => b.lat, waterClusterCell(zoom))) {
-      const { html, size } = clusterBubbleSvg(c.count, '#60a5fa');
-      L.marker([c.lat, c.lng], {
-        icon: L.divIcon({
-          html,
-          className: 'map-icon-building-cluster',
-          iconSize: [size, size],
-          iconAnchor: [size / 2, size / 2],
-        }),
-      })
-        .bindTooltip(`${c.count} 个重点建筑,放大地图查看`, { direction: 'top' })
-        .on('click', () => map.flyTo([c.lat, c.lng], map.getZoom() + 1))
-        .addTo(layer);
-    }
+    buildingMarkersRef.current = renderKeyBuildings(layer, buildings, keyUnits, zoom, { map, onRadial: openRadial });
   }, [buildings, keyUnits, mapInited, openRadial, unitClusterMode]);
 
-  // 重点区域图层:多边形高亮 + hover 名称;点击 flyToBounds 适窗
+  // 重点区域图层:多边形高亮 + hover 名称;点击 flyTo 区域中心 zoom 16。渲染函数体在 lib/gis/render-regions
   useEffect(() => {
-    const layer = regionsLayerRef.current;
-    if (!layer || !mapInited) return;
-    layer.clearLayers();
-    for (const r of regions) {
-      const poly = L.polygon(r.polygon as [number, number][], {
-        color: r.color,
-        weight: 2,
-        fillColor: r.color,
-        fillOpacity: 0.15,
-      })
-        .bindTooltip(`${r.name}${r.regionType ? ` · ${r.regionType}` : ''}`, {
-          sticky: true,
-          className: 'boundary-label-tip',
-        })
-        .on('mouseover', () =>
-          poly.setStyle({ color: r.color, weight: 3, fillColor: r.color, fillOpacity: 0.35 }),
-        )
-        .on('mouseout', () =>
-          poly.setStyle({ color: r.color, weight: 2, fillColor: r.color, fillOpacity: 0.15 }),
-        )
-        .on('click', () => {
-          const map = mapRef.current;
-          if (!map) return;
-          // 手动区域:点击放大到区域中心,固定 zoom 级别(每次一致,不随点击叠加无限放大)
-          const center = poly.getBounds().getCenter();
-          map.flyTo(center, 16);
-        });
-      layer.addLayer(poly);
-    }
+    const layer = layers.regions;
+    const map = mapRef.current;
+    if (!layer || !map || !mapInited) return;
+    renderRegions(layer, regions, { map });
   }, [regions, mapInited]);
 
-  // 边界显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = boundaryLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showBoundary) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showBoundary, mapInited]);
-
-  // 消防站显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = stationsLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showStations) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showStations, mapInited]);
-
-  // 水源显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = waterLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showWater) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showWater, mapInited]);
-
-  // 警情显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = incidentsLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showIncidents) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showIncidents, mapInited]);
-
-  // 重点单位显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = keyUnitsLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showKeyUnits) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showKeyUnits, mapInited]);
-
-  // 重点建筑显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = buildingsLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showBuildings) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showBuildings, mapInited]);
-
-  // 重点区域显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = regionsLayerRef.current;
-    if (!map || !layer || !mapInited) return;
-    if (showRegions) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showRegions, mapInited]);
-
-  // sceneLog 联动
-  useEffect(() => {
-    const unsub = subscribeSceneLog((_list, latest) => {
-      const map = mapRef.current;
-      if (!map || !latest) return;
-      if (latest.action === 'flyTo' || latest.action === 'addMarker') {
-        const p = latest.params as { lng?: number; lat?: number; id?: string } | undefined;
-        if (typeof p?.lng === 'number' && typeof p?.lat === 'number' && (p.lng || p.lat)) {
-          // 首选:params 直接带坐标(面板联动),免搜索直达;zoom 拉到点位级保证水源逐点渲染
-          map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 15));
-          if (p.id) {
-            // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染
-            let tries = 0;
-            const tryOpen = () => {
-              tries += 1;
-              const mk = markersRef.current.get(p.id!) ?? waterMarkersRef.current.get(p.id!);
-              if (mk) mk.openPopup();
-              else if (tries < 6) window.setTimeout(tryOpen, 400);
-            };
-            window.setTimeout(tryOpen, 400);
-          }
-        } else {
-        const hit = stationsRef.current.find((s) => latest.target?.includes(s.name));
-        if (hit) {
-          map.flyTo([hit.lat, hit.lng], Math.max(map.getZoom(), 14));
-          markersRef.current.get(hit.id)?.openPopup();
-        } else {
-          const w = waterRef.current.find((x) => latest.target?.includes(x.name));
-          if (w) {
-            // 必须飞到点位级(zoom>=15):中低 zoom 是聚合气泡,没有可弹 popup 的逐点 marker
-            map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 15));
-            // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染
-            let tries = 0;
-            const tryOpen = () => {
-              tries += 1;
-              const mk = waterMarkersRef.current.get(w.id);
-              if (mk) mk.openPopup();
-              else if (tries < 6) window.setTimeout(tryOpen, 400);
-            };
-            window.setTimeout(tryOpen, 400);
-          } else if (latest.target) {
-            // 视口内未命中(水源是视口加载):按名称关键词查后端兜底
-            fetchWaterSourcesPage({ keyword: latest.target, pageSize: 5 })
-              .then(({ items }) => {
-                const hit = items.find((x) => latest.target?.includes(x.name)) ?? items[0];
-                if (!hit || !hit.lng || !hit.lat) return;
-                map.flyTo([hit.lat, hit.lng], Math.max(map.getZoom(), 15));
-              })
-              .catch(() => {});
-          }
-        }
-        }
-      }
-      if (latest.action === 'resetView') {
-        mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      }
-      if (latest.action === 'showRoute' && latest.source !== '面板') {
-        // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
-        const routeLayer = routeLayerRef.current;
-        const routes = (latest.params as {
-          routes?: Array<{ polyline?: [number, number][]; stationName?: string; distance?: number; duration?: number; trafficLights?: number }>;
-        }).routes;
-        if (routeLayer && Array.isArray(routes) && routes.length) {
-          routeLayer.clearLayers();
-          const colors = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
-          const allLatLngs: [number, number][] = [];
-          const summary: PlannedRoute[] = [];
-          routes.forEach((r, idx) => {
-            if (!r.polyline?.length) return;
-            const color = colors[idx % colors.length];
-            const distKm = r.distance ? (r.distance / 1000).toFixed(1) : '?';
-            const etaMin = r.duration ? Math.round(r.duration / 60) : '?';
-            const tipHtml = `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${r.stationName ?? `路线 ${idx + 1}`}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${r.trafficLights ?? 0}灯</span></div>`;
-            L.polyline(r.polyline, { color, weight: 4, dashArray: '10 8', opacity: 0.9, className: 'route-flow' }).addTo(routeLayer);
-            const seg = Math.min(Math.floor(r.polyline.length * (0.3 + idx * 0.18)), r.polyline.length - 1);
-            L.marker(r.polyline[seg], {
-              icon: L.divIcon({ html: tipHtml, className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
-              interactive: false,
-              keyboard: false,
-            }).addTo(routeLayer);
-            r.polyline.forEach((pt) => allLatLngs.push(pt));
-            summary.push({ stationId: `ext-${idx}`, stationName: r.stationName ?? `路线 ${idx + 1}`, distance: r.distance ?? 0, duration: r.duration ?? 0, trafficLights: r.trafficLights ?? 0 });
-          });
-          setPlanned(summary);
-          if (allLatLngs.length) map.flyToBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
-        }
-      }
-    });
-    return () => {
-      unsub();
-    };
-  }, []);
-
-  // 地图空白处右键 → 新增点位菜单(marker 右键已 stopPropagation,不会到这)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    const onCtx = (e: any) => {
-      const p = map.latLngToContainerPoint(e.latlng);
-      setCreateMenu({ x: p.x, y: p.y, lng: e.latlng.lng, lat: e.latlng.lat });
-      setRadial(null);
-    };
-    const close = () => setCreateMenu(null);
-    map.on('contextmenu', onCtx);
-    map.on('move zoom click', close);
-    return () => {
-      map.off('contextmenu', onCtx);
-      map.off('move zoom click', close);
-    };
-  }, [mapInited]);
+  // sceneLog 联动(flyTo/addMarker/resetView/showRoute,见 gis/hooks/use-scene-bridge)
+  useSceneBridge({
+    mapRef,
+    routeLayer: layers.route,
+    defaultCenter: DEFAULT_CENTER,
+    defaultZoom: DEFAULT_ZOOM,
+    stationsRef,
+    waterRef,
+    stationMarkers: markersRef,
+    waterMarkers: waterMarkersRef,
+    setPlanned,
+  });
 
   // 地图拾取模式:点击地图 → 回填 draft 坐标(GCJ02,高德瓦片原生坐标系)
   useEffect(() => {
@@ -1601,7 +659,7 @@ export default function RealGisMap() {
 
   // 临时标记层:修正 draft(琥珀)+ 点位查询结果(青)
   useEffect(() => {
-    const layer = tempLayerRef.current;
+    const layer = layers.temp;
     if (!layer) return;
     layer.clearLayers();
     if (draftCoord && coordFix) {
@@ -1746,10 +804,7 @@ export default function RealGisMap() {
           anchor={deploy.anchor}
           onPlan={(ids) => planRoutes(ids)}
           onClear={clearRoutes}
-          onClose={() => {
-            setDeploy(null);
-            clearRoutes();
-          }}
+          onClose={closeDeploy}
         />
       )}
       {tilesFailed && (
