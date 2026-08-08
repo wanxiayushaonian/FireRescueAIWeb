@@ -25,6 +25,7 @@ import { HIGH_RISK_PATTERN, keyUnitMarkerHtml, incidentMarkerHtml } from '@/lib/
 import { gridCluster } from '@/lib/grid-cluster';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { popupForKeyUnit, popupForKeyBuilding, popupForStation, popupForWater, popupForIncident, popupIncidentSuffix } from '@/lib/gis/popup-html';
+import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
 import { haversineKm } from '@/lib/geo-query';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
@@ -40,7 +41,7 @@ import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/Deploy
 import EntityFormPanel from './gis/EntityFormPanel';
 import { emptyEntityForm, buildWaterPayload, buildUnitPayload, buildBuildingPayload, type EntityFormValues, type EntityKind } from '@/lib/entity-form';
 import { showToast } from '@/components/Toast';
-import { Route, MapPin, Info, Satellite, Map as MapIcon, Trash2, Building2, PenLine, Navigation, Users, Droplets, Rocket, Pencil, Plus } from 'lucide-react';
+import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Plus } from 'lucide-react';
 
 // 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
@@ -1004,72 +1005,41 @@ export default function RealGisMap() {
     if (!paletteOpen) return;
     const q = paletteQuery.trim();
     const close = () => setPaletteOpen(false);
-    // 动作命令
-    const actions: PaletteItem[] = [
-      {
-        id: 'toggle-base',
-        title: baseMap === 'vector' ? '切换卫星底图' : '切换矢量底图',
-        icon: baseMap === 'vector' ? Satellite : MapIcon,
-        group: '动作',
-        run: () => {
-          setBaseMap(baseMap === 'vector' ? 'satellite' : 'vector');
-          close();
-        },
+    // 动作命令:def 由 lib 产出,组件用 id → run 映射表附加执行逻辑
+    const actionRuns: Record<string, () => void> = {
+      'toggle-base': () => {
+        setBaseMap(baseMap === 'vector' ? 'satellite' : 'vector');
+        close();
       },
-      {
-        id: 'batch-geocode',
-        title: '批量补全坐标',
-        subtitle: '给坐标缺失的重点单位地理编码',
-        icon: MapPin,
-        group: '动作',
-        run: () => {
-          batchGeocode();
-          close();
-        },
+      'batch-geocode': () => {
+        batchGeocode();
+        close();
       },
-    ];
-    if (planned.length) {
-      actions.push({
-        id: 'clear-route',
-        title: '清空到场路线',
-        icon: Trash2,
-        group: '动作',
-        run: () => {
-          clearRoutes();
-          close();
-        },
-      });
-    }
-    actions.push({
-      id: 'toggle-draw',
-      title: drawMode ? '取消划定区域' : '划定区域',
-      icon: PenLine,
-      group: '动作',
-      run: () => {
+      'clear-route': () => {
+        clearRoutes();
+        close();
+      },
+      'toggle-draw': () => {
         drawMode ? cancelDraw() : startDraw();
         close();
       },
-    });
-    const filteredActions = q ? actions.filter((a) => a.title.includes(q) || a.id.includes(q)) : actions;
+    };
+    const actionDefs = buildActionItems({ baseMap, hasPlanned: planned.length > 0, drawMode });
+    const filteredActions: PaletteItem[] = filterActionItems(actionDefs, q).map((d) => ({ ...d, run: actionRuns[d.id] }));
 
     // 单位跳转(本地过滤)
-    const unitItems: PaletteItem[] = q
-      ? keyUnits
-          .filter((u) => u.name.includes(q) || (u.unitType ?? '').includes(q))
-          .slice(0, 6)
-          .map((u) => ({
-            id: `unit-${u.id}`,
-            title: u.name,
-            subtitle: `${u.unitType}${u.district ? ` · ${u.district}` : ''}`,
-            icon: Building2,
-            group: '单位',
-            run: () => {
-              const map = mapRef.current;
-              if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 16));
-              close();
-            },
-          }))
-      : [];
+    const unitItems: PaletteItem[] = filterUnits(keyUnits, q).map((u) => ({
+      id: `unit-${u.id}`,
+      title: u.name,
+      subtitle: `${u.unitType}${u.district ? ` · ${u.district}` : ''}`,
+      icon: Building2,
+      group: '单位',
+      run: () => {
+        const map = mapRef.current;
+        if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 16));
+        close();
+      },
+    }));
 
     setPaletteItems([...filteredActions, ...unitItems]);
 
@@ -1080,19 +1050,19 @@ export default function RealGisMap() {
       fetchGeocode(q)
         .then((cs) => {
           if (!alive) return;
-          const addrItems: PaletteItem[] = cs.slice(0, 6).map((c) => ({
-            id: `addr-${c.lng}-${c.lat}`,
-            title: c.address,
-            subtitle: `${c.lng.toFixed(5)}, ${c.lat.toFixed(5)} · ${c.level}`,
-            icon: MapPin,
-            group: '地址',
-            run: () => {
-              setQueryMarker({ lng: c.lng, lat: c.lat, address: c.address });
-              const map = mapRef.current;
-              if (map) map.flyTo([c.lat, c.lng], Math.max(map.getZoom(), 16));
-              close();
-            },
-          }));
+          const addrItems: PaletteItem[] = buildAddressDefs(cs).map((d, i) => {
+            const c = cs[i];
+            return {
+              ...d,
+              icon: MapPin,
+              run: () => {
+                setQueryMarker({ lng: c.lng, lat: c.lat, address: c.address });
+                const map = mapRef.current;
+                if (map) map.flyTo([c.lat, c.lng], Math.max(map.getZoom(), 16));
+                close();
+              },
+            };
+          });
           setPaletteItems([...filteredActions, ...unitItems, ...addrItems]);
         })
         .catch(() => {})
