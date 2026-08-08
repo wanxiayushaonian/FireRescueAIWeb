@@ -16,7 +16,8 @@ import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import { fetchGeocode } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
-import { MARKER_CLUSTER_MAX_ZOOM, shouldShowWater } from '@/lib/map-icons';
+import { MARKER_CLUSTER_MAX_ZOOM, shouldShowWater, shouldShowWaterPoints } from '@/lib/map-icons';
+import { decidePointRender } from '@/lib/gis/point-render';
 import { renderStations, type RenderStation } from '@/lib/gis/render-stations';
 import { renderWater } from '@/lib/gis/render-water';
 import { renderKeyUnits } from '@/lib/gis/render-key-units';
@@ -116,9 +117,12 @@ export default function RealGisMap() {
   } = useGisData({ mapRef, mapInited, hiddenWaterDistricts: layerPrefs.hiddenWaterDistricts });
   setRegionsRef.current = setRegions;
 
-  // 水源加载/空态轻量指示:加载中优先级高于空态
+  // 水源密度:zoom>=15 且视口过滤后点数超 POINT_CAP 时回落聚合(见水源渲染 effect)
+  const [waterDense, setWaterDense] = useState(false);
+
+  // 水源加载/空态轻量指示:加载中 > 密集聚合 > 空态
   const waterEmpty =
-    !waterLoading && shouldShowWater(zoom) && water.length === 0 && waterClusters.length === 0;
+    !waterDense && !waterLoading && shouldShowWater(zoom) && water.length === 0 && waterClusters.length === 0;
 
   // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions,见 gis/hooks/use-layer-visibility)
   useLayerVisibility(mapRef, layers, mapInited, {
@@ -580,6 +584,11 @@ export default function RealGisMap() {
     const layer = layers.water;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
+    // 水源数据已是 bbox 视口,直接用区划过滤后计数判定密集度(不额外 pad)
+    const dense =
+      shouldShowWaterPoints(map.getZoom()) &&
+      decidePointRender(water.filter((w) => !layerPrefs.hiddenWaterDistricts.includes(w.districtCode)).length) === 'cluster';
+    setWaterDense(dense);
     waterMarkersRef.current = renderWater(layer, water, waterClusters, {
       map,
       zoom: map.getZoom(),
@@ -828,13 +837,15 @@ export default function RealGisMap() {
           底图瓦片加载失败(高德不可达)——显示占位底图
         </div>
       )}
-      {showWater && (waterLoading || waterEmpty) && (
+      {showWater && (waterLoading || waterDense || waterEmpty) && (
         <div className="absolute bottom-3 right-14 z-[500] flex items-center rounded border border-line bg-bg-panel/90 px-2.5 py-1 text-[11px] text-text-2">
           {waterLoading ? (
             <>
               <span className="gis-loading-dot" />
               水源加载中…
             </>
+          ) : waterDense ? (
+            '点位密集,已聚合显示'
           ) : (
             '当前区域无水源数据'
           )}

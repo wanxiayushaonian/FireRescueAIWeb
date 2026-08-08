@@ -3,7 +3,9 @@
 // popup 恢复:重建前从 prevMarkers 找 isPopupOpen 的 id,重建后在新 marker 实例上 openPopup(clearLayers 会销毁 popup)。
 // 与 lib/gis/route-render 同策略:import type + 函数内 require('leaflet')(vitest node 环境约束)。
 import type L from 'leaflet';
-import { waterIconSvg, waterClusterSvg, shouldShowWater, shouldShowWaterPoints } from '../map-icons';
+import { waterIconSvg, waterClusterSvg, waterClusterCell, shouldShowWater, shouldShowWaterPoints } from '../map-icons';
+import { gridCluster } from '../grid-cluster';
+import { POINT_CAP, decidePointRender } from './point-render';
 import { popupForWater } from './popup-html';
 import type { RadialTarget } from './radial-target';
 
@@ -31,6 +33,7 @@ export interface RenderWaterOpts {
   zoom: number;
   hiddenDistricts: string[]; // 区划显隐(水源面板经 map-layer-store 控制)
   prevMarkers: Map<string, L.Marker>; // 上一帧注册表,用于 popup openId 恢复
+  cap?: number; // 逐点上限(默认 POINT_CAP),超过则回落客户端聚合
   onWaterClick: (w: RenderWaterSource) => void;
   onRadial: (target: RadialTarget, latlng: [number, number]) => void;
 }
@@ -48,32 +51,9 @@ export function renderWater(
   const openId = [...opts.prevMarkers.entries()].find(([, m]) => m.isPopupOpen())?.[0];
   layer.clearLayers();
   const markers = new Map<string, L.Marker>();
-  if (shouldShowWaterPoints(opts.zoom)) {
-    for (const w of water) {
-      if (opts.hiddenDistricts.includes(w.districtCode)) continue;
-      const m = L.marker([w.lat, w.lng], {
-        icon: L.divIcon({
-          html: waterIconSvg(w.type),
-          className: 'map-icon-water',
-          iconSize: [18, 18],
-          iconAnchor: [9, 18],
-          popupAnchor: [0, -18],
-        }),
-      })
-        .bindPopup(popupForWater(w), { className: 'gis-popup' })
-        .on('click', () => opts.onWaterClick(w))
-        .on('contextmenu', (e) => {
-          L.DomEvent.stopPropagation(e.originalEvent as Event);
-          opts.onRadial({ kind: 'water', id: w.id, name: w.name, lng: w.lng, lat: w.lat }, [w.lat, w.lng]);
-        });
-      m.on('popupopen', () => m.getElement()?.classList.add('gis-marker-active'));
-      m.on('popupclose', () => m.getElement()?.classList.remove('gis-marker-active'));
-      layer.addLayer(m);
-      markers.set(w.id, m);
-    }
-    if (openId) markers.get(openId)?.openPopup();
-  } else if (shouldShowWater(opts.zoom)) {
-    for (const c of clusters) {
+  // 聚合气泡渲染:13-14 级服务端 clusters / >=15 超限回落客户端聚合共用(气泡 html/tooltip/点击 flyTo 原样)
+  const renderClusterBubbles = (items: RenderWaterCluster[]) => {
+    for (const c of items) {
       const { html, size } = waterClusterSvg(c.count);
       L.marker([c.lat, c.lng], {
         icon: L.divIcon({
@@ -87,6 +67,39 @@ export function renderWater(
         .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
         .addTo(layer);
     }
+  };
+  if (shouldShowWaterPoints(opts.zoom)) {
+    const visible = water.filter((w) => !opts.hiddenDistricts.includes(w.districtCode));
+    if (decidePointRender(visible.length, opts.cap ?? POINT_CAP) === 'points') {
+      for (const w of visible) {
+        const m = L.marker([w.lat, w.lng], {
+          icon: L.divIcon({
+            html: waterIconSvg(w.type),
+            className: 'map-icon-water',
+            iconSize: [18, 18],
+            iconAnchor: [9, 18],
+            popupAnchor: [0, -18],
+          }),
+        })
+          .bindPopup(popupForWater(w), { className: 'gis-popup' })
+          .on('click', () => opts.onWaterClick(w))
+          .on('contextmenu', (e) => {
+            L.DomEvent.stopPropagation(e.originalEvent as Event);
+            opts.onRadial({ kind: 'water', id: w.id, name: w.name, lng: w.lng, lat: w.lat }, [w.lat, w.lng]);
+          });
+        m.on('popupopen', () => m.getElement()?.classList.add('gis-marker-active'));
+        m.on('popupclose', () => m.getElement()?.classList.remove('gis-marker-active'));
+        layer.addLayer(m);
+        markers.set(w.id, m);
+      }
+    } else {
+      // 超限回落:客户端网格聚合(与 13-14 级同款气泡,点击放大复用)
+      renderClusterBubbles(gridCluster(visible, (w) => w.lng, (w) => w.lat, waterClusterCell(opts.zoom)));
+    }
+    // 保活:回落时无逐点 marker,markers.get(openId) 为 undefined 自然 no-op
+    if (openId) markers.get(openId)?.openPopup();
+  } else if (shouldShowWater(opts.zoom)) {
+    renderClusterBubbles(clusters);
   }
   return markers;
 }
