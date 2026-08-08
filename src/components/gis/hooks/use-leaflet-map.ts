@@ -1,5 +1,5 @@
 'use client';
-// 地图底座 hook:Leaflet 初始化(10 类图层组 + draw:created 绑定 + 清理)、zoom 同步、
+// 地图底座 hook:Leaflet 初始化(11 类图层组 + draw:created 绑定 + 清理)、zoom 同步、
 // 高德底图切换(矢量/卫星,GCJ02)+ tileerror 连续失败降级。从 RealGisMap 抽取,行为不变。
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
@@ -23,6 +23,7 @@ export interface GisLayers {
   buildings: L.LayerGroup | null;
   regions: L.LayerGroup | null;
   route: L.LayerGroup | null;
+  incidentResponse: L.LayerGroup | null;
   temp: L.LayerGroup | null;
 }
 
@@ -51,6 +52,7 @@ export function useLeafletMap(
     buildings: null,
     regions: null,
     route: null,
+    incidentResponse: null,
     temp: null,
   });
   const vectorLayerRef = useRef<L.TileLayer | null>(null);
@@ -86,6 +88,7 @@ export function useLeafletMap(
     layers.buildings = L.layerGroup().addTo(map);
     layers.regions = L.layerGroup().addTo(map);
     layers.route = L.layerGroup().addTo(map);
+    layers.incidentResponse = L.layerGroup().addTo(map);
     layers.temp = L.layerGroup().addTo(map);
     map.on('draw:created', onDrawCreated);
     setMapInited(true);

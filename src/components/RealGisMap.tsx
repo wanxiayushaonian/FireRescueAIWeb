@@ -43,8 +43,10 @@ import { useDeployRoutes } from './gis/hooks/use-deploy-routes';
 import { useCoordFix } from './gis/hooks/use-coord-fix';
 import { useEntityForm } from './gis/hooks/use-entity-form';
 import { useSceneBridge } from './gis/hooks/use-scene-bridge';
+import { useIncidentResponse } from './gis/hooks/use-incident-response';
+import { formatEta, etaColor } from '@/lib/gis/eta-render';
 import { type EntityKind } from '@/lib/entity-form';
-import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil } from 'lucide-react';
+import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Siren } from 'lucide-react';
 
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
@@ -71,6 +73,7 @@ export default function RealGisMap() {
   const [showIncidents, setShowIncidents] = useState(true);
   const [showBuildings, setShowBuildings] = useState(true);
   const [showRegions, setShowRegions] = useState(true);
+  const [showIncidentResponse, setShowIncidentResponse] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
   const [radial, setRadial] = useState<{ target: CoordFixTarget; x: number; y: number } | null>(null);
@@ -124,7 +127,7 @@ export default function RealGisMap() {
   const waterEmpty =
     !waterDense && !waterLoading && shouldShowWater(zoom) && water.length === 0 && waterClusters.length === 0;
 
-  // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions,见 gis/hooks/use-layer-visibility)
+  // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions/incidentResponse,见 gis/hooks/use-layer-visibility)
   useLayerVisibility(mapRef, layers, mapInited, {
     boundary: showBoundary,
     stations: showStations,
@@ -133,6 +136,7 @@ export default function RealGisMap() {
     keyUnits: showKeyUnits,
     buildings: showBuildings,
     regions: showRegions,
+    incidentResponse: showIncidentResponse,
   });
 
   // 派遣面板 + 多站路线规划(见 gis/hooks/use-deploy-routes)
@@ -146,6 +150,15 @@ export default function RealGisMap() {
     highlightLayer: layers.highlight,
     stationsRef,
     setRadial,
+  });
+
+  // 灾情响应分析(重点建筑圆环菜单「响应分析」入口,见 gis/hooks/use-incident-response)
+  const { responseState, analyze, clearResponse } = useIncidentResponse({
+    mapRef,
+    responseLayer: layers.incidentResponse,
+    routeLayer: layers.route, // 复用现有 route 图层(最近站路线,与 use-deploy-routes 同款)
+    stationsRef,
+    stationsVisible: showStations,
   });
 
   // 坐标修正/点位治理(见 gis/hooks/use-coord-fix)
@@ -382,6 +395,21 @@ export default function RealGisMap() {
         ];
       }
       return [
+        // 重点建筑独有:响应分析(5km 站 ETA 染色 + 最近站路线 + 面板)
+        ...(t.kind === 'building'
+          ? [
+              {
+                key: 'response',
+                icon: Siren,
+                label: '响应分析',
+                color: '#ef4444',
+                onClick: () => {
+                  analyze({ name: t.name, lng: t.lng, lat: t.lat });
+                  setRadial(null);
+                },
+              },
+            ]
+          : []),
         {
           key: 'route',
           icon: Route,
@@ -433,7 +461,7 @@ export default function RealGisMap() {
         },
       ];
     },
-    [openDeploy, openCoordFix, highlightNearbyWater, openEntityEdit, deleteEntity],
+    [openDeploy, openCoordFix, highlightNearbyWater, openEntityEdit, deleteEntity, analyze],
   );
 
   // 地图移动/缩放时关闭圆环(像素坐标已失效)
@@ -762,6 +790,44 @@ export default function RealGisMap() {
           actions={radialActions(radial.target)}
           onClose={closeRadial}
         />
+      )}
+      {responseState && (
+        <div className="absolute right-4 top-20 z-[500] w-64 panel-bg panel-glow rounded-lg p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-text-1 text-sm font-semibold">响应分析 · {responseState.target.name}</span>
+            <button onClick={clearResponse} className="text-text-3 hover:text-cyan">×</button>
+          </div>
+          {responseState.loading && <div className="text-text-2 text-xs">分析中…</div>}
+          {responseState.error && <div className="text-red text-xs">{responseState.error}</div>}
+          {!responseState.loading && !responseState.error && (
+            <>
+              <ul className="mt-2 space-y-1">
+                {responseState.items.map((it) => (
+                  <li key={it.id} className="flex items-center gap-2 text-xs">
+                    <span
+                      className="inline-block h-2 w-2 rounded-full"
+                      style={{
+                        background: { green: '#34d399', yellow: '#fbbf24', red: '#ef4444' }[
+                          etaColor(it.etaSec, responseState.targetMin)
+                        ],
+                      }}
+                    />
+                    <span className="text-text-1 flex-1 truncate">{it.name}</span>
+                    <span className="text-text-2">{formatEta(it.etaSec)}</span>
+                  </li>
+                ))}
+              </ul>
+              <div className="mt-2 flex items-center gap-2 border-t border-line/50 pt-1.5 text-[10px] text-text-3">
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: '#34d399' }} />
+                ≤{responseState.targetMin}分
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: '#fbbf24' }} />
+                ≤{responseState.targetMin * 2}分
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: '#ef4444' }} />
+                更慢
+              </div>
+            </>
+          )}
+        </div>
       )}
       {createMenu && (
         <RadialMenu
