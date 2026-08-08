@@ -17,10 +17,13 @@ async function proxy(request: NextRequest): Promise<Response> {
       headers: buildProxyHeaders(token, request.headers),
       body,
     });
-  let res = await doFetch(path);
-  // znya 列表接口带尾斜杠(/fire-stations/),Next catch-all 剥离尾斜杠 → 404 补斜杠重试一次
-  if (res.status === 404 && !path.endsWith('/')) {
-    res = await doFetch(path + '/');
+  // znya 列表路由带尾斜杠(/fire-stations/),Next catch-all 会剥掉客户端传来的尾斜杠。
+  // 单段 GET(如 fire-stations、fire-force-items?...)必为列表接口 → 直接补斜杠,避免 404+重试的双倍请求;
+  // 预判失败则换另一种形态兜底重试一次(防御未来出现无斜杠单段路由)。
+  const preferSlash = request.method === 'GET' && path !== '' && !path.includes('/');
+  let res = await doFetch(preferSlash ? `${path}/` : path);
+  if (res.status === 404) {
+    res = await doFetch(preferSlash ? path : `${path}/`);
   }
   return new NextResponse(res.body, {
     status: res.status,
