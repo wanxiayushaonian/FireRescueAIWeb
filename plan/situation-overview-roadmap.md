@@ -129,7 +129,7 @@ AgentChat(已有) ──→ Agent(智能体)
 
 ## 五、关键约束 / 待决
 
-- **坐标系**:站/水 WGS84(显示转 GCJ02);单位/建筑/警情 GCJ02;driving 用 GCJ02 — 新数据按此对齐
+- **坐标系**:自 znya c8d4e5f6a7b8 迁移起全库统一 GCJ02(高德),前端不做基准转换,库内坐标直接使用
 - **znya 是主项目**:新表/接口在 znya,web BFF 代理
 - **MCP 服务端**:尚未建立(`web/mcp-server` 空目录),第二步新建
 - **agent SDK**:AgentChat 现基于 jarvis/ustudio 封闭聊天窗,接入 MCP 需确认 agent 侧能力
