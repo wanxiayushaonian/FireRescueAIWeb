@@ -10,11 +10,9 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
-import type { Station, WaterSource, ResourceItem } from '@/mock/types';
-import { fetchStations, fetchResources } from '@/api/force';
-import { fetchWaterSourcesInBbox, fetchNearbyWaterSources, fetchWaterSourcesPage, fetchWaterClusters, createWaterSource, updateWaterSource, deleteWaterSource, type WaterCluster } from '@/api/water';
+import type { Station } from '@/mock/types';
+import { fetchNearbyWaterSources, fetchWaterSourcesPage, createWaterSource, updateWaterSource, deleteWaterSource } from '@/api/water';
 import { fetchKeyUnits, updateKeyUnitCoords, geocodeMissingKeyUnits, createKeyUnit, updateKeyUnit, deleteKeyUnit } from '@/api/key-units';
-import { fetchIncidents } from '@/api/incidents';
 import type { Incident } from '@/lib/incident-mapper';
 import { fetchKeyBuildings, updateKeyBuildingCoords, fetchKeyBuildingDetail, createKeyBuilding, updateKeyBuilding, deleteKeyBuilding } from '@/api/key-buildings';
 import { fetchDrivingRoute } from '@/api/route';
@@ -40,6 +38,8 @@ import RadialMenu, { type RadialAction } from './gis/RadialMenu';
 import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/DeployPanel';
 import EntityFormPanel from './gis/EntityFormPanel';
 import { useLeafletMap, DEFAULT_ZOOM } from './gis/hooks/use-leaflet-map';
+import { useGisData } from './gis/hooks/use-gis-data';
+import { useLayerVisibility } from './gis/hooks/use-layer-visibility';
 import { emptyEntityForm, buildWaterPayload, buildUnitPayload, buildBuildingPayload, type EntityFormValues, type EntityKind } from '@/lib/entity-form';
 import { showToast } from '@/components/Toast';
 import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Plus } from 'lucide-react';
@@ -61,21 +61,9 @@ export default function RealGisMap() {
   const buildingMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const drawRef = useRef<L.Draw.Polygon | null>(null);
-  const stationsRef = useRef<Station[]>([]);
-  const waterRef = useRef<WaterSource[]>([]);
-  const waterClustersRef = useRef<WaterCluster[]>([]);
 
-  const [stations, setStations] = useState<Station[]>([]);
-  const [resources, setResources] = useState<ResourceItem[]>([]);
-  const [water, setWater] = useState<WaterSource[]>([]);
-  const [waterClusters, setWaterClusters] = useState<WaterCluster[]>([]);
   // 图层偏好(队站类型/水源区划显隐)来自共享 store,由执勤力量/水源面板维护
   const layerPrefs = useMapLayerPrefs();
-  const [keyUnits, setKeyUnits] = useState<KeyUnit[]>([]);
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
-  const [regions, setRegions] = useState<Region[]>([]);
-  const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
   const [showStations, setShowStations] = useState(true);
   const [showWater, setShowWater] = useState(true);
   const [showBoundary, setShowBoundary] = useState(true);
@@ -105,8 +93,6 @@ export default function RealGisMap() {
   const [entityError, setEntityError] = useState<string | null>(null);
   // 地图空白处右键 → 新增点位菜单
   const [createMenu, setCreateMenu] = useState<{ x: number; y: number; lng: number; lat: number } | null>(null);
-  // 水源数据变更后 bump 触发 bbox/clusters 重取
-  const [waterTick, setWaterTick] = useState(0);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
   const [batching, setBatching] = useState(false);
   const [batchMsg, setBatchMsg] = useState<string | null>(null);
@@ -116,6 +102,9 @@ export default function RealGisMap() {
   const [paletteQuery, setPaletteQuery] = useState('');
   const [paletteItems, setPaletteItems] = useState<PaletteItem[]>([]);
   const [paletteLoading, setPaletteLoading] = useState(false);
+
+  // setRegions 来自 useGisData(在其后调用),onDrawCreated 须先定义 → 经 ref 间接引用(useState setter 引用稳定)
+  const setRegionsRef = useRef<(rs: Region[]) => void>(() => {});
 
   // 绘制完成 → 保存区域到 znya 并刷新
   const onDrawCreated = useCallback((e: any) => {
@@ -128,170 +117,38 @@ export default function RealGisMap() {
     const name = window.prompt('区域名称');
     if (!name) return;
     createRegion({ name, polygon })
-      .then(() => fetchRegions().then(setRegions))
+      .then(() => fetchRegions().then((rs) => setRegionsRef.current(rs)))
       .catch(() => {});
   }, []);
 
   // 地图初始化/底图切换/tileerror 降级/zoom 同步(见 gis/hooks/use-leaflet-map)
   const { mapRef, layers, mapInited, zoom, baseMap, setBaseMap, tilesFailed } = useLeafletMap(rootRef, onDrawCreated);
 
-  // 加载消防站
-  useEffect(() => {
-    let alive = true;
-    fetchStations()
-      .then((st) => {
-        if (alive) {
-          stationsRef.current = st;
-          setStations(st);
-          setLoadState('ok');
-        }
-      })
-      .catch(() => {
-        if (alive) setLoadState('error');
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 数据加载(站/资源/水源视口/重点单位/警情/重点建筑/重点区域,见 gis/hooks/use-gis-data)
+  const {
+    stations, stationsRef,
+    resources,
+    water, waterRef,
+    waterClusters,
+    keyUnits, setKeyUnits,
+    incidents,
+    buildings, setBuildings,
+    regions, setRegions,
+    loadState,
+    bumpWater,
+  } = useGisData({ mapRef, mapInited, hiddenWaterDistricts: layerPrefs.hiddenWaterDistricts });
+  setRegionsRef.current = setRegions;
 
-  // 加载执勤明细(用于聚合各站真实人员数,popup 动态显示)
-  useEffect(() => {
-    let alive = true;
-    fetchResources()
-      .then((rs) => {
-        if (alive) setResources(rs);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载水源:视口驱动(bbox),moveend 防抖 300ms;按 zoom 分三级——
-  // <13 不加载;13-14 网格聚合气泡(clusters 端点,一次请求);>=15 bbox 明细点位。
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    let alive = true;
-    let timer: number | undefined;
-    let seq = 0;
-    const load = () => {
-      const zoom = map.getZoom();
-      if (!shouldShowWater(zoom)) {
-        waterRef.current = [];
-        waterClustersRef.current = [];
-        setWater([]);
-        setWaterClusters([]);
-        return;
-      }
-      const b = map.getBounds().pad(0.25); // 外扩,平移小距离不重复请求(地图与库同为 GCJ02,直接用)
-      const bbox = {
-        minLng: b.getWest(),
-        minLat: b.getSouth(),
-        maxLng: b.getEast(),
-        maxLat: b.getNorth(),
-      };
-      const mySeq = ++seq;
-      if (shouldShowWaterPoints(zoom)) {
-        fetchWaterSourcesInBbox(bbox)
-          .then((ws) => {
-            if (!alive || mySeq !== seq) return;
-            // 数据集没变就跳过 setWater,避免触发重渲染把已打开的 popup 销毁
-            const cur = waterRef.current;
-            if (cur.length !== ws.length || !cur.every((c, i) => c.id === ws[i]?.id)) {
-              waterRef.current = ws;
-              setWater(ws);
-            }
-            if (waterClustersRef.current.length) {
-              waterClustersRef.current = [];
-              setWaterClusters([]);
-            }
-          })
-          .catch(() => {});
-      } else {
-        fetchWaterClusters(bbox, waterClusterCell(zoom), layerPrefs.hiddenWaterDistricts)
-          .then((cs) => {
-            if (!alive || mySeq !== seq) return;
-            const cur = waterClustersRef.current;
-            if (
-              cur.length !== cs.length ||
-              !cur.every((c, i) => c.lng === cs[i]?.lng && c.lat === cs[i]?.lat && c.count === cs[i]?.count)
-            ) {
-              waterClustersRef.current = cs;
-              setWaterClusters(cs);
-            }
-            if (waterRef.current.length) {
-              waterRef.current = [];
-              setWater([]);
-            }
-          })
-          .catch(() => {});
-      }
-    };
-    const debounced = () => {
-      window.clearTimeout(timer);
-      timer = window.setTimeout(load, 300);
-    };
-    load();
-    map.on('moveend', debounced);
-    return () => {
-      alive = false;
-      window.clearTimeout(timer);
-      map.off('moveend', debounced);
-    };
-  }, [mapInited, layerPrefs.hiddenWaterDistricts, waterTick]);
-
-  // 加载重点单位
-  useEffect(() => {
-    let alive = true;
-    fetchKeyUnits()
-      .then((ks) => {
-        if (alive) setKeyUnits(ks);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载警情/事件
-  useEffect(() => {
-    let alive = true;
-    fetchIncidents()
-      .then((is) => {
-        if (alive) setIncidents(is);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载重点建筑
-  useEffect(() => {
-    let alive = true;
-    fetchKeyBuildings()
-      .then((bs) => {
-        if (alive) setBuildings(bs);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 加载重点区域
-  useEffect(() => {
-    let alive = true;
-    fetchRegions()
-      .then((rs) => {
-        if (alive) setRegions(rs);
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, []);
+  // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions,见 gis/hooks/use-layer-visibility)
+  useLayerVisibility(mapRef, layers, mapInited, {
+    boundary: showBoundary,
+    stations: showStations,
+    water: showWater,
+    incidents: showIncidents,
+    keyUnits: showKeyUnits,
+    buildings: showBuildings,
+    regions: showRegions,
+  });
 
   // 市/区县行政边界
   useEffect(() => {
@@ -606,7 +463,7 @@ export default function RealGisMap() {
         const body = buildWaterPayload(values, mode);
         if (mode === 'create') await createWaterSource(body);
         else await updateWaterSource(id!, body);
-        setWaterTick((t) => t + 1); // 触发 bbox/clusters 重取
+        bumpWater(); // 触发 bbox/clusters 重取
       } else if (values.kind === 'unit') {
         const body = buildUnitPayload(values);
         if (mode === 'create') await createKeyUnit(body);
@@ -642,7 +499,7 @@ export default function RealGisMap() {
       try {
         if (kind === 'water') {
           await deleteWaterSource(id);
-          setWaterTick((t) => t + 1);
+          bumpWater();
         } else if (kind === 'unit') {
           await deleteKeyUnit(id);
           setKeyUnits(await fetchKeyUnits());
@@ -1230,69 +1087,6 @@ export default function RealGisMap() {
       layer.addLayer(poly);
     }
   }, [regions, mapInited]);
-
-  // 边界显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.boundary;
-    if (!map || !layer || !mapInited) return;
-    if (showBoundary) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showBoundary, mapInited]);
-
-  // 消防站显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.stations;
-    if (!map || !layer || !mapInited) return;
-    if (showStations) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showStations, mapInited]);
-
-  // 水源显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.water;
-    if (!map || !layer || !mapInited) return;
-    if (showWater) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showWater, mapInited]);
-
-  // 警情显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.incidents;
-    if (!map || !layer || !mapInited) return;
-    if (showIncidents) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showIncidents, mapInited]);
-
-  // 重点单位显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.keyUnits;
-    if (!map || !layer || !mapInited) return;
-    if (showKeyUnits) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showKeyUnits, mapInited]);
-
-  // 重点建筑显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.buildings;
-    if (!map || !layer || !mapInited) return;
-    if (showBuildings) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showBuildings, mapInited]);
-
-  // 重点区域显隐
-  useEffect(() => {
-    const map = mapRef.current;
-    const layer = layers.regions;
-    if (!map || !layer || !mapInited) return;
-    if (showRegions) layer.addTo(map);
-    else map.removeLayer(layer);
-  }, [showRegions, mapInited]);
 
   // sceneLog 联动
   useEffect(() => {
