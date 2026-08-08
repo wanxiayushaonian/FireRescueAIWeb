@@ -6,6 +6,7 @@ import L from 'leaflet';
 import type { Station } from '@/mock/types';
 import { fetchDrivingRoute } from '@/api/route';
 import { selectWithinKm, rankByEta, type EtaItem } from '@/lib/gis/response-query';
+import { haversineKm } from '@/lib/geo-query';
 import {
   renderResponseEta,
   renderReferenceCircle,
@@ -29,19 +30,20 @@ export interface ResponseState {
 }
 
 const RESPONSE_RADIUS_KM = 5;
-const DRIVING_CONCURRENCY = 3; // 高德免费 key 并发上限(超限 → CUQPS_HAS_EXCEEDED_THE_LIMIT → 502)
+const DRIVING_QPS = 3; // 高德免费 key QPS 上限(超 → CUQPS_HAS_EXCEEDED_THE_LIMIT),保守取 3
+const NEAREST_LIMIT = 8; // 5km 内取直线距离最近 N 站 driving(远的到场慢不关键 + 控 QPS)
 
-/** 有限并发执行(避免高德 CUQPS),保留入参顺序。 */
-async function poolMap<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+/** 限速串行执行(qps 控速,避免高德 CUQPS_HAS_EXCEEDED_THE_LIMIT),保留入参顺序。 */
+async function throttledMap<T, R>(items: T[], qps: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const interval = 1000 / qps;
   const ret: R[] = new Array(items.length);
-  let idx = 0;
-  const worker = async () => {
-    while (idx < items.length) {
-      const i = idx++;
-      ret[i] = await fn(items[i]);
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  let last = 0;
+  for (let i = 0; i < items.length; i++) {
+    const wait = Math.max(0, last + interval - Date.now());
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+    ret[i] = await fn(items[i]);
+  }
   return ret;
 }
 
@@ -100,10 +102,16 @@ export function useIncidentResponse(deps: {
         return;
       }
 
-      // 有限并发 driving(高德免费 key 并发超限返回 CUQPS_HAS_EXCEEDED_THE_LIMIT → 502);
-      // 单站失败重试 1 次(300ms 退避),仍失败跳过
+      // 取直线距离最近 N 站 driving(远的到场慢不关键;大幅减少调用避免高德 QPS 超限)
+      const nearest = within
+        .map((s) => ({ s, d: haversineKm(s.lng, s.lat, target.lng, target.lat) }))
+        .sort((a, b) => a.d - b.d)
+        .slice(0, NEAREST_LIMIT)
+        .map((x) => x.s);
+
+      // 限速 driving(高德 ~3 QPS,串行节流控速;单站失败重试 1 次(300ms 退避),仍失败跳过)
       const results = (
-        await poolMap(within, DRIVING_CONCURRENCY, async (s) => {
+        await throttledMap(nearest, DRIVING_QPS, async (s) => {
           for (let attempt = 0; attempt < 2; attempt++) {
             try {
               const r = await fetchDrivingRoute(
