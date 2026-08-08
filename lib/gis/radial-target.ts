@@ -10,4 +10,5 @@ export interface RadialTarget {
   type?: string; // 消防站类型(仅 kind=station 用)
   lng: number; // GCJ02
   lat: number;
+  sceneId?: string; // uStudio 建模场景 ID(仅 kind=building 用,3D引导)
 }

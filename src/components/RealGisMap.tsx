@@ -46,7 +46,7 @@ import { useSceneBridge } from './gis/hooks/use-scene-bridge';
 import { useIncidentResponse } from './gis/hooks/use-incident-response';
 import { formatEta, etaColor } from '@/lib/gis/eta-render';
 import { type EntityKind } from '@/lib/entity-form';
-import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Siren } from 'lucide-react';
+import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Siren, Boxes } from 'lucide-react';
 
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
@@ -54,7 +54,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap() {
+export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: string) => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
@@ -394,8 +394,8 @@ export default function RealGisMap() {
           },
         ];
       }
-      return [
-        // 重点建筑独有:响应分析(5km 站 ETA 染色 + 最近站路线 + 面板)
+      // 重点单位 / 建筑:路线 / 修正 / 详情(建筑额外:响应分析 + 进入3D)
+      const actions: RadialAction[] = [
         ...(t.kind === 'building'
           ? [
               {
@@ -460,8 +460,22 @@ export default function RealGisMap() {
           },
         },
       ];
+      // 重点建筑且有建模场景(scene_id):进入3D → 通知 App 切 RealSceneView(prop callback)
+      if (t.kind === 'building' && t.sceneId && onEnterScene) {
+        actions.push({
+          key: 'enter3d',
+          icon: Boxes,
+          label: '进入3D',
+          color: '#22d3ee',
+          onClick: () => {
+            onEnterScene(t.sceneId!);
+            setRadial(null);
+          },
+        });
+      }
+      return actions;
     },
-    [openDeploy, openCoordFix, highlightNearbyWater, openEntityEdit, deleteEntity, analyze],
+    [openDeploy, openCoordFix, highlightNearbyWater, openEntityEdit, deleteEntity, analyze, onEnterScene],
   );
 
   // 地图移动/缩放时关闭圆环(像素坐标已失效)
