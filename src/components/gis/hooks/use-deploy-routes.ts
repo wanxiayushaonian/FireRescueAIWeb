@@ -56,7 +56,7 @@ export function useDeployRoutes(deps: {
           const bounds = L.latLngBounds([L.latLng(t.lat, t.lng)]);
           nearby.forEach((w) => {
             L.circleMarker([w.lat, w.lng], { radius: 10, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.3, weight: 2 })
-              .bindTooltip(`${w.name} · ${w.type} · ${Math.round(w.distanceM)}m`, { direction: 'top' })
+              .bindTooltip(`${w.name} · ${w.type} · ${Math.round(w.distanceM)}m`, { direction: 'top', className: 'gis-tip' })
               .addTo(highlight);
             bounds.extend(L.latLng(w.lat, w.lng));
           });

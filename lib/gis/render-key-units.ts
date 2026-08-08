@@ -51,7 +51,7 @@ export function renderKeyUnits(
         popupAnchor: [0, -24],
       }),
     })
-      .bindPopup(popupHtml)
+      .bindPopup(popupHtml, { className: 'gis-popup' })
       .on('click', (e) => {
         if (incidentByUnit.get(u.id)) {
           opts.onDeploy({ name: u.name, lng: u.lng, lat: u.lat });
@@ -59,6 +59,8 @@ export function renderKeyUnits(
         }
       })
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]); });
+    marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
+    marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     markers.set(u.id, marker);
     layer.addLayer(marker);
   };
@@ -81,7 +83,7 @@ export function renderKeyUnits(
         iconAnchor: [size / 2, size / 2],
       }),
     })
-      .bindTooltip(`${c.count} 个重点单位,放大地图查看`, { direction: 'top' })
+      .bindTooltip(`${c.count} 个重点单位,放大地图查看`, { direction: 'top', className: 'gis-tip' })
       .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
       .addTo(layer);
   }

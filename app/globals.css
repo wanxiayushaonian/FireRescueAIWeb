@@ -272,9 +272,9 @@
     background: linear-gradient(90deg, transparent, rgba(34, 211, 238, 0.6), transparent);
     height: 1px;
   }
-  /* GIS 深色地图滤镜(天地图彩色底图 → 深色指挥大屏风格) */
+  /* GIS 深色地图滤镜(高德矢量瓦片 → 深色指挥大屏;保色相,压明度饱和) */
   .gis-dark-filter {
-    filter: invert(1) hue-rotate(180deg) brightness(0.85) contrast(0.9);
+    filter: invert(1) hue-rotate(180deg) sepia(0.15) saturate(0.7) brightness(0.82) contrast(0.95);
   }
   /* 行政区划边界标注(市/区县名,permanent tooltip)覆盖 Leaflet 默认样式 */
   .boundary-label-tip {
@@ -414,4 +414,113 @@
   align-items: center;
   justify-content: center;
   border: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+/* === GIS popup 深色皮肤(与路线贴线卡同款 token) === */
+.gis-popup .leaflet-popup-content-wrapper {
+  background: rgba(10, 20, 32, 0.94);
+  color: #e6edf3;
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.gis-popup .leaflet-popup-content {
+  margin: 8px 12px;
+}
+.gis-popup .leaflet-popup-content b {
+  color: #22d3ee;
+}
+.gis-popup .leaflet-popup-tip {
+  background: rgba(10, 20, 32, 0.94);
+  border: 1px solid rgba(34, 211, 238, 0.35);
+  box-shadow: none;
+}
+/* 特异性须压过 Leaflet 源码 .leaflet-container a.leaflet-popup-close-button (0,2,1) */
+.leaflet-container .gis-popup a.leaflet-popup-close-button {
+  color: #9db4c8;
+  font-size: 14px;
+  padding: 4px 6px 0 0;
+}
+.leaflet-container .gis-popup a.leaflet-popup-close-button:hover {
+  color: #22d3ee;
+}
+
+/* GIS tooltip 深色皮肤(聚合气泡/区域 hover;boundary-label-tip 已有同款,不重复改) */
+.gis-tip.leaflet-tooltip {
+  background: rgba(10, 20, 32, 0.9) !important;
+  border: 1px solid rgba(34, 211, 238, 0.3) !important;
+  color: #e6edf3 !important;
+  font-size: 11px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+.gis-tip.leaflet-tooltip::before {
+  display: none !important;
+}
+
+/* marker 发光(深色底立体化) */
+.map-icon-station,
+.map-icon-key-unit,
+.map-icon-key-building {
+  filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.35));
+}
+.map-icon-water {
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.4));
+}
+.map-icon-water-cluster,
+.map-icon-unit-cluster,
+.map-icon-building-cluster {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.15));
+}
+/* hover 提亮(禁止 scale/translate:Leaflet 用 transform 定位 marker) */
+.leaflet-marker-icon.map-icon-station:hover,
+.leaflet-marker-icon.map-icon-water:hover,
+.leaflet-marker-icon.map-icon-key-unit:hover,
+.leaflet-marker-icon.map-icon-key-building:hover {
+  filter: brightness(1.25) drop-shadow(0 0 6px rgba(34, 211, 238, 0.55));
+}
+/* popup 打开中的选中态:青色外圈(渲染器 popupopen/popupclose 切 class) */
+.leaflet-marker-icon.gis-marker-active {
+  outline: 2px solid rgba(34, 211, 238, 0.8);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+/* 警情单位静态底环(减少脉冲环的视觉漂浮感) */
+.unit-incident-ring-base {
+  position: absolute;
+  /* 比脉冲环 (-6px) 更外扩,避免被 2px 实色边框完全遮挡 */
+  inset: -10px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+}
+/* marker 淡入(Leaflet 重建时自然触发) */
+@keyframes marker-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.map-icon-station,
+.map-icon-water,
+.map-icon-key-unit,
+.map-icon-key-building,
+.map-icon-incident,
+.map-icon-water-cluster,
+.map-icon-unit-cluster,
+.map-icon-building-cluster {
+  animation: marker-fade-in 0.25s ease-out;
+}
+/* 水源加载指示点 */
+.gis-loading-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22d3ee;
+  margin-right: 6px;
+  animation: gis-loading-pulse 1s ease-in-out infinite;
+}
+@keyframes gis-loading-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }

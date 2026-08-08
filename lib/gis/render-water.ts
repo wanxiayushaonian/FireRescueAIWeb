@@ -60,12 +60,14 @@ export function renderWater(
           popupAnchor: [0, -18],
         }),
       })
-        .bindPopup(popupForWater(w))
+        .bindPopup(popupForWater(w), { className: 'gis-popup' })
         .on('click', () => opts.onWaterClick(w))
         .on('contextmenu', (e) => {
           L.DomEvent.stopPropagation(e.originalEvent as Event);
           opts.onRadial({ kind: 'water', id: w.id, name: w.name, lng: w.lng, lat: w.lat }, [w.lat, w.lng]);
         });
+      m.on('popupopen', () => m.getElement()?.classList.add('gis-marker-active'));
+      m.on('popupclose', () => m.getElement()?.classList.remove('gis-marker-active'));
       layer.addLayer(m);
       markers.set(w.id, m);
     }
@@ -81,7 +83,7 @@ export function renderWater(
           iconAnchor: [size / 2, size / 2],
         }),
       })
-        .bindTooltip(`${c.count} 个水源,放大地图查看`, { direction: 'top' })
+        .bindTooltip(`${c.count} 个水源,放大地图查看`, { direction: 'top', className: 'gis-tip' })
         .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
         .addTo(layer);
     }

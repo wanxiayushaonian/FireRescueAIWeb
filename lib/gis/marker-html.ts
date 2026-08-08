@@ -12,7 +12,7 @@ export function keyUnitMarkerHtml(opts: {
 }): string {
   const base = keyUnitIconSvg(opts.unitType, opts.status ?? '');
   if (opts.incidentLevel != null) {
-    return `<div class="unit-incident-wrap">${base}<span class="unit-incident-ring" data-level="${opts.incidentLevel}"></span><span class="unit-incident-level">${opts.incidentLevel}</span></div>`;
+    return `<div class="unit-incident-wrap">${base}<span class="unit-incident-ring-base"></span><span class="unit-incident-ring" data-level="${opts.incidentLevel}"></span><span class="unit-incident-level">${opts.incidentLevel}</span></div>`;
   }
   if (opts.highRisk) {
     return `<div class="unit-risk-wrap">${base}<span class="unit-risk-badge" title="高风险">!</span></div>`;

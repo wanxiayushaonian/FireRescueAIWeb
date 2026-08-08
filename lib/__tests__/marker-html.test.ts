@@ -4,6 +4,7 @@ import { HIGH_RISK_PATTERN, keyUnitMarkerHtml, incidentMarkerHtml } from '../gis
 describe('keyUnitMarkerHtml', () => {
   it('有警情:警情圆环 + 等级,不含风险角标(警情优先互斥)', () => {
     const html = keyUnitMarkerHtml({ unitType: '化工', incidentLevel: 2, highRisk: true });
+    expect(html).toContain('unit-incident-ring-base');
     expect(html).toContain('unit-incident-ring');
     expect(html).toContain('data-level="2"');
     expect(html).not.toContain('unit-risk-badge');

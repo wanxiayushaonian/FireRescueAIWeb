@@ -34,9 +34,11 @@ export function renderIncidents(
         popupAnchor: [0, -14],
       }),
     })
-      .bindPopup(popupForIncident(i))
+      .bindPopup(popupForIncident(i), { className: 'gis-popup' })
       .on('click', () => opts.onDeploy({ name: i.address, lng: i.lng, lat: i.lat }))
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'incident', id: i.id, name: i.address, lng: i.lng, lat: i.lat }, [i.lat, i.lng]); });
+    marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
+    marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     markers.set(i.id, marker);
     layer.addLayer(marker);
   }
