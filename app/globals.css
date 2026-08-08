@@ -495,21 +495,8 @@
   border-radius: 50%;
   pointer-events: none;
 }
-/* marker 淡入(Leaflet 重建时自然触发) */
-@keyframes marker-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.map-icon-station,
-.map-icon-water,
-.map-icon-key-unit,
-.map-icon-key-building,
-.map-icon-incident,
-.map-icon-water-cluster,
-.map-icon-unit-cluster,
-.map-icon-building-cluster {
-  animation: marker-fade-in 0.25s ease-out;
-}
+/* (已移除 marker 淡入动画:视口裁剪后平移会整层重建 marker,CSS 动画在 DOM 重建时必重放,
+   导致所有图标随平移闪烁;CSS 层无法区分"数据变化重建"与"平移重建",故整体去除) */
 /* 水源加载指示点 */
 .gis-loading-dot {
   display: inline-block;
