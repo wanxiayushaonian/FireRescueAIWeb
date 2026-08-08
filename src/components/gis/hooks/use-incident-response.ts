@@ -30,6 +30,8 @@ export interface ResponseState {
 }
 
 const RESPONSE_RADIUS_KM = 5;
+// 只派遣常规主力(支队/救援大队/救援站);排除专职站/微型/志愿等辅助力量
+const RESPONSE_STATION_TYPES = ['支队', '救援大队', '救援站'];
 const DRIVING_QPS = 3; // 高德免费 key QPS 上限(超 → CUQPS_HAS_EXCEEDED_THE_LIMIT),保守取 3
 const NEAREST_LIMIT = 8; // 5km 内取直线距离最近 N 站 driving(远的到场慢不关键 + 控 QPS)
 
@@ -85,8 +87,12 @@ export function useIncidentResponse(deps: {
       routeLayer?.clearLayers();
       renderReferenceCircle(responseLayer, { lat: target.lat, lng: target.lng }, targetMin);
 
+      // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量
+      const eligible = stationsRef.current.filter((s) =>
+        RESPONSE_STATION_TYPES.includes(s.type as string),
+      );
       const within = selectWithinKm(
-        stationsRef.current.map((s) => ({ id: s.id, name: s.name, lng: s.lng, lat: s.lat })),
+        eligible.map((s) => ({ id: s.id, name: s.name, lng: s.lng, lat: s.lat })),
         { lng: target.lng, lat: target.lat },
         RESPONSE_RADIUS_KM,
       );
@@ -97,7 +103,7 @@ export function useIncidentResponse(deps: {
           nearestId: null,
           targetMin,
           loading: false,
-          error: `5km 内无可见消防站`,
+          error: `5km 内无常规主力消防站(支队/救援大队/救援站)`,
         });
         return;
       }
