@@ -39,51 +39,31 @@ import ForceManagePanel, { type ForcePanelStation } from './gis/ForceManagePanel
 import RadialMenu, { type RadialAction } from './gis/RadialMenu';
 import DeployPanel, { type DeployStation, type PlannedRoute } from './gis/DeployPanel';
 import EntityFormPanel from './gis/EntityFormPanel';
+import { useLeafletMap, DEFAULT_ZOOM } from './gis/hooks/use-leaflet-map';
 import { emptyEntityForm, buildWaterPayload, buildUnitPayload, buildBuildingPayload, type EntityFormValues, type EntityKind } from '@/lib/entity-form';
 import { showToast } from '@/components/Toast';
 import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Plus } from 'lucide-react';
 
-// 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
-const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
-// 高德卫星影像(GCJ02;免 key)
-const SAT_URL = 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}';
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 
-// 九江市中心(九江市消防救援支队附近,GCJ02)
+// 九江市中心(九江市消防救援支队附近,GCJ02);use-leaflet-map 内保留同名副本用于地图初始化,两处须保持一致
 const DEFAULT_CENTER: [number, number] = [29.66734, 115.96498];
-const DEFAULT_ZOOM = 11;
-// tileerror 连续失败阈值 → 触发占位降级
-const TILE_ERR_THRESHOLD = 5;
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const vectorLayerRef = useRef<L.TileLayer | null>(null);
-  const satLayerRef = useRef<L.TileLayer | null>(null);
-  const boundaryLayerRef = useRef<L.LayerGroup | null>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
-  const stationsLayerRef = useRef<L.LayerGroup | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const incidentMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const buildingMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const waterLayerRef = useRef<L.LayerGroup | null>(null);
-  const highlightLayerRef = useRef<L.LayerGroup | null>(null);
   const waterMarkersRef = useRef<Map<string, L.Marker>>(new Map());
-  const keyUnitsLayerRef = useRef<L.LayerGroup | null>(null);
-  const incidentsLayerRef = useRef<L.LayerGroup | null>(null);
-  const buildingsLayerRef = useRef<L.LayerGroup | null>(null);
-  const regionsLayerRef = useRef<L.LayerGroup | null>(null);
   const drawRef = useRef<L.Draw.Polygon | null>(null);
-  const routeLayerRef = useRef<L.LayerGroup | null>(null);
-  const tempLayerRef = useRef<L.LayerGroup | null>(null);
   const stationsRef = useRef<Station[]>([]);
   const waterRef = useRef<WaterSource[]>([]);
   const waterClustersRef = useRef<WaterCluster[]>([]);
-  const tileErrRef = useRef(0);
 
   const [stations, setStations] = useState<Station[]>([]);
   const [resources, setResources] = useState<ResourceItem[]>([]);
@@ -96,10 +76,6 @@ export default function RealGisMap() {
   const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
   const [regions, setRegions] = useState<Region[]>([]);
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
-  const [mapInited, setMapInited] = useState(false);
-  // 当前整数 zoom(zoomend 同步):单位/建筑在 <14 时切聚合气泡
-  const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
   const [showStations, setShowStations] = useState(true);
   const [showWater, setShowWater] = useState(true);
   const [showBoundary, setShowBoundary] = useState(true);
@@ -108,7 +84,6 @@ export default function RealGisMap() {
   const [showBuildings, setShowBuildings] = useState(true);
   const [showRegions, setShowRegions] = useState(true);
   const [drawMode, setDrawMode] = useState(false);
-  const [tilesFailed, setTilesFailed] = useState(false);
   const [deploy, setDeploy] = useState<{
     target: { name: string; lng: number; lat: number };
     stations: DeployStation[];
@@ -157,76 +132,8 @@ export default function RealGisMap() {
       .catch(() => {});
   }, []);
 
-  // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
-  useEffect(() => {
-    if (!rootRef.current || mapRef.current) return;
-    const map = L.map(rootRef.current, {
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
-      zoomControl: false,
-    });
-    mapRef.current = map;
-    // 禁用地图默认浏览器右键菜单(marker 用 contextmenu 唤出环形菜单)
-    map.getContainer().addEventListener('contextmenu', (e) => e.preventDefault());
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-    boundaryLayerRef.current = L.layerGroup().addTo(map);
-    stationsLayerRef.current = L.layerGroup().addTo(map);
-    waterLayerRef.current = L.layerGroup().addTo(map);
-    highlightLayerRef.current = L.layerGroup().addTo(map);
-    keyUnitsLayerRef.current = L.layerGroup().addTo(map);
-    incidentsLayerRef.current = L.layerGroup().addTo(map);
-    buildingsLayerRef.current = L.layerGroup().addTo(map);
-    regionsLayerRef.current = L.layerGroup().addTo(map);
-    routeLayerRef.current = L.layerGroup().addTo(map);
-    tempLayerRef.current = L.layerGroup().addTo(map);
-    map.on('draw:created', onDrawCreated);
-    setMapInited(true);
-    return () => {
-      map.off('draw:created', onDrawCreated);
-      map.remove();
-      mapRef.current = null;
-      setMapInited(false);
-    };
-  }, [onDrawCreated]);
-
-  // zoom 状态同步(单位/建筑聚合气泡模式切换用)
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    const onZoom = () => setZoom(map.getZoom());
-    map.on('zoomend', onZoom);
-    return () => {
-      map.off('zoomend', onZoom);
-    };
-  }, [mapInited]);
-
-  // 底图切换
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapInited) return;
-    const onTileError = () => {
-      tileErrRef.current += 1;
-      if (tileErrRef.current >= TILE_ERR_THRESHOLD) setTilesFailed(true);
-    };
-    if (baseMap === 'vector') {
-      satLayerRef.current?.remove();
-      if (!vectorLayerRef.current) {
-        const tl = L.tileLayer(VECTOR_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 });
-        tl.getContainer()?.classList.add('gis-dark-filter');
-        tl.on('tileerror', onTileError);
-        vectorLayerRef.current = tl;
-      }
-      vectorLayerRef.current.addTo(map);
-    } else {
-      vectorLayerRef.current?.remove();
-      if (!satLayerRef.current) {
-        const tl = L.tileLayer(SAT_URL, { subdomains: ['1', '2', '3', '4'], maxZoom: 18 });
-        tl.on('tileerror', onTileError);
-        satLayerRef.current = tl;
-      }
-      satLayerRef.current.addTo(map);
-    }
-  }, [baseMap, mapInited]);
+  // 地图初始化/底图切换/tileerror 降级/zoom 同步(见 gis/hooks/use-leaflet-map)
+  const { mapRef, layers, mapInited, zoom, baseMap, setBaseMap, tilesFailed } = useLeafletMap(rootRef, onDrawCreated);
 
   // 加载消防站
   useEffect(() => {
@@ -388,7 +295,7 @@ export default function RealGisMap() {
 
   // 市/区县行政边界
   useEffect(() => {
-    const layer = boundaryLayerRef.current;
+    const layer = layers.boundary;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
     let alive = true;
@@ -480,7 +387,7 @@ export default function RealGisMap() {
   // 周边水源高亮:500m 内水源画青色圈 + 适窗(独立可调,警情圆环"周边水源"复用)
   const highlightNearbyWater = useCallback((t: { lng: number; lat: number }) => {
     const map = mapRef.current;
-    const highlight = highlightLayerRef.current;
+    const highlight = layers.highlight;
     if (!map || !highlight) return;
     highlight.clearLayers();
     // 地图与库同为 GCJ02,直接调 nearby 半径查询
@@ -519,7 +426,7 @@ export default function RealGisMap() {
   const planRoutes = useCallback(
     async (stationIds: string[]) => {
       const map = mapRef.current;
-      const routeLayer = routeLayerRef.current;
+      const routeLayer = layers.route;
       if (!map || !routeLayer || !deploy) return;
       setPlanning(true);
       setPlanned([]);
@@ -553,8 +460,8 @@ export default function RealGisMap() {
   );
 
   const clearRoutes = useCallback(() => {
-    routeLayerRef.current?.clearLayers();
-    highlightLayerRef.current?.clearLayers();
+    layers.route?.clearLayers();
+    layers.highlight?.clearLayers();
     setPlanned([]);
   }, []);
 
@@ -1078,7 +985,7 @@ export default function RealGisMap() {
 
   // 消防站
   useEffect(() => {
-    const layer = stationsLayerRef.current;
+    const layer = layers.stations;
     if (!layer || !mapInited) return;
     layer.clearLayers();
     markersRef.current.clear();
@@ -1103,7 +1010,7 @@ export default function RealGisMap() {
 
   // 水源渲染:>=15 水滴图标逐点(带 popup,按区划开关过滤);13-14 聚合气泡(点击气泡放大进点位级)
   useEffect(() => {
-    const layer = waterLayerRef.current;
+    const layer = layers.water;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
     // 记录当前打开的 popup,重建后在新 marker 实例上恢复(clearLayers 会销毁 popup)
@@ -1158,7 +1065,7 @@ export default function RealGisMap() {
   // unitClusterMode:>=14 恒定 'points'(缩放不再重建千级 marker);<14 每级重建气泡(格宽随 zoom 变)
   const unitClusterMode: string | number = zoom >= MARKER_CLUSTER_MAX_ZOOM ? 'points' : zoom;
   useEffect(() => {
-    const layer = keyUnitsLayerRef.current;
+    const layer = layers.keyUnits;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
     layer.clearLayers();
@@ -1223,7 +1130,7 @@ export default function RealGisMap() {
 
   // 警情/事件(红色脉冲点位 + level 数字;GCJ02 直显)
   useEffect(() => {
-    const layer = incidentsLayerRef.current;
+    const layer = layers.incidents;
     if (!layer || !mapInited) return;
     layer.clearLayers();
     incidentMarkersRef.current.clear();
@@ -1248,7 +1155,7 @@ export default function RealGisMap() {
 
   // 重点建筑:zoom<14 网格聚合气泡;>=14 逐点(与重点单位同套机制)
   useEffect(() => {
-    const layer = buildingsLayerRef.current;
+    const layer = layers.buildings;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
     layer.clearLayers();
@@ -1293,7 +1200,7 @@ export default function RealGisMap() {
 
   // 重点区域图层:多边形高亮 + hover 名称;点击 flyToBounds 适窗
   useEffect(() => {
-    const layer = regionsLayerRef.current;
+    const layer = layers.regions;
     if (!layer || !mapInited) return;
     layer.clearLayers();
     for (const r of regions) {
@@ -1327,7 +1234,7 @@ export default function RealGisMap() {
   // 边界显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = boundaryLayerRef.current;
+    const layer = layers.boundary;
     if (!map || !layer || !mapInited) return;
     if (showBoundary) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1336,7 +1243,7 @@ export default function RealGisMap() {
   // 消防站显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = stationsLayerRef.current;
+    const layer = layers.stations;
     if (!map || !layer || !mapInited) return;
     if (showStations) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1345,7 +1252,7 @@ export default function RealGisMap() {
   // 水源显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = waterLayerRef.current;
+    const layer = layers.water;
     if (!map || !layer || !mapInited) return;
     if (showWater) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1354,7 +1261,7 @@ export default function RealGisMap() {
   // 警情显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = incidentsLayerRef.current;
+    const layer = layers.incidents;
     if (!map || !layer || !mapInited) return;
     if (showIncidents) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1363,7 +1270,7 @@ export default function RealGisMap() {
   // 重点单位显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = keyUnitsLayerRef.current;
+    const layer = layers.keyUnits;
     if (!map || !layer || !mapInited) return;
     if (showKeyUnits) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1372,7 +1279,7 @@ export default function RealGisMap() {
   // 重点建筑显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = buildingsLayerRef.current;
+    const layer = layers.buildings;
     if (!map || !layer || !mapInited) return;
     if (showBuildings) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1381,7 +1288,7 @@ export default function RealGisMap() {
   // 重点区域显隐
   useEffect(() => {
     const map = mapRef.current;
-    const layer = regionsLayerRef.current;
+    const layer = layers.regions;
     if (!map || !layer || !mapInited) return;
     if (showRegions) layer.addTo(map);
     else map.removeLayer(layer);
@@ -1445,7 +1352,7 @@ export default function RealGisMap() {
       }
       if (latest.action === 'showRoute' && latest.source !== '面板') {
         // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
-        const routeLayer = routeLayerRef.current;
+        const routeLayer = layers.route;
         // MCP 通道是无类型保证的运行时数据:容忍 stationName 缺失,回退"路线 N"(与重构前行为一致)
         const routes = (latest.params as {
           routes?: Array<Omit<RouteRenderItem, 'stationName'> & { stationName?: string }>;
@@ -1504,7 +1411,7 @@ export default function RealGisMap() {
 
   // 临时标记层:修正 draft(琥珀)+ 点位查询结果(青)
   useEffect(() => {
-    const layer = tempLayerRef.current;
+    const layer = layers.temp;
     if (!layer) return;
     layer.clearLayers();
     if (draftCoord && coordFix) {
