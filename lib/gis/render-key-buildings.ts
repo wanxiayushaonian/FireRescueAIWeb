@@ -8,10 +8,14 @@ import type { KeyBuilding } from '../key-building-mapper';
 import { popupForKeyBuilding } from './popup-html';
 import { keyBuildingIconSvg, clusterBubbleSvg, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '../map-icons';
 import { gridCluster } from '../grid-cluster';
+import { POINT_CAP, cullToBounds, decidePointRender, type ViewportBounds } from './point-render';
 import type { RadialTarget } from './radial-target';
 
 export interface RenderKeyBuildingsOpts {
   map: L.Map; // 聚合气泡点击 flyTo 用(渲染器内部不改 map 其他状态)
+  bounds: ViewportBounds; // 视口范围(调用方已 pad 外扩),zoom>=14 逐点分支做裁剪
+  prevMarkers: Map<string, L.Marker>; // 上一帧注册表,用于 popup openId 恢复
+  cap?: number; // 视口内点位上限,超限回落聚合气泡(默认 POINT_CAP)
   onRadial: (target: RadialTarget, latlng: [number, number]) => void;
 }
 
@@ -47,23 +51,37 @@ export function renderKeyBuildings(
     layer.addLayer(marker);
   };
 
+  // 聚合气泡渲染:zoom<14 全量聚合 / zoom>=14 超限回落共用(气泡 html/尺寸/tooltip/点击 flyTo 原样)
+  const renderClusterBubbles = (items: KeyBuilding[], z: number) => {
+    for (const c of gridCluster(items, (b) => b.lng, (b) => b.lat, waterClusterCell(z))) {
+      const { html, size } = clusterBubbleSvg(c.count, '#60a5fa');
+      L.marker([c.lat, c.lng], {
+        icon: L.divIcon({
+          html,
+          className: 'map-icon-building-cluster',
+          iconSize: [size, size],
+          iconAnchor: [size / 2, size / 2],
+        }),
+      })
+        .bindTooltip(`${c.count} 个重点建筑,放大地图查看`, { direction: 'top', className: 'gis-tip' })
+        .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
+        .addTo(layer);
+    }
+  };
+
   if (zoom >= MARKER_CLUSTER_MAX_ZOOM) {
-    buildings.forEach(renderBuilding);
+    // popup 保活:平移重建前记下打开中的 popup id,重建后恢复(同 render-water 模式)
+    const openId = [...opts.prevMarkers.entries()].find(([, m]) => m.isPopupOpen())?.[0];
+    // 视口裁剪:只渲染视野内点位;超限回落聚合气泡(建筑无警情规则,回落时全部进气泡)
+    const visible = cullToBounds(buildings, (b) => b.lng, (b) => b.lat, opts.bounds);
+    if (decidePointRender(visible.length, opts.cap ?? POINT_CAP) === 'points') {
+      visible.forEach(renderBuilding);
+    } else {
+      renderClusterBubbles(visible, zoom);
+    }
+    if (openId) markers.get(openId)?.openPopup();
     return markers;
   }
-  for (const c of gridCluster(buildings, (b) => b.lng, (b) => b.lat, waterClusterCell(zoom))) {
-    const { html, size } = clusterBubbleSvg(c.count, '#60a5fa');
-    L.marker([c.lat, c.lng], {
-      icon: L.divIcon({
-        html,
-        className: 'map-icon-building-cluster',
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-      }),
-    })
-      .bindTooltip(`${c.count} 个重点建筑,放大地图查看`, { direction: 'top', className: 'gis-tip' })
-      .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
-      .addTo(layer);
-  }
+  renderClusterBubbles(buildings, zoom);
   return markers;
 }
