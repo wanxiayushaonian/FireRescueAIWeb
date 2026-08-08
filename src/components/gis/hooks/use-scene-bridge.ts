@@ -2,7 +2,9 @@
 // sceneLog 订阅执行器 hook:flyTo/addMarker(坐标直达/站名命中/水源视口命中/后端 keyword 兜底,400ms×6 重试 openPopup)
 // + resetView + showRoute(MCP/agent 通道,renderRoutes 渲染,跳过 source==='面板')。从 RealGisMap 抽取,行为不变。
 // routeLayer 是 useLeafletMap 的可变 layers 对象字段(初始化前为 null):依赖数组含 routeLayer,
-// 地图初始化完成的重渲染后重订阅拿到真实图层——与原来回调内惰性读 layers.route 等价(此前 mapRef 也为空,事件被守卫挡掉)。
+// 地图初始化完成的重渲染后重订阅拿到真实图层。与原实现(回调内惰性读 layers.route)的差异窗口仅为
+// 挂载首个 commit → mapInited 重渲染之间;showRoute 生产方(面板/MCP/agent 通道)不会在组件挂载瞬间派发,
+// 且窗口内 mapRef 也为空、事件被守卫挡掉,故功能等价。
 import { useEffect } from 'react';
 import L from 'leaflet';
 import type { Station, WaterSource } from '@/mock/types';
@@ -100,5 +102,5 @@ export function useSceneBridge(deps: {
     return () => {
       unsub();
     };
-  }, [routeLayer]);
+  }, [routeLayer, defaultCenter, defaultZoom, setPlanned]);
 }

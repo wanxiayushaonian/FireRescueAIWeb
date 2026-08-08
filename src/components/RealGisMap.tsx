@@ -1,7 +1,11 @@
 'use client';
-// 态势总览 2D 地图:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站(类型显隐由执勤力量面板经 map-layer-store 控制)+ 水源(三级:zoom<13 不加载 / 13-14 网格聚合气泡 / >=15 水滴图标逐点;区划显隐由水源面板控制)+ 市/区县边界 + 重点单位/建筑(zoom<14 客户端网格聚合气泡,警情单位始终逐点)+ 重点区域 + sceneLog 联动。
-// 坐标策略:自 znya c8d4e5f6a7b8 迁移起全库坐标统一 GCJ02(高德),前端不再做基准转换,库内坐标直接使用。
-// 图层控制:底图切换 + 各图层显隐 + 划定区域(MapLayerControl);tileerror 连续失败降级。
+// 态势总览 2D 地图编排者:状态声明 + hook 组装 + JSX 接线(圆环菜单/命令面板/面板群)。
+// 结构:地图底座/底图/瓦片降级在 gis/hooks/use-leaflet-map;数据加载在 use-gis-data,图层显隐在 use-layer-visibility;
+// 派遣/坐标修正/实体表单面板状态在 use-deploy-routes/use-coord-fix/use-entity-form;sceneLog 联动在 use-scene-bridge;
+// popup/marker 图标/命令面板条目/各图层渲染函数体是纯函数,统一下沉 lib/gis/(node 可测)。
+// 图层:高德底图(Leaflet,矢量/卫星可切换,GCJ02)+ 消防站(类型显隐经 map-layer-store)+ 水源(zoom 三级:
+// <13 不加载 / 13-14 网格聚合气泡 / >=15 逐点)+ 市/区县边界 + 重点单位/建筑(zoom<14 客户端网格聚合)+ 重点区域。
+// 坐标策略:全库坐标统一 GCJ02(高德),前端不做基准转换,库内坐标直接使用。
 // 区域标注:leaflet-draw 画多边形 → createRegion 存 znya → 重新加载 L.polygon 高亮。
 // SSR 注意:Leaflet 是浏览器库,本组件须客户端运行——地图初始化在 effect 中守卫
 // (rootRef/mapRef),并由 App/CommandView 用 next/dynamic({ ssr:false })动态导入。
@@ -31,6 +35,7 @@ import RadialMenu, { type RadialAction } from './gis/RadialMenu';
 import DeployPanel from './gis/DeployPanel';
 import EntityFormPanel from './gis/EntityFormPanel';
 import { useLeafletMap, DEFAULT_ZOOM } from './gis/hooks/use-leaflet-map';
+import { DEFAULT_CENTER } from '@/lib/gis/map-constants';
 import { useGisData } from './gis/hooks/use-gis-data';
 import { useLayerVisibility } from './gis/hooks/use-layer-visibility';
 import { useDeployRoutes } from './gis/hooks/use-deploy-routes';
@@ -43,8 +48,6 @@ import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Ro
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 
-// 九江市中心(九江市消防救援支队附近,GCJ02);use-leaflet-map 内保留同名副本用于地图初始化,两处须保持一致
-const DEFAULT_CENTER: [number, number] = [29.66734, 115.96498];
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
@@ -612,7 +615,7 @@ export default function RealGisMap() {
     buildingMarkersRef.current = renderKeyBuildings(layer, buildings, keyUnits, zoom, { map, onRadial: openRadial });
   }, [buildings, keyUnits, mapInited, openRadial, unitClusterMode]);
 
-  // 重点区域图层:多边形高亮 + hover 名称;点击 flyToBounds 适窗。渲染函数体在 lib/gis/render-regions
+  // 重点区域图层:多边形高亮 + hover 名称;点击 flyTo 区域中心 zoom 16。渲染函数体在 lib/gis/render-regions
   useEffect(() => {
     const layer = layers.regions;
     const map = mapRef.current;

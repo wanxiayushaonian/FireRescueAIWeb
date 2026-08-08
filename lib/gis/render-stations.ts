@@ -5,16 +5,7 @@
 import type L from 'leaflet';
 import { stationIconSvg } from '../map-icons';
 import { popupForStation } from './popup-html';
-
-/** 圆环菜单目标(结构类型,与 src/components/gis/CoordinateFixPanel 的 CoordFixTarget 同构;lib 不得 import src)。 */
-export interface RadialTarget {
-  kind: 'unit' | 'building' | 'station' | 'incident' | 'water';
-  id: string;
-  name: string;
-  type?: string; // 消防站类型(仅 kind=station 用)
-  lng: number; // GCJ02
-  lat: number;
-}
+import type { RadialTarget } from './radial-target';
 
 /** 消防站结构类型(lib 不得 import src/mock/types;字段为渲染所需子集)。 */
 export interface RenderStation {

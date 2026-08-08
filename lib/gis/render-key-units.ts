@@ -9,7 +9,7 @@ import { HIGH_RISK_PATTERN, keyUnitMarkerHtml } from './marker-html';
 import { popupForKeyUnit, popupIncidentSuffix } from './popup-html';
 import { clusterBubbleSvg, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '../map-icons';
 import { gridCluster } from '../grid-cluster';
-import type { RadialTarget } from './render-stations';
+import type { RadialTarget } from './radial-target';
 
 export interface RenderKeyUnitsOpts {
   map: L.Map; // 聚合气泡点击 flyTo 用(渲染器内部不改 map 其他状态)

@@ -1,8 +1,9 @@
 'use client';
-// 地图底座 hook:Leaflet 初始化(11 类图层组 + draw:created 绑定 + 清理)、zoom 同步、
+// 地图底座 hook:Leaflet 初始化(10 类图层组 + draw:created 绑定 + 清理)、zoom 同步、
 // 高德底图切换(矢量/卫星,GCJ02)+ tileerror 连续失败降级。从 RealGisMap 抽取,行为不变。
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { DEFAULT_CENTER } from '@/lib/gis/map-constants';
 
 // 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
@@ -10,8 +11,6 @@ const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size
 const SAT_URL = 'https://webst0{s}.is.autonavi.com/appmaptile?style=6&x={x}&y={y}&z={z}';
 // tileerror 连续失败阈值 → 触发占位降级
 const TILE_ERR_THRESHOLD = 5;
-// 九江市中心(九江市消防救援支队附近,GCJ02);RealGisMap 保留同名副本供 sceneLog resetView 使用,两处须保持一致
-const DEFAULT_CENTER: [number, number] = [29.66734, 115.96498];
 export const DEFAULT_ZOOM = 11;
 
 export interface GisLayers {

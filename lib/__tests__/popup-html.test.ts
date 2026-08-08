@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { popupForStation, popupForWater, popupIncidentSuffix, popupForIncident } from '../gis/popup-html';
+import {
+  popupForStation,
+  popupForWater,
+  popupIncidentSuffix,
+  popupForIncident,
+  popupForKeyUnit,
+  popupForKeyBuilding,
+} from '../gis/popup-html';
 
 describe('popupForStation', () => {
   it('含站名/类型/在位人数/地址/坐标', () => {
@@ -15,6 +22,49 @@ describe('popupForWater', () => {
     const html = popupForWater({ name: '消火栓A', type: '市政消火栓', district: '濂溪区', address: 'x路', lng: 116, lat: 29.7 });
     expect(html).toContain('消火栓A');
     expect(html).toContain('市政消火栓 · 濂溪区');
+  });
+});
+
+describe('popupForKeyUnit', () => {
+  const unit = {
+    id: 'u1', name: '某化工厂', unitType: '化工单位', district: '濂溪区',
+    lng: 115.98, lat: 29.67, contactName: '张三', contactPhone: '13800000000',
+    status: 'draft', extra: {},
+  } as any;
+  it('微型站行按 " · " 拼接且跳过缺省字段', () => {
+    const html = popupForKeyUnit({
+      ...unit,
+      extra: { has_micro_station: '有', duty_24h: '是', total_people: 12, has_equipment: '', has_control_room: null },
+    });
+    expect(html).toContain('微型站 有 · 24h执勤 是 · 总人数 12');
+    expect(html).not.toContain('器材');
+    expect(html).not.toContain('控制室');
+  });
+  it('status=completed 含已 3D 建模标记', () => {
+    expect(popupForKeyUnit({ ...unit, status: 'completed' })).toContain('★ 已 3D 建模');
+    expect(popupForKeyUnit(unit)).not.toContain('★ 已 3D 建模');
+  });
+  it('负责人缺省回退 -', () => {
+    const html = popupForKeyUnit({ ...unit, contactName: undefined, contactPhone: undefined });
+    expect(html).toContain('负责人 -');
+    expect(html).not.toContain('13800000000');
+  });
+});
+
+describe('popupForKeyBuilding', () => {
+  const building = {
+    id: 'b1', name: '1 号厂房', buildingType: '厂房', buildingUsage: '生产车间',
+    lng: 115.98, lat: 29.67, status: 'draft',
+  } as any;
+  it('含类型/用途/所属单位', () => {
+    const html = popupForKeyBuilding(building, '某化工厂');
+    expect(html).toContain('重点建筑 · 厂房');
+    expect(html).toContain('生产车间');
+    expect(html).toContain('所属单位: 某化工厂');
+  });
+  it('status=completed 含已 3D 建模标记;无所属单位时省略该行', () => {
+    expect(popupForKeyBuilding({ ...building, status: 'completed' })).toContain('★ 已 3D 建模');
+    expect(popupForKeyBuilding(building)).not.toContain('所属单位');
   });
 });
 

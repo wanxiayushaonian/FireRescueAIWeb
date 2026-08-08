@@ -5,7 +5,7 @@
 import type L from 'leaflet';
 import { waterIconSvg, waterClusterSvg, shouldShowWater, shouldShowWaterPoints } from '../map-icons';
 import { popupForWater } from './popup-html';
-import type { RadialTarget } from './render-stations';
+import type { RadialTarget } from './radial-target';
 
 /** 水源结构类型(lib 不得 import src/mock/types;字段为渲染所需子集)。 */
 export interface RenderWaterSource {

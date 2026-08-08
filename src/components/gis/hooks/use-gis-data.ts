@@ -1,7 +1,7 @@
 'use client';
 // GIS 数据加载 hook:7 个数据 effect 从 RealGisMap 抽取(站/资源/水源视口/重点单位/警情/重点建筑/重点区域),行为不变。
 // 水源为视口驱动(bbox + moveend 300ms 防抖 + seq 去重 + "数据集没变跳过 setState 保 popup"),hiddenWaterDistricts 由组件经参数传入。
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type L from 'leaflet';
 import type { Station, WaterSource, ResourceItem } from '@/mock/types';
 import { fetchStations, fetchResources } from '@/api/force';
@@ -49,6 +49,8 @@ export function useGisData(deps: {
   const [loadState, setLoadState] = useState<'loading' | 'ok' | 'error'>('loading');
   // 水源数据变更后 bump 触发 bbox/clusters 重取
   const [waterTick, setWaterTick] = useState(0);
+  // useCallback 保稳定身份:调用方 effect 依赖它时不致每次渲染重订阅
+  const bumpWater = useCallback(() => setWaterTick((t) => t + 1), []);
 
   // 加载消防站
   useEffect(() => {
@@ -218,6 +220,6 @@ export function useGisData(deps: {
     buildings, setBuildings,
     regions, setRegions,
     loadState,
-    bumpWater: () => setWaterTick((t) => t + 1),
+    bumpWater,
   };
 }

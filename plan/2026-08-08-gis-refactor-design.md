@@ -35,7 +35,7 @@ web/
 ├── src/
 │   ├── api/                           # 5 文件改用 lib/http.ts,只留端点拼装 + mapper
 │   └── components/gis/
-│       ├── RealGisMap.tsx             # 编排者:状态声明 + hook 组装 + JSX,目标 ≤450 行
+│       ├── RealGisMap.tsx             # 编排者:状态声明 + hook 组装 + JSX,目标 ≤850 行(用户裁决:JSX/圆环动作/命令面板接线属组件层合理职责)
 │       └── hooks/
 │           ├── use-leaflet-map.ts     # 初始化/底图切换/tileerror 降级/zoom 同步
 │           ├── use-gis-data.ts        # 7 个数据加载 effect
@@ -124,7 +124,7 @@ export function useSceneBridge(deps: {
 | 6 | `popup-html.ts` + `marker-html.ts` + 渲染 effect 函数体下沉 | 中 | 单测 + 冒烟点击/右键 |
 | 7 | `use-deploy-routes` + `use-coord-fix` + `use-entity-form` | 中高 | 冒烟：派遣/坐标修正/增删改全流程 |
 | 8 | `use-scene-bridge` + `palette-items.ts` | 中 | 冒烟：MCP showRoute 回灌、Ctrl+K |
-| 9 | 收尾：`RealGisMap.tsx` ≤450 行验收，注释头更新 | — | `/verify` 全量 |
+| 9 | 收尾：`RealGisMap.tsx` ≤850 行验收（用户裁决），注释头更新 | — | `/verify` 全量 |
 
 ## 七、测试策略
 

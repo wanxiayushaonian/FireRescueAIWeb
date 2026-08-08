@@ -6,7 +6,7 @@ import type L from 'leaflet';
 import type { Incident } from '../incident-mapper';
 import { incidentMarkerHtml } from './marker-html';
 import { popupForIncident } from './popup-html';
-import type { RadialTarget } from './render-stations';
+import type { RadialTarget } from './radial-target';
 
 export interface RenderIncidentsOpts {
   onDeploy: (t: { name: string; lng: number; lat: number }) => void;

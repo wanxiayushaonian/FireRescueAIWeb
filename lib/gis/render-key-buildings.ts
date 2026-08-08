@@ -8,7 +8,7 @@ import type { KeyBuilding } from '../key-building-mapper';
 import { popupForKeyBuilding } from './popup-html';
 import { keyBuildingIconSvg, clusterBubbleSvg, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '../map-icons';
 import { gridCluster } from '../grid-cluster';
-import type { RadialTarget } from './render-stations';
+import type { RadialTarget } from './radial-target';
 
 export interface RenderKeyBuildingsOpts {
   map: L.Map; // 聚合气泡点击 flyTo 用(渲染器内部不改 map 其他状态)
