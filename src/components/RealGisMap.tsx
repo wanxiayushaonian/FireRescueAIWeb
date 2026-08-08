@@ -11,21 +11,19 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import type { Station } from '@/mock/types';
-import { fetchWaterSourcesPage } from '@/api/water';
 import { fetchGeocode } from '@/api/geocode';
 import type { Incident } from '@/lib/incident-mapper';
 import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
 import { HIGH_RISK_PATTERN, keyUnitMarkerHtml, incidentMarkerHtml } from '@/lib/gis/marker-html';
 import { gridCluster } from '@/lib/grid-cluster';
-import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { popupForKeyUnit, popupForKeyBuilding, popupForStation, popupForWater, popupForIncident, popupIncidentSuffix } from '@/lib/gis/popup-html';
 import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type { Region } from '@/lib/region-mapper';
-import { addSceneAction, subscribeSceneLog } from '@/mock/sceneLog';
+import { addSceneAction } from '@/mock/sceneLog';
 import MapLayerControl from './MapLayerControl';
 import CommandPalette, { type PaletteItem } from './gis/CommandPalette';
 import CoordinateFixPanel, { type CoordFixTarget } from './gis/CoordinateFixPanel';
@@ -39,6 +37,7 @@ import { useLayerVisibility } from './gis/hooks/use-layer-visibility';
 import { useDeployRoutes } from './gis/hooks/use-deploy-routes';
 import { useCoordFix } from './gis/hooks/use-coord-fix';
 import { useEntityForm } from './gis/hooks/use-entity-form';
+import { useSceneBridge } from './gis/hooks/use-scene-bridge';
 import { type EntityKind } from '@/lib/entity-form';
 import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil } from 'lucide-react';
 
@@ -805,81 +804,18 @@ export default function RealGisMap() {
     }
   }, [regions, mapInited]);
 
-  // sceneLog 联动
-  useEffect(() => {
-    const unsub = subscribeSceneLog((_list, latest) => {
-      const map = mapRef.current;
-      if (!map || !latest) return;
-      if (latest.action === 'flyTo' || latest.action === 'addMarker') {
-        const p = latest.params as { lng?: number; lat?: number; id?: string } | undefined;
-        if (typeof p?.lng === 'number' && typeof p?.lat === 'number' && (p.lng || p.lat)) {
-          // 首选:params 直接带坐标(面板联动),免搜索直达;zoom 拉到点位级保证水源逐点渲染
-          map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 15));
-          if (p.id) {
-            // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染
-            let tries = 0;
-            const tryOpen = () => {
-              tries += 1;
-              const mk = markersRef.current.get(p.id!) ?? waterMarkersRef.current.get(p.id!);
-              if (mk) mk.openPopup();
-              else if (tries < 6) window.setTimeout(tryOpen, 400);
-            };
-            window.setTimeout(tryOpen, 400);
-          }
-        } else {
-        const hit = stationsRef.current.find((s) => latest.target?.includes(s.name));
-        if (hit) {
-          map.flyTo([hit.lat, hit.lng], Math.max(map.getZoom(), 14));
-          markersRef.current.get(hit.id)?.openPopup();
-        } else {
-          const w = waterRef.current.find((x) => latest.target?.includes(x.name));
-          if (w) {
-            // 必须飞到点位级(zoom>=15):中低 zoom 是聚合气泡,没有可弹 popup 的逐点 marker
-            map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 15));
-            // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染
-            let tries = 0;
-            const tryOpen = () => {
-              tries += 1;
-              const mk = waterMarkersRef.current.get(w.id);
-              if (mk) mk.openPopup();
-              else if (tries < 6) window.setTimeout(tryOpen, 400);
-            };
-            window.setTimeout(tryOpen, 400);
-          } else if (latest.target) {
-            // 视口内未命中(水源是视口加载):按名称关键词查后端兜底
-            fetchWaterSourcesPage({ keyword: latest.target, pageSize: 5 })
-              .then(({ items }) => {
-                const hit = items.find((x) => latest.target?.includes(x.name)) ?? items[0];
-                if (!hit || !hit.lng || !hit.lat) return;
-                map.flyTo([hit.lat, hit.lng], Math.max(map.getZoom(), 15));
-              })
-              .catch(() => {});
-          }
-        }
-        }
-      }
-      if (latest.action === 'resetView') {
-        mapRef.current?.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-      }
-      if (latest.action === 'showRoute' && latest.source !== '面板') {
-        // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
-        const routeLayer = layers.route;
-        // MCP 通道是无类型保证的运行时数据:容忍 stationName 缺失,回退"路线 N"(与重构前行为一致)
-        const routes = (latest.params as {
-          routes?: Array<Omit<RouteRenderItem, 'stationName'> & { stationName?: string }>;
-        }).routes;
-        if (routeLayer && Array.isArray(routes) && routes.length) {
-          const items: RouteRenderItem[] = routes.map((r, i) => ({ ...r, stationName: r.stationName ?? `路线 ${i + 1}` }));
-          const { bounds, summary } = renderRoutes(routeLayer, items);
-          setPlanned(summary);
-          if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
-        }
-      }
-    });
-    return () => {
-      unsub();
-    };
-  }, []);
+  // sceneLog 联动(flyTo/addMarker/resetView/showRoute,见 gis/hooks/use-scene-bridge)
+  useSceneBridge({
+    mapRef,
+    routeLayer: layers.route,
+    defaultCenter: DEFAULT_CENTER,
+    defaultZoom: DEFAULT_ZOOM,
+    stationsRef,
+    waterRef,
+    stationMarkers: markersRef,
+    waterMarkers: waterMarkersRef,
+    setPlanned,
+  });
 
   // 地图拾取模式:点击地图 → 回填 draft 坐标(GCJ02,高德瓦片原生坐标系)
   useEffect(() => {
