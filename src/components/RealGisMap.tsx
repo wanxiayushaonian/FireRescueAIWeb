@@ -671,14 +671,14 @@ export default function RealGisMap() {
       L.circleMarker([draftCoord.lat, draftCoord.lng], {
         radius: 7, color: '#fbbf24', fillColor: '#fbbf24', fillOpacity: 0.85, weight: 2,
       })
-        .bindTooltip('新坐标(待保存)', { direction: 'top' })
+        .bindTooltip('新坐标(待保存)', { direction: 'top', className: 'gis-tip' })
         .addTo(layer);
     }
     if (queryMarker) {
       L.circleMarker([queryMarker.lat, queryMarker.lng], {
         radius: 7, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.85, weight: 2,
       })
-        .bindTooltip(queryMarker.address, { direction: 'top' })
+        .bindTooltip(queryMarker.address, { direction: 'top', className: 'gis-tip' })
         .addTo(layer);
     }
   }, [draftCoord, coordFix, queryMarker]);
