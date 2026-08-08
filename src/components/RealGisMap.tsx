@@ -23,6 +23,7 @@ import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
 import { gridCluster } from '@/lib/grid-cluster';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
+import { popupForKeyUnit, popupForKeyBuilding, popupForStation, popupForWater, popupForIncident, popupIncidentSuffix } from '@/lib/gis/popup-html';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
 import { haversineKm } from '@/lib/geo-query';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
@@ -54,36 +55,6 @@ const DEFAULT_ZOOM = 11;
 const TILE_ERR_THRESHOLD = 5;
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
-
-/** 重点单位 popup:基础信息 + 微型站统计 + 已建模标记。 */
-function popupForKeyUnit(u: KeyUnit): string {
-  const micro = u.extra;
-  const microLines = [
-    micro.has_micro_station ? `微型站 ${micro.has_micro_station}` : '',
-    micro.duty_24h ? `24h执勤 ${micro.duty_24h}` : '',
-    micro.total_people ? `总人数 ${micro.total_people}` : '',
-    micro.has_equipment ? `器材 ${micro.has_equipment}` : '',
-    micro.has_control_room ? `控制室 ${micro.has_control_room}` : '',
-  ].filter(Boolean);
-  const built = u.status === 'completed' ? '<br/><span style="color:#fbbf24">★ 已 3D 建模</span>' : '';
-  return (
-    `<b>${u.name}</b><br/>${u.unitType} · ${u.district ?? ''}` +
-    `<br/>负责人 ${u.contactName ?? '-'}${u.contactPhone ? ` · ${u.contactPhone}` : ''}` +
-    (microLines.length ? `<br/>${microLines.join(' · ')}` : '') +
-    `${built}<br/>${u.lng.toFixed(5)}, ${u.lat.toFixed(5)}(GCJ02)`
-  );
-}
-
-/** 重点建筑 popup:类型/用途 + 所属单位 + 已建模标记。 */
-function popupForKeyBuilding(b: KeyBuilding, unitName?: string): string {
-  const built = b.status === 'completed' ? '<br/><span style="color:#fbbf24">★ 已 3D 建模</span>' : '';
-  return (
-    `<b>${b.name}</b><br/>重点建筑${b.buildingType ? ` · ${b.buildingType}` : ''}` +
-    `${b.buildingUsage ? `<br/>${b.buildingUsage}` : ''}` +
-    `${unitName ? `<br/>所属单位: ${unitName}` : ''}` +
-    `${built}<br/>${b.lng.toFixed(5)}, ${b.lat.toFixed(5)}`
-  );
-}
 
 export default function RealGisMap() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1151,7 +1122,7 @@ export default function RealGisMap() {
           popupAnchor: [0, -24],
         }),
       })
-        .bindPopup(`<b>${s.name}</b><br/>${s.type} · 在位 ${personnelCounts.get(s.id) ?? 0} 人<br/>${s.address}<br/>${s.lng.toFixed(5)}, ${s.lat.toFixed(5)}(GCJ02)`)
+        .bindPopup(popupForStation(s, personnelCounts.get(s.id) ?? 0))
         .on('click', () => handleStationClick(s))
         .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); openRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng: s.lng, lat: s.lat }, [s.lat, s.lng]); });
       layer.addLayer(marker);
@@ -1182,7 +1153,7 @@ export default function RealGisMap() {
             popupAnchor: [0, -18],
           }),
         })
-          .bindPopup(`<b>${w.name}</b><br/>${w.type} · ${w.district}<br/>${w.address}<br/>${w.lng.toFixed(5)}, ${w.lat.toFixed(5)}(GCJ02)`)
+          .bindPopup(popupForWater(w))
           .on('click', () =>
             addSceneAction({ action: 'flyTo', target: w.name, params: { lng: w.lng, lat: w.lat }, source: '面板' }),
           )
@@ -1232,11 +1203,7 @@ export default function RealGisMap() {
         : isHighRisk
           ? `<div class="unit-risk-wrap">${keyUnitIconSvg(u.unitType, u.status)}<span class="unit-risk-badge" title="高风险">!</span></div>`
           : keyUnitIconSvg(u.unitType, u.status);
-      const popupHtml =
-        popupForKeyUnit(u) +
-        (inc
-          ? `<br/><span style="color:#ef4444">⚠ 警情:${inc.incidentType} · ${inc.level} 级 · ${inc.status}${inc.description ? `(${inc.description})` : ''}</span>`
-          : '');
+      const popupHtml = popupForKeyUnit(u) + (inc ? popupIncidentSuffix(inc) : '');
       const marker = L.marker([u.lat, u.lng], {
         icon: L.divIcon({
           html: iconHtml,
@@ -1299,10 +1266,7 @@ export default function RealGisMap() {
           popupAnchor: [0, -14],
         }),
       })
-        .bindPopup(
-          `<b>⚠ ${i.address}</b><br/>${i.incidentType} · ${i.level} 级 · ${i.status}` +
-            `${i.description ? `<br/>${i.description}` : ''}<br/>${i.lng.toFixed(5)}, ${i.lat.toFixed(5)}`,
-        )
+        .bindPopup(popupForIncident(i))
         .on('click', () => openDeploy({ name: i.address, lng: i.lng, lat: i.lat }))
         .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); openRadial({ kind: 'incident', id: i.id, name: i.address, lng: i.lng, lat: i.lat }, [i.lat, i.lng]); });
       incidentMarkersRef.current.set(i.id, marker);
