@@ -1510,9 +1510,13 @@ export default function RealGisMap() {
       if (latest.action === 'showRoute' && latest.source !== '面板') {
         // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
         const routeLayer = routeLayerRef.current;
-        const routes = (latest.params as { routes?: RouteRenderItem[] }).routes;
+        // MCP 通道是无类型保证的运行时数据:容忍 stationName 缺失,回退"路线 N"(与重构前行为一致)
+        const routes = (latest.params as {
+          routes?: Array<Omit<RouteRenderItem, 'stationName'> & { stationName?: string }>;
+        }).routes;
         if (routeLayer && Array.isArray(routes) && routes.length) {
-          const { bounds, summary } = renderRoutes(routeLayer, routes);
+          const items: RouteRenderItem[] = routes.map((r, i) => ({ ...r, stationName: r.stationName ?? `路线 ${i + 1}` }));
+          const { bounds, summary } = renderRoutes(routeLayer, items);
           setPlanned(summary);
           if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
         }
