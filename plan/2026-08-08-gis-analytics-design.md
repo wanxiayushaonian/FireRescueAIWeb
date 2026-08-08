@@ -84,7 +84,7 @@
 ### 数据
 | 项 | 处置 |
 |---|---|
-| `key_buildings.scene_id`(新列,String(36),nullable) | 存该建筑对应的 uStudio scene_id;**仅演示建筑填**(21号楼由用户提供值) |
+| `key_buildings.scene_id`(新列,String(36),nullable) | 存 uStudio scene_id;**21号楼 = `465718852859613184`**(Task 0.2 已确认) |
 | alembic 迁移(新) | 加列,nullable,无默认 |
 
 ## 数据流
@@ -133,9 +133,9 @@
 
 > 无需 zyna 新端点测试(复用 driving,已有测试)。已知基线失败套件不动。
 
-## Task 0.2:乐盈广场21号楼 uStudio scene_id 🟡
+## Task 0.2:乐盈广场21号楼 uStudio scene_id ✅(2026-08-08 已确认)
 
-由用户提供(uStudio 里 21号楼建模对应的 scene_id)。阻塞 3D引导,不阻塞 ETA 分析。若暂时拿不到,ETA 分析可独立先做,3D引导留待 scene_id 到位。
+scene_id = `465718852859613184`(scene_name "21D（XG）简化版已修改)",uStudio 共 5 场景)。`key_buildings.scene_id` 存此值,3D引导直接用 scene_id 切换(**不用 scene_name 匹配**:21D 有 3 个场景易重名 + 名称括号不规范)。
 
 ## 实现顺序建议(供 writing-plans 参考)
 
