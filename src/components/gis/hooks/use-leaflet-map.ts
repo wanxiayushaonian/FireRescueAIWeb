@@ -37,6 +37,7 @@ export function useLeafletMap(
   baseMap: 'vector' | 'satellite';
   setBaseMap: React.Dispatch<React.SetStateAction<'vector' | 'satellite'>>;
   tilesFailed: boolean;
+  viewportTick: number;
 } {
   const mapRef = useRef<L.Map | null>(null);
   // 单个 ref 持有全部图层组:初始化 effect 里填充字段,对象本身永不替换 → 返回引用稳定
@@ -61,6 +62,7 @@ export function useLeafletMap(
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
   const [tilesFailed, setTilesFailed] = useState(false);
+  const [viewportTick, setViewportTick] = useState(0);
 
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
   useEffect(() => {
@@ -106,6 +108,22 @@ export function useLeafletMap(
     };
   }, [mapInited]);
 
+  // 视口变化通知(moveend 300ms 防抖):单位/建筑渲染裁剪后需随平移重建
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapInited) return;
+    let timer: number | undefined;
+    const onMove = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => setViewportTick((t) => t + 1), 300);
+    };
+    map.on('moveend', onMove);
+    return () => {
+      window.clearTimeout(timer);
+      map.off('moveend', onMove);
+    };
+  }, [mapInited]);
+
   // 底图切换
   useEffect(() => {
     const map = mapRef.current;
@@ -134,5 +152,5 @@ export function useLeafletMap(
     }
   }, [baseMap, mapInited]);
 
-  return { mapRef, layers: layersRef.current, mapInited, zoom, baseMap, setBaseMap, tilesFailed };
+  return { mapRef, layers: layersRef.current, mapInited, zoom, baseMap, setBaseMap, tilesFailed, viewportTick };
 }
