@@ -22,6 +22,7 @@ import { fetchGeocode, type GeoCandidate } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
 import { stationIconSvg, waterIconSvg, waterClusterSvg, clusterBubbleSvg, keyUnitIconSvg, keyBuildingIconSvg, shouldShowWater, shouldShowWaterPoints, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '@/lib/map-icons';
 import { gridCluster } from '@/lib/grid-cluster';
+import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
 import { haversineKm } from '@/lib/geo-query';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
@@ -503,9 +504,6 @@ export default function RealGisMap() {
     });
   }, []);
 
-  // 派遣路线色板(多站各色)
-  const ROUTE_COLORS = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
-
   // 周边水源高亮:500m 内水源画青色圈 + 适窗(独立可调,警情圆环"周边水源"复用)
   const highlightNearbyWater = useCallback((t: { lng: number; lat: number }) => {
     const map = mapRef.current;
@@ -544,51 +542,37 @@ export default function RealGisMap() {
     [highlightNearbyWater],
   );
 
-  // 多站到场路线规划:每站 driving(GCJ02)+ 各色 polyline + 贴线 tooltip + 适窗;写 showRoute scene action(MCP 通道)
+  // 多站到场路线规划:每站 driving(GCJ02)→ renderRoutes 统一渲染(色板/tipHtml 在 lib/gis/route-render);写 showRoute scene action(MCP 通道)
   const planRoutes = useCallback(
     async (stationIds: string[]) => {
       const map = mapRef.current;
       const routeLayer = routeLayerRef.current;
       if (!map || !routeLayer || !deploy) return;
       setPlanning(true);
-      routeLayer.clearLayers();
       setPlanned([]);
-      const allLatLngs: [number, number][] = [];
-      const results: PlannedRoute[] = [];
-      await Promise.all(
-        stationIds.map(async (id, idx) => {
-          const s = stationsRef.current.find((x) => x.id === id);
-          if (!s) return;
-          const from = { lng: s.lng, lat: s.lat };
-          try {
-            const route = await fetchDrivingRoute(from, { lng: deploy.target.lng, lat: deploy.target.lat });
-            const color = ROUTE_COLORS[idx % ROUTE_COLORS.length];
-            const distKm = (route.distance / 1000).toFixed(1);
-            const etaMin = Math.round(route.duration / 60);
-            const tipHtml = `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${s.name}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${route.trafficLights}灯</span></div>`;
-            L.polyline(route.polyline, { color, weight: 4, dashArray: '10 8', opacity: 0.9, className: 'route-flow' }).addTo(routeLayer);
-            // 信息标签锚定路线分段点(按 idx 错开,避免多条叠在中点)
-            const seg = Math.min(Math.floor(route.polyline.length * (0.3 + idx * 0.18)), route.polyline.length - 1);
-            L.marker(route.polyline[seg], {
-              icon: L.divIcon({ html: tipHtml, className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
-              interactive: false,
-              keyboard: false,
-            }).addTo(routeLayer);
-            route.polyline.forEach((pt) => allLatLngs.push(pt));
-            results.push({ stationId: id, stationName: s.name, distance: route.distance, duration: route.duration, trafficLights: route.trafficLights });
-          } catch {
-            // 单站失败跳过
-          }
-        }),
-      );
-      results.sort((a, b) => stationIds.indexOf(a.stationId) - stationIds.indexOf(b.stationId));
-      setPlanned(results);
+      // 并发拉各站 driving;失败站跳过;按 stationIds 顺序组装(原实现靠 sort 恢复顺序,等价)
+      const items = (
+        await Promise.all(
+          stationIds.map(async (id) => {
+            const s = stationsRef.current.find((x) => x.id === id);
+            if (!s) return null;
+            try {
+              const route = await fetchDrivingRoute({ lng: s.lng, lat: s.lat }, { lng: deploy.target.lng, lat: deploy.target.lat });
+              return { stationId: id, stationName: s.name, polyline: route.polyline, distance: route.distance, duration: route.duration, trafficLights: route.trafficLights } as RouteRenderItem;
+            } catch {
+              return null; // 单站失败跳过
+            }
+          }),
+        )
+      ).filter((x): x is RouteRenderItem => x !== null);
+      const { bounds, summary } = renderRoutes(routeLayer, items);
+      setPlanned(summary);
       setPlanning(false);
-      if (allLatLngs.length) map.flyToBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
+      if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
       addSceneAction({
         action: 'showRoute',
-        target: `派遣路线:${deploy.target.name}(${results.length} 站)`,
-        params: { routes: results },
+        target: `派遣路线:${deploy.target.name}(${summary.length} 站)`,
+        params: { routes: summary },
         source: '面板',
       });
     },
@@ -1526,32 +1510,11 @@ export default function RealGisMap() {
       if (latest.action === 'showRoute' && latest.source !== '面板') {
         // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
         const routeLayer = routeLayerRef.current;
-        const routes = (latest.params as {
-          routes?: Array<{ polyline?: [number, number][]; stationName?: string; distance?: number; duration?: number; trafficLights?: number }>;
-        }).routes;
+        const routes = (latest.params as { routes?: RouteRenderItem[] }).routes;
         if (routeLayer && Array.isArray(routes) && routes.length) {
-          routeLayer.clearLayers();
-          const colors = ['#22d3ee', '#34d399', '#a78bfa', '#fbbf24', '#f87171', '#60a5fa'];
-          const allLatLngs: [number, number][] = [];
-          const summary: PlannedRoute[] = [];
-          routes.forEach((r, idx) => {
-            if (!r.polyline?.length) return;
-            const color = colors[idx % colors.length];
-            const distKm = r.distance ? (r.distance / 1000).toFixed(1) : '?';
-            const etaMin = r.duration ? Math.round(r.duration / 60) : '?';
-            const tipHtml = `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${r.stationName ?? `路线 ${idx + 1}`}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${r.trafficLights ?? 0}灯</span></div>`;
-            L.polyline(r.polyline, { color, weight: 4, dashArray: '10 8', opacity: 0.9, className: 'route-flow' }).addTo(routeLayer);
-            const seg = Math.min(Math.floor(r.polyline.length * (0.3 + idx * 0.18)), r.polyline.length - 1);
-            L.marker(r.polyline[seg], {
-              icon: L.divIcon({ html: tipHtml, className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
-              interactive: false,
-              keyboard: false,
-            }).addTo(routeLayer);
-            r.polyline.forEach((pt) => allLatLngs.push(pt));
-            summary.push({ stationId: `ext-${idx}`, stationName: r.stationName ?? `路线 ${idx + 1}`, distance: r.distance ?? 0, duration: r.duration ?? 0, trafficLights: r.trafficLights ?? 0 });
-          });
+          const { bounds, summary } = renderRoutes(routeLayer, routes);
           setPlanned(summary);
-          if (allLatLngs.length) map.flyToBounds(L.latLngBounds(allLatLngs), { padding: [60, 60] });
+          if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
         }
       }
     });
