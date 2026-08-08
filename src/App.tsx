@@ -189,7 +189,12 @@ export default function App() {
               ) : module === 'command' ? (
                 <CommandView />
               ) : module === 'overview' ? (
-                <RealGisMap onEnterScene={setSelectedSceneId} />
+                <RealGisMap
+                  onEnterScene={(id) => {
+                    handleSelectScene(id);
+                    setModule('objects');
+                  }}
+                />
               ) : (
                 <RealSceneView sceneId={selectedSceneId} />
               )}
