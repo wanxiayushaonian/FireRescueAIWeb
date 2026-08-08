@@ -457,3 +457,54 @@
 .gis-tip.leaflet-tooltip::before {
   display: none !important;
 }
+
+/* marker 发光(深色底立体化) */
+.map-icon-station,
+.map-icon-key-unit,
+.map-icon-key-building {
+  filter: drop-shadow(0 0 4px rgba(34, 211, 238, 0.35));
+}
+.map-icon-water {
+  filter: drop-shadow(0 0 3px rgba(56, 189, 248, 0.4));
+}
+.map-icon-water-cluster,
+.map-icon-unit-cluster,
+.map-icon-building-cluster {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.15));
+}
+/* hover 提亮(禁止 scale/translate:Leaflet 用 transform 定位 marker) */
+.leaflet-marker-icon.map-icon-station:hover,
+.leaflet-marker-icon.map-icon-water:hover,
+.leaflet-marker-icon.map-icon-key-unit:hover,
+.leaflet-marker-icon.map-icon-key-building:hover {
+  filter: brightness(1.25) drop-shadow(0 0 6px rgba(34, 211, 238, 0.55));
+}
+/* popup 打开中的选中态:青色外圈(渲染器 popupopen/popupclose 切 class) */
+.leaflet-marker-icon.gis-marker-active {
+  outline: 2px solid rgba(34, 211, 238, 0.8);
+  outline-offset: 2px;
+  border-radius: 50%;
+}
+/* 警情单位静态底环(减少脉冲环的视觉漂浮感) */
+.unit-incident-ring-base {
+  position: absolute;
+  inset: -6px;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 50%;
+  pointer-events: none;
+}
+/* marker 淡入(Leaflet 重建时自然触发) */
+@keyframes marker-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.map-icon-station,
+.map-icon-water,
+.map-icon-key-unit,
+.map-icon-key-building,
+.map-icon-incident,
+.map-icon-water-cluster,
+.map-icon-unit-cluster,
+.map-icon-building-cluster {
+  animation: marker-fade-in 0.25s ease-out;
+}

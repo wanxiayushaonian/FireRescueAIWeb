@@ -49,6 +49,8 @@ export function renderStations(
       .bindPopup(popupForStation(s, opts.personnelCounts.get(s.id) ?? 0), { className: 'gis-popup' })
       .on('click', () => opts.onStationClick(s))
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng: s.lng, lat: s.lat }, [s.lat, s.lng]); });
+    marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
+    marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     layer.addLayer(marker);
     markers.set(s.id, marker);
   }

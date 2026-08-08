@@ -66,6 +66,8 @@ export function renderWater(
           L.DomEvent.stopPropagation(e.originalEvent as Event);
           opts.onRadial({ kind: 'water', id: w.id, name: w.name, lng: w.lng, lat: w.lat }, [w.lat, w.lng]);
         });
+      m.on('popupopen', () => m.getElement()?.classList.add('gis-marker-active'));
+      m.on('popupclose', () => m.getElement()?.classList.remove('gis-marker-active'));
       layer.addLayer(m);
       markers.set(w.id, m);
     }

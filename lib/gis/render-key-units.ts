@@ -59,6 +59,8 @@ export function renderKeyUnits(
         }
       })
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'unit', id: u.id, name: u.name, lng: u.lng, lat: u.lat }, [u.lat, u.lng]); });
+    marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
+    marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     markers.set(u.id, marker);
     layer.addLayer(marker);
   };
