@@ -1,18 +1,20 @@
-// 推演控制 stub:对接 web 推演引擎(子项目6)的桥已在 6.2/6.3 完成前为占位。
+// 推演控制 stub:推演引擎在浏览器,AgentRunner(6.3)解析 agent-chat SSE 时本地镜像
+// 执行 report_decision/inject_event(直接写浏览器内 EventBus/DrillRecorder)。
+// 本 stub 不在 AgentRunner 链路上,仅供「用户对话经云端 MCP」的链路用(形态待定)。
 //
-// 当前行为(MVP stub):
+// MVP 形态决策(2026-08-09,6.3 落地后):
+//   - 推演引擎 source of truth 在浏览器(EventBus/DisasterState/DrillRecorder 单例)
+//   - AgentRunner(浏览器)消费 agent-chat SSE → report_decision/inject_event 本地镜像执行
+//     → 驱动浏览器推演引擎(不经本 stub,不经云端 MCP 往返)
+//   - 本 stub 供「用户 AgentChat 对话经云端配置的 mcp_servers」链路:agent tool_call
+//     → 云端 → mcp-server:8787 → 本 stub(wired=false,仅记日志 + /scene-events 占位转发)
+//   - 用户对话驱动推演的完整闭环:待形态①(/scene-events SSE 双向通道,web 订阅 stub 转发
+//     的事件并喂浏览器 EventBus)或形态②(推演引擎下沉到 mcp 进程),MVP 不实现
+//
+// 当前行为(MVP stub,wired=false):
 //   - query_scene_state:返回 wired=false 占位态势(让 agent 知道推演未对接,不误导决策)
-//   - inject_event:记日志 + 入内存事件表(供观测),不入 EventBus
-//   - report_decision:记日志 + 入内存决策表,不触发事件树渲染
-//
-// TODO(子项目6.2/6.3):对接推演引擎后替换为真实实现:
-//   - query_scene_state → 读 DisasterState(火势等级/到场力量/被困/建筑损伤)
-//   - inject_event → 写 EventBus(触发下个 tick 的状态推进)
-//   - report_decision → 写 DrillRecorder(事件树新增决策节点 + 触发 React Flow 渲染)
-// 集成形态候选:① 推演引擎在浏览器,扩展 /scene-events SSE 双向通道;
-//             ② 推演引擎在 mcp-server 进程内(web 经 SSE 订阅状态);
-//             ③ 独立推演服务。设计文档(2026-08-09-drill-simulation-design.md §5.2)未定,
-//             待 6.2 实现时确认。当前 stub 不锁定具体形态。
+//   - inject_event:记日志 + 入内存事件表(供观测),不入 EventBus,不驱动状态
+//   - report_decision:记日志 + 入内存决策表,不写事件树,不触发渲染
 
 import type { SceneCommand } from './types.js';
 
@@ -28,7 +30,8 @@ type LoggedEntry = {
 };
 
 // 单进程内存表(仅本 stub 阶段用于观测 + 测试断言)。
-// TODO 6.2/6.3:对接后由推演引擎持久化,本表移除。
+// 注:AgentRunner(浏览器,6.3)在 SSE 解析时本地镜像写 EventBus/DrillRecorder,
+// 本 stub 不在推演控制链路;表格仅在「用户对话经云端 MCP」链路被调用,作为观测点保留。
 const drillLog = new Map<string, LoggedEntry[]>();
 
 function appendLog(drillId: string, kind: LoggedEntry['kind'], payload: unknown): LoggedEntry {
@@ -99,7 +102,8 @@ export function querySceneState(drillId: string): StubSceneState {
 
 /**
  * 注入对抗事件(stub):记日志 + 入内存表 + 发场景命令(占位通道)。
- * TODO 6.2:替换为写推演引擎 EventBus(触发下个 tick 的状态推进)。
+ * 注:EventBus 写入由 AgentRunner(浏览器,6.3)在 SSE 解析时本地镜像完成,
+ * 本 stub 不在推演控制链路(供用户对话经云端 MCP 用),不写 EventBus。
  *
  * @param sceneCommandSink 可选的场景命令发送器(测试注入;生产由 tools.ts 注入 publishCommand)。
  *   stub 阶段经 /scene-events 透传给 web,让前端推演 UI 预演事件流(便于 6.2 前联调可视化)。
@@ -133,7 +137,8 @@ export function injectEvent(
 
 /**
  * 上报 agent 决策(stub):记日志 + 入内存表 + 发场景命令(占位通道)。
- * TODO 6.3:替换为写 DrillRecorder(事件树新增决策节点 + 触发 React Flow 渲染)。
+ * 注:DrillRecorder 写入由 AgentRunner(浏览器,6.3)在 SSE 解析时本地镜像完成,
+ * 本 stub 不在推演控制链路(供用户对话经云端 MCP 用),不写事件树。
  */
 export function reportDecision(
   drillId: string,

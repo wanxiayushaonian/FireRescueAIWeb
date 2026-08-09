@@ -134,7 +134,9 @@
 
 ---
 
-### Task 6.3:推演引擎 — AgentRunner(agent 编排,含原 5B 执行记录职责)
+### Task 6.3:推演引擎 — AgentRunner(agent 编排,含原 5B 执行记录职责)✅
+
+> **完成(SDD 批次3)**:lib/drill/agent-runner.ts + lib/drill/drill-recorder.ts(从 6.4 前置纯逻辑)+ 43 测试通过。MVP 形态决策:推演引擎 source of truth 在浏览器,AgentRunner 解析 SSE 时**本地镜像执行** report_decision/inject_event(写本地 EventBus 驱动 DisasterState)+ 记 DrillRecorder;batchInvokeTwinsFunction 仅记事件树(3D 由平台 WS→SDK 自动);mcp-server drill-control 保持 stub(供用户对话经云端 MCP 链路,形态①/②待 MVP 后定)。
 
 **lib/drill/agent-runner.ts + src/drill/hooks/use-agent-runner.ts**
 - AgentRunner:事件/tick → 程序化 postAgentChat(5A.1)
@@ -203,7 +205,7 @@ Task0(实测 SSE)─┐
 **建议批次**:
 1. Task0 + 6.0 + 6.1(并行,无依赖)✅
 2. 5A + 5C.1 + 6.2(依赖 Task0/6.1)✅
-3. 5C.2 + 5C.3 + 6.3(依赖 5A/5C.1/6.2;6.3 含原 5B 执行记录职责)
+3. 5C.2 + 5C.3 + 6.3(依赖 5A/5C.1/6.2;6.3 含原 5B 执行记录职责)✅ — MVP 形态:AgentRunner 浏览器本地镜像执行推演控制 tool_call(report_decision/inject_event 写 EventBus)+ DrillRecorder 纯逻辑从 6.4 前置;drill-control stub 供用户对话链路(形态①/②待定,见 drill-mcp-config-guide.md)
 4. 6.4 + 6.5(依赖 6.3)
 5. 6.6(全部就绪后端到端)
 
