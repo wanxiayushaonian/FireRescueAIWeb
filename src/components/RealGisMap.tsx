@@ -150,6 +150,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     highlightLayer: layers.highlight,
     stationsRef,
     setRadial,
+    stationsVisible: showStations,
   });
 
   // 灾情响应分析(重点建筑圆环菜单「响应分析」入口,见 gis/hooks/use-incident-response)
@@ -907,6 +908,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           planned={planned}
           planning={planning}
           anchor={deploy.anchor}
+          emptyHint={deploy.emptyHint}
           onPlan={(ids) => planRoutes(ids)}
           onClear={clearRoutes}
           onClose={closeDeploy}
