@@ -53,18 +53,9 @@
 
 ---
 
-### Task 5B:平台 WS 执行监听(Task0 简化)
+### Task 5B:已并入 6.3(取消独立)
 
-**5B.1 SDK WS 执行事件监听**
-- `lib/sdk-execution-listener.ts`(或扩展 `lib/soonspace-runtime.ts`):监听平台 WS 的本体功能执行事件(`batchInvokeTwinsFunction` 的 function_identifier + twins_instance_ids + 执行结果)→ 回调上报
-- 暴露 hook(`useSdkExecutions`)给推演引擎/事件树,记录 agent 触发的 3D 执行
-- 单测:WS 事件解析(用固定事件载荷)
-
-**5B.2 端到端验证**
-- RealSceneView 在线(SDK 连 WS)→ AgentChat/推演引擎触发 agent → agent `batchInvokeTwinsFunction(flyto)` → 3D 相机移动 → 监听到执行 → 记事件树
-
-**验收**:agent 飞向指令 → 3D 实际执行(相机移动)+ 事件树记录该执行
-**依赖**:5A(agent-chat 接入,触发 agent)+ RealSceneView SDK init(已有)
+原 5B(平台 WS 执行监听)取消 —— Task0 实测:agent-chat SSE 已含 `batchInvokeTwinsFunction` 的 tool-call/tool-result,5A 已解析;6.3 AgentRunner 消费 SSE 时筛选执行类 tool-call 记事件树;RealSceneView SDK init 自动连 WS 执行 3D,不需 web 桥接/监听。
 
 ---
 
@@ -139,19 +130,25 @@
 **验收**:剧本 seed + 对抗 inject → 状态机正确推进(火势/到场/被困数值合理)
 **依赖**:6.1(Timeline)
 
+> **spec 偏离注记(review)**:风向/风速 MVP 仅可视化(记录蔓延方向供 3D/事件树用),数值规则只走建筑结构(STRUCTURE_FIRE_MODIFIER 修正 fireEscalateTicks)。待版本2 加 wind→fireEscalateTicks 系数(风速/风向影响蔓延速率)。
+
 ---
 
-### Task 6.3:推演引擎 — AgentRunner(agent 编排)
+### Task 6.3:推演引擎 — AgentRunner(agent 编排,含原 5B 执行记录职责)
 
 **lib/drill/agent-runner.ts + src/drill/hooks/use-agent-runner.ts**
 - AgentRunner:事件/tick → 程序化 postAgentChat(5A.1)
-  - 指挥 agent(app_id_c,forwardedProps=当前态势)→ 决策 + function_call(3D)+ tool_call(MCP)
+  - 指挥 agent(app_id_c,forwardedProps=当前态势)→ 决策 + tool_call
   - 对抗 agent(app_id_r,定时/随机)→ inject_event
-- 解析 SSE → 派发:function_call → 5B 桥接;tool_call → 5C MCP;决策 → 事件树
-- 集成 5A/5B/5C
+- 解析 SSE → 派发:
+  - **本体功能执行** tool_call(`batchInvokeTwinsFunction` 等,原 5B 职责)→ 3D 由平台 WS→SDK 自动执行(RealSceneView 在线即可);**记事件树**(执行节点 + tool_result)
+  - `query_*`/`inject_event`/`report_decision` tool_call → 5C MCP
+  - 决策文本 → 事件树
+- 集成 5A/5C + 6.1/6.2(状态)
+- 注:3D 执行不经 web 桥接(平台 WS 自动),AgentRunner 只记录 tool_call/tool_result 到事件树
 
-**验收**:事件触发 → 指挥 agent 决策 → 3D 摆消防员/画路线 + MCP 查建筑;对抗 agent 注入特情
-**依赖**:5A/5B/5C + 6.1/6.2
+**验收**:事件触发 → 指挥 agent 决策 → 3D 执行被记录进事件树 + MCP 查建筑;对抗 agent 注入特情
+**依赖**:5A/5C + 6.1/6.2
 
 ---
 
@@ -204,9 +201,9 @@ Task0(实测 SSE)─┐
 ```
 
 **建议批次**:
-1. Task0 + 6.0 + 6.1(并行,无依赖)
-2. 5A + 5B + 5C.1 + 6.2(依赖 Task0/6.1)
-3. 5C.2 + 5C.3 + 6.3(依赖 5A/5B/5C.1/6.2)
+1. Task0 + 6.0 + 6.1(并行,无依赖)✅
+2. 5A + 5C.1 + 6.2(依赖 Task0/6.1)✅
+3. 5C.2 + 5C.3 + 6.3(依赖 5A/5C.1/6.2;6.3 含原 5B 执行记录职责)
 4. 6.4 + 6.5(依赖 6.3)
 5. 6.6(全部就绪后端到端)
 

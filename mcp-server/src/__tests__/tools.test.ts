@@ -24,6 +24,19 @@ vi.mock('../bff-client.js', () => ({
   ]),
 }));
 
+vi.mock('../business-client.js', () => ({
+  getBuildingProfile: vi.fn().mockResolvedValue({
+    id: 'b1', name: '21号楼', address: '某路1号', sceneId: 's-1',
+    keyFloorCount: 1, structureDesignCount: 1, surroundingCount: 1,
+  }),
+  getFacilities: vi.fn().mockResolvedValue([
+    { id: 'f1', facilityType: '消火栓', name: '一层消火栓', status: '正常' },
+  ]),
+  getKeyParts: vi.fn().mockResolvedValue([
+    { id: 'kf1', name: '避难层', floor: '15', func: '避难' },
+  ]),
+}));
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -106,5 +119,102 @@ describe('tools', () => {
     const res = await handleToolCall('show_route', { routes: [] });
     expect(res.isError).toBe(true);
     expect(publishCommand).not.toHaveBeenCalled();
+  });
+
+  it('TOOLS 含 5C 新工具(query_building_profile/query_facilities/query_key_parts/query_scene_state/inject_event/report_decision)', () => {
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain('query_building_profile');
+    expect(names).toContain('query_facilities');
+    expect(names).toContain('query_key_parts');
+    expect(names).toContain('query_scene_state');
+    expect(names).toContain('inject_event');
+    expect(names).toContain('report_decision');
+  });
+
+  it('query_building_profile 调 business-client 返回档案', async () => {
+    const res = await handleToolCall('query_building_profile', { building_id: 'b1' });
+    const text = res.content[0].text;
+    expect(text).toContain('"id": "b1"');
+    expect(text).toContain('21号楼');
+    expect(text).toContain('"keyFloorCount": 1');
+  });
+
+  it('query_building_profile 缺 building_id → 错误', async () => {
+    const res = await handleToolCall('query_building_profile', {});
+    expect(res.isError).toBe(true);
+  });
+
+  it('query_facilities 透传 floor/type 过滤参数', async () => {
+    const { getFacilities } = await import('../business-client.js');
+    await handleToolCall('query_facilities', { building_id: 'b1', floor: '三层', type: '消火栓' });
+    expect(getFacilities).toHaveBeenCalledWith('b1', { floor: '三层', type: '消火栓' });
+  });
+
+  it('query_facilities 缺 building_id → 错误', async () => {
+    const res = await handleToolCall('query_facilities', {});
+    expect(res.isError).toBe(true);
+  });
+
+  it('query_key_parts 返回重点部位', async () => {
+    const res = await handleToolCall('query_key_parts', { building_id: 'b1' });
+    const text = res.content[0].text;
+    expect(text).toContain('"total": 1');
+    expect(text).toContain('避难层');
+  });
+
+  it('query_scene_state stub 返回 wired=false + 文案含 6.2', async () => {
+    const res = await handleToolCall('query_scene_state', { drill_id: 'd1' });
+    const text = res.content[0].text;
+    expect(text).toContain('"wired": false');
+    expect(text).toContain('6.2');
+    expect(text).toContain('"drillId": "d1"');
+  });
+
+  it('query_scene_state 缺 drill_id → 错误', async () => {
+    const res = await handleToolCall('query_scene_state', {});
+    expect(res.isError).toBe(true);
+  });
+
+  it('inject_event stub 透传 publishCommand + 返回 wired=false', async () => {
+    const event = { type: 'wind_shift', payload: { dir: 'NE' } };
+    const res = await handleToolCall('inject_event', { drill_id: 'd1', event });
+    const text = res.content[0].text;
+    expect(text).toContain('"accepted": true');
+    expect(text).toContain('"wired": false');
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'drill_inject_event',
+      args: { drill_id: 'd1', event },
+    }));
+  });
+
+  it('inject_event 缺 event → 错误', async () => {
+    const res = await handleToolCall('inject_event', { drill_id: 'd1' });
+    expect(res.isError).toBe(true);
+  });
+
+  it('inject_event event 非对象 → 错误', async () => {
+    const res = await handleToolCall('inject_event', { drill_id: 'd1', event: 'wind_shift' });
+    expect(res.isError).toBe(true);
+  });
+
+  it('report_decision stub 透传 publishCommand + 返回 wired=false', async () => {
+    const decision = { action: 'dispatch', targets: ['station-a'] };
+    const res = await handleToolCall('report_decision', { drill_id: 'd1', decision });
+    const text = res.content[0].text;
+    expect(text).toContain('"accepted": true');
+    expect(text).toContain('"wired": false');
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'drill_report_decision',
+      args: { drill_id: 'd1', decision },
+    }));
+  });
+
+  it('report_decision 缺 decision → 错误', async () => {
+    const res = await handleToolCall('report_decision', { drill_id: 'd1' });
+    expect(res.isError).toBe(true);
+  });
+
+  it('未知 tool 抛出 unknown tool 错误', async () => {
+    await expect(handleToolCall('unknown_xyz', {})).rejects.toThrow(/unknown tool/);
   });
 });
