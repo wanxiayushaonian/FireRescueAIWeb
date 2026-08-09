@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react';
 import { manageSceneBridge } from '@/lib/scene-command-bus';
+import { addSceneAction } from '@/mock/sceneLog';
 
 /**
  * 桥接 MCP 命令流到 3D 场景。
@@ -14,7 +15,7 @@ export function SceneCommandBridge() {
   useEffect(() => {
     // 默认订阅同源 BFF /api/scene-events(BFF 再带 appKey 连 mcp),浏览器无需持 appKey。
     const eventsUrl = process.env.NEXT_PUBLIC_SCENE_EVENTS_URL || '/api/scene-events';
-    return manageSceneBridge(eventsUrl);
+    return manageSceneBridge(eventsUrl, { addSceneAction });
   }, []);
 
   return null;

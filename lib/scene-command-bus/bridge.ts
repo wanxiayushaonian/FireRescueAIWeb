@@ -1,5 +1,5 @@
 import { sceneSdk } from '@/lib/scene-sdk';
-import { registerDefaultTools } from './handlers';
+import { registerDefaultTools, type AddSceneActionFn } from './handlers';
 import { connectSceneEvents } from './transport';
 import type { SceneSdkLike } from './types';
 
@@ -22,6 +22,8 @@ export type BridgeDeps = {
   connect: (eventsUrl: string, sdk: SceneSdkLike) => () => void;
   /** 事件目标(默认 window)。 */
   eventTarget: EventTargetLike;
+  /** show_route 写场景总线用(透传给 registerDefaultTools);可选。 */
+  addSceneAction?: AddSceneActionFn;
 };
 
 /**
@@ -42,7 +44,11 @@ export function manageSceneBridge(
   deps?: Partial<BridgeDeps>,
 ): () => void {
   const getSdk = deps?.getSdk ?? (() => sceneSdk() as unknown as SceneSdkLike);
-  const register = deps?.register ?? registerDefaultTools;
+  const addSceneAction = deps?.addSceneAction;
+  const register =
+    deps?.register ??
+    ((sdk: SceneSdkLike) =>
+      registerDefaultTools(sdk, addSceneAction ? { addSceneAction } : undefined));
   const connect = deps?.connect ?? connectSceneEvents;
   const eventTarget: EventTargetLike | null =
     deps?.eventTarget ??

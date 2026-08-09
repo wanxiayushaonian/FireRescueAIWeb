@@ -94,3 +94,35 @@ describe('focus_floors handler', () => {
     expect(setViewMode).not.toHaveBeenCalled();
   });
 });
+
+describe('show_route handler', () => {
+  it('注入 addSceneAction → 写场景总线(showRoute + 智能体 source)', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, { addSceneAction });
+    await dispatch({ id: '1', tool: 'show_route', args: { routes: [{ stationName: '站A' }] }, ts: 0 }, sdk);
+    expect(addSceneAction).toHaveBeenCalledTimes(1);
+    expect(addSceneAction).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'showRoute', source: '智能体' }),
+    );
+  });
+
+  it('未注入 addSceneAction → 降级 warn,不写总线', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'show_route', args: { routes: [{ stationName: 'A' }] }, ts: 0 }, sdk);
+    expect(addSceneAction).not.toHaveBeenCalled();
+  });
+
+  it('空 routes → warn,不写总线', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, { addSceneAction });
+    await dispatch({ id: '1', tool: 'show_route', args: { routes: [] }, ts: 0 }, sdk);
+    expect(addSceneAction).not.toHaveBeenCalled();
+  });
+});

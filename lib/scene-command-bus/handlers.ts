@@ -1,12 +1,40 @@
 import { registerSceneTool } from './registry';
 import { getSceneTreeForView } from './scene-tree';
-import { addSceneAction } from '@/mock/sceneLog';
 import type { SceneSdkLike } from './types';
 
 // 聚焦高亮色:与 FIRE_TYPE_COLORS 告警色一致,agent 不操心配色。
 const FOCUS_HIGHLIGHT_COLOR = '#f87171';
 
-export function registerDefaultTools(_sdk: SceneSdkLike): void {
+/**
+ * 场景动作名(与 src/mock/sceneLog.SceneActionName 保持同步;lib 不 import src 故重复声明)。
+ * 改动时两端同步。
+ */
+export type SceneActionName =
+  | 'flyTo' | 'highlight' | 'batchHighlight' | 'switchFloor'
+  | 'showRoute' | 'hideRoute' | 'addMarker' | 'removeMarker' | 'resetView'
+  | 'drawZone' | 'drawRoute' | 'clearTactical'
+  | 'updatePlan'
+  | 'updateCoord'
+  | 'editEntity';
+
+/**
+ * 场景动作总线写入函数(由调用方注入,避免 lib 反向依赖 src/mock/sceneLog)。
+ * 结构兼容 src/mock/sceneLog.addSceneAction 的入参(Omit<SceneAction,'ts'>)。
+ */
+export type AddSceneActionFn = (action: {
+  action: SceneActionName;
+  target: string;
+  params?: Record<string, unknown>;
+  source: '面板' | '智能体' | '预案引擎';
+}) => void;
+
+/** registerDefaultTools 的可选扩展(show_route 写场景总线用)。 */
+export interface RegisterToolsAddons {
+  /** 写场景动作总线;缺省时 show_route 降级为 console.warn。 */
+  addSceneAction?: AddSceneActionFn;
+}
+
+export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsAddons): void {
   registerSceneTool('fly_to', async (args, sdk) => {
     const target = String(args.target ?? '');
     if (!target) {
@@ -44,14 +72,20 @@ export function registerDefaultTools(_sdk: SceneSdkLike): void {
     await sdk.setViewMode({ mode: 'story' }, tree, storyIds);
   });
 
-  // 2D 态势总览:AI 派遣多站路线渲染(经 addSceneAction → RealGisMap subscribeSceneLog 的 showRoute 通道)
+  // 2D 态势总览:AI 派遣多站路线渲染(经注入的 addSceneAction → RealGisMap subscribeSceneLog 的 showRoute 通道)
   registerSceneTool('show_route', async (args) => {
     const routes = (args as { routes?: unknown }).routes;
     if (!Array.isArray(routes) || routes.length === 0) {
       console.warn('[scene-bus] show_route missing routes');
       return;
     }
-    addSceneAction({
+    const add = addons?.addSceneAction;
+    if (!add) {
+      // 未注入(如纯单测环境)→ 降级,不阻塞命令派发
+      console.warn('[scene-bus] show_route: 未注入 addSceneAction,跳过 sceneLog 写入');
+      return;
+    }
+    add({
       action: 'showRoute',
       target: `AI 派遣路线(${routes.length} 站)`,
       params: { routes },
