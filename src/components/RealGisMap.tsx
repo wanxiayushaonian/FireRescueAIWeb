@@ -808,7 +808,14 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
         />
       )}
       {responseState && (
-        <div className="absolute right-4 top-20 z-[500] w-64 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur">
+        <div
+          className="absolute z-[500] w-64 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur"
+          style={{
+            left: Math.min(Math.max(responseState.anchor.x, 180), Math.max(responseState.anchor.maxX - 180, 180)),
+            top: Math.max(responseState.anchor.y - 14, 8),
+            transform: 'translate(-50%, -100%)',
+          }}
+        >
           <div className="flex items-center justify-between">
             <span className="text-text-1 text-sm font-semibold">响应分析 · {responseState.target.name}</span>
             <button onClick={clearResponse} className="text-text-3 hover:text-cyan">×</button>

@@ -1,7 +1,7 @@
 'use client';
 // 灾情响应分析 hook:选中灾情建筑 → 筛 5km 可见站 → 批量 driving 取 ETA
 // → 染色环 + 估算参考圈 + 最近站一条路线。从 RealGisMap 编排,纯逻辑在 lib/gis。
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import L from 'leaflet';
 import type { Station } from '@/mock/types';
 import { fetchDrivingRoute } from '@/api/route';
@@ -27,6 +27,7 @@ export interface ResponseState {
   targetMin: number;
   loading: boolean;
   error?: string;
+  anchor: { x: number; y: number; maxX: number };
 }
 
 const RESPONSE_RADIUS_KM = 5;
@@ -67,6 +68,9 @@ export function useIncidentResponse(deps: {
     async (target: ResponseTarget, targetMin = 5) => {
       const map = mapRef.current;
       if (!map || !responseLayer) return;
+      // 面板锚定灾情点(屏幕坐标,与 DeployPanel/ForceManagePanel 一致)
+      const p = map.latLngToContainerPoint(L.latLng(target.lat, target.lng));
+      const anchor = { x: p.x, y: p.y, maxX: map.getSize().x };
 
       // 前置:stations 小眼睛关闭或无站 → 空态
       if (!stationsVisible || stationsRef.current.length === 0) {
@@ -77,12 +81,13 @@ export function useIncidentResponse(deps: {
           nearestId: null,
           targetMin,
           loading: false,
+          anchor,
           error: '5km 内无可见消防站(检查消防站图层小眼睛)',
         });
         return;
       }
 
-      setState({ target, items: [], nearestId: null, targetMin, loading: true });
+      setState({ target, items: [], nearestId: null, targetMin, loading: true, anchor });
       clearResponseLayer(responseLayer);
       routeLayer?.clearLayers();
       renderReferenceCircle(responseLayer, { lat: target.lat, lng: target.lng }, targetMin);
@@ -103,6 +108,7 @@ export function useIncidentResponse(deps: {
           nearestId: null,
           targetMin,
           loading: false,
+          anchor,
           error: `5km 内无常规主力消防站(支队/救援大队/救援站)`,
         });
         return;
@@ -174,6 +180,7 @@ export function useIncidentResponse(deps: {
         nearestId: ranked[0]?.id ?? null,
         targetMin,
         loading: false,
+        anchor,
       });
       map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 15));
     },
@@ -185,6 +192,20 @@ export function useIncidentResponse(deps: {
     routeLayer?.clearLayers();
     setState(null);
   }, [responseLayer, routeLayer]);
+
+  // 面板锚定灾情点:地图移动/缩放时重算屏幕坐标(与 DeployPanel 跟随逻辑一致)
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !state) return;
+    const update = () => {
+      const pp = map.latLngToContainerPoint(L.latLng(state.target.lat, state.target.lng));
+      setState((prev) => (prev ? { ...prev, anchor: { x: pp.x, y: pp.y, maxX: map.getSize().x } } : prev));
+    };
+    map.on('move zoom', update);
+    return () => {
+      map.off('move zoom', update);
+    };
+  }, [mapRef, state?.target.lng, state?.target.lat]);
 
   return { responseState: state, analyze, clearResponse };
 }
