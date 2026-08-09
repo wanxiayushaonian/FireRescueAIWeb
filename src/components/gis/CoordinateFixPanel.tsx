@@ -1,7 +1,8 @@
 'use client';
 // 坐标修正面板:当前坐标 + ① 地址查询候选 + ② 地图拾取 + ③ 手动输入 → 预览 → 保存。
 // draft(新坐标)由父组件管理,便于地图拾取回填;保存后父组件刷新点位图层。
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useWheelGuard } from './hooks/use-wheel-guard';
 import { MapPin, Search, Crosshair, Save, X, Loader2 } from 'lucide-react';
 import type { GeoCandidate } from '@/api/geocode';
 
@@ -48,12 +49,16 @@ export default function CoordinateFixPanel({
   onSave,
   onClose,
 }: Props) {
+  // 阻止滚轮冒泡到 Leaflet 地图(否则缩放地图而非滚动面板列表)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useWheelGuard(rootRef);
+
   const [address, setAddress] = useState('');
   const [mLng, setMLng] = useState('');
   const [mLat, setMLat] = useState('');
 
   return (
-    <div className="absolute left-1/2 top-16 z-[600] w-[340px] -translate-x-1/2">
+    <div ref={rootRef} className="absolute left-1/2 top-16 z-[600] w-[340px] -translate-x-1/2">
       <div
         className="overflow-hidden rounded-lg border border-amber-300/40 bg-bg-panel/95 backdrop-blur-[8px]"
         style={{ boxShadow: '0 0 24px rgba(251,191,36,.15)' }}
