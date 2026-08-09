@@ -1,0 +1,274 @@
+// lib/agent-chat-client.ts
+// agent-chat SSE 接入层(子项目5 Task 5A)。
+// 程序化 POST ustudio agent-chat BFF route + 解析 SSE 流,供推演引擎(AgentRunner)
+// 与 AgentChat 复用。纯逻辑,无 React/DOM 依赖,仅用 Web 标准 API(fetch / ReadableStream /
+// TextDecoder,Node 18+ 原生支持)。
+//
+// SSE 格式见 plan/drill-agent-chat-sse-format.md:
+// - 每行 data:{json}(无空格)或 data: {json}(带空格),按 type 派发
+// - tool-call.args / tool-result.result 是 JSON 字符串,需二次 JSON.parse
+// - 事件类型:conversation_id / reasoning / tool-call / tool-result / text / finish / timing
+//
+// 关键设计:
+// 1. postAgentChat 读 NEXT_PUBLIC_X_APP_KEY 在调用时(非模块加载),便于测试注入 env
+// 2. parseAgentChatSSE 是 async generator,逐事件 yield,按 \n 分行 + 跨块缓冲拼接
+// 3. args/result 用 safeJsonParse 二次 parse,失败保留原字符串(契约稳健)
+
+// ===== 事件类型 =====
+
+export interface ConversationIdEvent {
+  type: 'conversation_id';
+  conversation_id: string;
+}
+
+export interface ReasoningEvent {
+  type: 'reasoning';
+  content: string;
+  agent?: string;
+}
+
+export interface ToolCallEvent {
+  type: 'tool-call';
+  toolCallId: string;
+  toolName: string;
+  /** 二次 JSON.parse 后的对象;parse 失败保留原始字符串 */
+  args: unknown;
+  agent?: string;
+  parentToolCallId?: string;
+}
+
+export interface ToolResultEvent {
+  type: 'tool-result';
+  toolCallId: string;
+  toolName: string;
+  /** 二次 JSON.parse 后的对象;parse 失败保留原始字符串 */
+  result: unknown;
+  agent?: string;
+}
+
+export interface TextEvent {
+  type: 'text';
+  content: string;
+  agent?: string;
+  parentToolCallId?: string;
+}
+
+export interface FinishEvent {
+  type: 'finish';
+  finishReason: string;
+  usage?: unknown;
+  parentToolCallId?: string;
+}
+
+export interface TimingEvent {
+  type: 'timing';
+  phase: string;
+  name: string;
+  elapsedMs: number;
+}
+
+/** agent-chat SSE 事件联合,按 type 区分字段 */
+export type AgentChatEvent =
+  | ConversationIdEvent
+  | ReasoningEvent
+  | ToolCallEvent
+  | ToolResultEvent
+  | TextEvent
+  | FinishEvent
+  | TimingEvent;
+
+// ===== postAgentChat =====
+
+export interface PostAgentChatParams {
+  content: string;
+  app_id: string;
+  forwardedProps?: Record<string, unknown>;
+  passthroughProps?: Record<string, unknown>;
+  signal?: AbortSignal;
+}
+
+/** BFF route(app/uagent-service/.../agent-chat/route.ts)透传至上游 ustudio 网关 */
+const AGENT_CHAT_PATH = '/uagent-service/api/agent/v1/apps/agent-chat';
+
+/**
+ * POST agent-chat BFF route,返回 SSE ReadableStream。
+ *
+ * header:
+ * - X-App-Key:读 NEXT_PUBLIC_X_APP_KEY(BFF 透传至上游做应用级鉴权)
+ * - Content-Type: application/json
+ * - Accept: text/event-stream
+ *
+ * body:{ content, app_id, forwardedProps(默认 {}), stream:true,
+ *        ...(passthroughProps ? { passthrough_props } : {}) }
+ */
+export async function postAgentChat(params: PostAgentChatParams): Promise<ReadableStream<Uint8Array>> {
+  const { content, app_id, forwardedProps, passthroughProps, signal } = params;
+  const appKey = process.env.NEXT_PUBLIC_X_APP_KEY || '';
+
+  const body: Record<string, unknown> = {
+    content,
+    app_id,
+    forwardedProps: forwardedProps ?? {},
+    stream: true,
+  };
+  if (passthroughProps) {
+    body.passthrough_props = passthroughProps;
+  }
+
+  const res = await fetch(AGENT_CHAT_PATH, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      'X-App-Key': appKey,
+    },
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!res.ok || !res.body) {
+    const errText = await res.text().catch(() => '');
+    throw new Error(`agent-chat 请求失败 ${res.status}: ${errText}`);
+  }
+
+  return res.body as ReadableStream<Uint8Array>;
+}
+
+// ===== parseAgentChatSSE =====
+
+/**
+ * 解析 agent-chat SSE 流,逐事件 yield 结构化 AgentChatEvent。
+ *
+ * 实现要点:
+ * - reader 逐 chunk 读,TextDecoder 解码,按 \n 分行
+ * - 最后一段不含 \n 的留在 buffer,与下一 chunk 拼接(跨块行缓冲)
+ * - 兼容 `data:{json}`(无空格)与 `data: {json}`(带空格)
+ * - tool-call.args / tool-result.result 为 JSON 字符串时二次 parse
+ * - 非 data 行(注释/event:/id:)、[DONE]、畸形 JSON、未知 type 一律跳过
+ */
+export async function* parseAgentChatSSE(
+  stream: ReadableStream<Uint8Array>,
+): AsyncGenerator<AgentChatEvent, void, void> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // 按 \n 切行,最后一段(可能不完整)留在 buffer
+      const parts = buffer.split('\n');
+      buffer = parts.pop() ?? '';
+      for (const line of parts) {
+        const event = parseSSELine(line);
+        if (event) yield event;
+      }
+    }
+    // flush 尾部剩余(最后一行可能无 trailing \n)
+    buffer += decoder.decode();
+    if (buffer) {
+      const event = parseSSELine(buffer);
+      if (event) yield event;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+/** 解析单行 SSE:data 前缀去掉 + JSON.parse + normalize;非 data 行 / 解析失败返回 null */
+function parseSSELine(line: string): AgentChatEvent | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('data:')) return null;
+  // slice(5) 去掉 'data:',trimStart 去掉可选空格(兼容 data: 与 data: 两种)
+  const payload = trimmed.slice(5).trimStart();
+  if (!payload || payload === '[DONE]') return null;
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(payload);
+  } catch {
+    return null;
+  }
+  return normalizeEvent(raw);
+}
+
+/** 将原始 JSON 对象规范化为 AgentChatEvent;未知 type / 缺关键字段返回 null(跳过) */
+function normalizeEvent(raw: unknown): AgentChatEvent | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const obj = raw as Record<string, unknown>;
+  const type = obj.type;
+
+  switch (type) {
+    case 'conversation_id':
+      return { type: 'conversation_id', conversation_id: String(obj.conversation_id ?? '') };
+
+    case 'reasoning':
+      return { type: 'reasoning', content: String(obj.content ?? ''), agent: optStr(obj.agent) };
+
+    case 'tool-call':
+      return {
+        type: 'tool-call',
+        toolCallId: String(obj.toolCallId ?? ''),
+        toolName: String(obj.toolName ?? ''),
+        args: safeJsonParse(obj.args),
+        agent: optStr(obj.agent),
+        parentToolCallId: optStr(obj.parentToolCallId),
+      };
+
+    case 'tool-result':
+      return {
+        type: 'tool-result',
+        toolCallId: String(obj.toolCallId ?? ''),
+        toolName: String(obj.toolName ?? ''),
+        result: safeJsonParse(obj.result),
+        agent: optStr(obj.agent),
+      };
+
+    case 'text':
+      return {
+        type: 'text',
+        content: String(obj.content ?? ''),
+        agent: optStr(obj.agent),
+        parentToolCallId: optStr(obj.parentToolCallId),
+      };
+
+    case 'finish':
+      return {
+        type: 'finish',
+        finishReason: String(obj.finishReason ?? ''),
+        usage: obj.usage,
+        parentToolCallId: optStr(obj.parentToolCallId),
+      };
+
+    case 'timing':
+      return {
+        type: 'timing',
+        phase: String(obj.phase ?? ''),
+        name: String(obj.name ?? ''),
+        elapsedMs: Number(obj.elapsedMs ?? 0),
+      };
+
+    default:
+      return null;
+  }
+}
+
+/** null/undefined/空串 → undefined,其余 String() */
+function optStr(v: unknown): string | undefined {
+  return v == null || v === '' ? undefined : String(v);
+}
+
+/**
+ * 二次 JSON.parse:值为 JSON 字符串时 parse 成对象,parse 失败保留原字符串;
+ * 值非字符串(已是对象 / null)时原样返回。
+ */
+function safeJsonParse(v: unknown): unknown {
+  if (typeof v !== 'string') return v;
+  try {
+    return JSON.parse(v);
+  } catch {
+    return v;
+  }
+}

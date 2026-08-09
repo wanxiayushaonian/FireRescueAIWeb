@@ -104,6 +104,8 @@
 - lib/ 映射:`lib/building-mapper.ts`(znya → BuildingProfile 类型)
 
 **验收**:进对象总览选 21号楼 → 真实档案数据展示
+
+> **spec 偏离注记(review)**:5 分组按 znya 真实 schema 重组(建筑概况/消防系统/关键部位/防火设计/联系人,对应 structure_designs+surroundings+key_floors+fire_facilities)。plan 原 spec 的 mock 形态分组(结构/供水/关键部位/室内设施/联系人)作废 —— 那基于旧 mock BuildingProfile,与 znya 真实数据形态不匹配。
 **依赖**:无(znya 数据已有)
 
 ---
@@ -116,6 +118,8 @@
 - 单测:暂停/恢复/变速/tick 计数
 
 **验收**:启动引擎,1× 每秒 tick,5× 加速,暂停停
+
+> **hook 单测 follow-up(review)**:`use-timeline` hook 单测(RTL + fake timers,验 unmount stop)推迟 —— 仓库未装 `@testing-library/react`。待装 RTL 后补 `src/drill/hooks/__tests__/use-timeline.test.ts`。engine 层 12 测试已覆盖核心逻辑。
 **依赖**:无
 
 ---

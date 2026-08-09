@@ -41,6 +41,9 @@ export default function App() {
   const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
   const [selectedSceneId, setSelectedSceneId] = useState<string>('');
 
+  // 对象总览当前建筑 ID(由 GIS 信息窗「查看档案」或内部下拉切换)。
+  const [objectsBuildingId, setObjectsBuildingId] = useState<string>('');
+
   // 场景列表 + 最近使用(替代写死 .env SCENE_ID,场景选择交前端 TopBar 下拉)
   useEffect(() => {
     void (async () => {
@@ -116,7 +119,9 @@ export default function App() {
 
   // GIS 信息窗业务跳转（linkage 分支通过 CustomEvent 上报）
   useEffect(() => {
-    const onOpenProfile = () => {
+    const onOpenProfile = (e: Event) => {
+      const d = (e as CustomEvent<{ buildingId?: string }>).detail;
+      if (d?.buildingId) setObjectsBuildingId(d.buildingId);
       setModule('objects');
       setBuildingPanelOpen(true);
     };
@@ -241,7 +246,10 @@ export default function App() {
               open={buildingPanelOpen}
               onOpenChange={setBuildingPanelOpen}
             >
-              <BuildingProfilePanel />
+              <BuildingProfilePanel
+                buildingId={objectsBuildingId || undefined}
+                onBuildingChange={setObjectsBuildingId}
+              />
             </DraggablePanel>
           )}
           {module === 'drill' && (

@@ -1,3 +1,5 @@
+// 单建筑档案面板(对象总览模块):znya key_buildings + fire_facilities → 真实档案展示。
+// 替代 mock:5 个分组(概况/消防系统/关键部位/防火设计/联系人),全部来自 znya 真实数据。
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -10,51 +12,75 @@ import {
   Phone,
   Landmark,
   Layers,
+  MapPin,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { BuildingProfile, Facility, FetchState } from '@/mock/types';
-import { BUILDING_LIST, fetchBuildingProfile } from '@/mock/building';
+import type { FetchState } from '@/mock/types';
 import { addSceneAction } from '@/mock/sceneLog';
 import StatusBadge, { statusVariantOf } from '@/components/StatusBadge';
 import PanelStateView from '@/components/PanelStateView';
-import DemoTag from '@/components/DemoTag';
-import ReadinessBadge from '@/components/panels/ReadinessBadge';
 import { showToast } from '@/components/Toast';
+import { fetchKeyBuildings } from '@/api/key-buildings';
+import { fetchBuildingProfile, DRILL_DEMO_BUILDING_ID } from '@/api/building-profile';
+import type { KeyBuilding } from '@/lib/key-building-mapper';
+import type {
+  RealBuildingProfile,
+  BuildingOverview,
+  FireSystemItem,
+  BuildingKeyFloor,
+  StructureDesign,
+  BuildingSurrounding,
+} from '@/lib/building-mapper';
 
-const STATE_OPTIONS: Array<{ value: FetchState; label: string }> = [
-  { value: 'ok', label: '正常' },
-  { value: 'loading', label: '加载中' },
-  { value: 'empty', label: '空态' },
-  { value: 'error', label: '失败' },
-];
-
-const GROUPS = ['建筑概况', '供水设施', '关键部位', '室内固定消防设施', '联系人'] as const;
+const GROUPS = ['建筑概况', '消防系统', '关键部位', '防火设计', '联系人'] as const;
+type GroupName = (typeof GROUPS)[number];
 
 export interface BuildingProfilePanelProps {
-  /** 外部受控的建筑 ID；不传则内部自管理 */
+  /** 外部受控的建筑 ID;不传则内部自管理(默认 21号楼)。 */
   buildingId?: string;
   onBuildingChange?: (id: string) => void;
 }
 
 export default function BuildingProfilePanel({ buildingId, onBuildingChange }: BuildingProfilePanelProps) {
-  const [innerBuildingId, setInnerBuildingId] = useState('jm');
-  const curBuildingId = buildingId ?? innerBuildingId;
-  const meta = BUILDING_LIST.find((b) => b.id === curBuildingId) ?? BUILDING_LIST[0];
+  // 建筑列表(供下拉切换):首屏拉一次,空回落保证始终能渲染
+  const [buildings, setBuildings] = useState<KeyBuilding[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const list = await fetchKeyBuildings();
+        if (!cancelled) setBuildings(list);
+      } catch {
+        /* 拉取失败保留下拉空态,详情区显示 error */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  const [demoState, setDemoState] = useState<FetchState>('ok');
+  const [innerBuildingId, setInnerBuildingId] = useState<string>(DRILL_DEMO_BUILDING_ID);
+  const curBuildingId = buildingId ?? innerBuildingId;
+  // 当前选中建筑元信息(下拉选中项 / 列表未到位时按 id 占位)
+  const meta = useMemo<KeyBuilding | { id: string; name: string }>(() => {
+    const found = buildings.find((b) => b.id === curBuildingId);
+    if (found) return found;
+    return { id: curBuildingId, name: '建筑加载中' };
+  }, [buildings, curBuildingId]);
+
   const [state, setState] = useState<FetchState>('loading');
-  const [profile, setProfile] = useState<BuildingProfile | null>(null);
+  const [profile, setProfile] = useState<RealBuildingProfile | null>(null);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({
     建筑概况: true,
-    室内固定消防设施: true,
+    消防系统: true,
   });
 
-  const load = useCallback(async (bid: string, s: FetchState) => {
+  const load = useCallback(async (bid: string) => {
     setState('loading');
     try {
-      const data = await fetchBuildingProfile(bid, { state: s });
+      const data = await fetchBuildingProfile(bid);
       setProfile(data);
-      setState(data ? 'ok' : 'empty');
+      setState('ok');
     } catch {
       setProfile(null);
       setState('error');
@@ -62,75 +88,75 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
   }, []);
 
   useEffect(() => {
-    load(curBuildingId, demoState);
-  }, [curBuildingId, demoState, load]);
+    load(curBuildingId);
+  }, [curBuildingId, load]);
 
   const switchBuilding = (id: string) => {
-    const m = BUILDING_LIST.find((b) => b.id === id);
-    if (!m || id === curBuildingId) return;
+    if (id === curBuildingId) return;
     if (onBuildingChange) onBuildingChange(id);
     else setInnerBuildingId(id);
-    addSceneAction({ action: 'resetView', target: '恢复园区俯瞰视角', source: '面板' });
-    addSceneAction({
-      action: 'flyTo',
-      target: `${m.name} (${m.lng}, ${m.lat})`,
-      params: { lng: m.lng, lat: m.lat },
-      source: '面板',
-    });
-    showToast('已切换建筑 · 演示数据');
+    const b = buildings.find((x) => x.id === id);
+    if (b && b.lng && b.lat) {
+      addSceneAction({ action: 'resetView', target: '恢复园区俯瞰视角', source: '面板' });
+      addSceneAction({
+        action: 'flyTo',
+        target: `${b.name} (${b.lng}, ${b.lat})`,
+        params: { lng: b.lng, lat: b.lat },
+        source: '面板',
+      });
+    }
+    showToast('已切换建筑');
   };
 
   const toggleGroup = (g: string) => setExpanded((prev) => ({ ...prev, [g]: !prev[g] }));
 
-  // 点击供水设施 / 关键部位行 → flyTo + highlight
-  const focusFacility = (f: Facility) => {
-    addSceneAction({
-      action: 'flyTo',
-      target: `${f.name} (${meta.lng}, ${meta.lat})`,
-      params: { lng: meta.lng, lat: meta.lat },
-      source: '面板',
-    });
+  const focusFacility = (f: FireSystemItem) => {
+    if (profile?.overview.lng && profile.overview.lat) {
+      addSceneAction({
+        action: 'flyTo',
+        target: `${f.name} (${profile.overview.lng}, ${profile.overview.lat})`,
+        params: { lng: profile.overview.lng, lat: profile.overview.lat },
+        source: '面板',
+      });
+    }
     addSceneAction({ action: 'highlight', target: `${f.id} ${f.name}`, params: { id: f.id }, source: '面板' });
-    showToast('已写入场景动作日志 · 演示数据');
+    showToast('已写入场景动作日志');
   };
 
-  // 点击室内设施行 → switchFloor + highlight
-  const focusIndoor = (floor: string, item: { id: string; name: string }) => {
-    addSceneAction({ action: 'switchFloor', target: `切换至 ${floor}`, params: { floor }, source: '面板' });
-    addSceneAction({ action: 'highlight', target: `${item.id} ${item.name}`, params: { id: item.id, floor }, source: '面板' });
-    showToast('已写入场景动作日志 · 演示数据');
+  const focusKeyFloor = (kf: BuildingKeyFloor) => {
+    addSceneAction({ action: 'switchFloor', target: `切换至 ${kf.floor}`, params: { floor: kf.floor }, source: '面板' });
+    addSceneAction({ action: 'highlight', target: `${kf.id} ${kf.name}`, params: { id: kf.id, floor: kf.floor }, source: '面板' });
+    showToast('已写入场景动作日志');
   };
 
-  // 点击避难层 → switchFloor + batchHighlight
-  const focusRefuge = (f: Facility) => {
-    const floor = f.name.replace('避难层 ', '');
-    addSceneAction({ action: 'switchFloor', target: `切换至 ${floor}`, params: { floor }, source: '面板' });
-    addSceneAction({ action: 'batchHighlight', target: `${floor} 避难层设施`, params: { floor }, source: '面板' });
-    showToast('已写入场景动作日志 · 演示数据');
+  const focusRefuge = (refuge: string) => {
+    addSceneAction({ action: 'switchFloor', target: `切换至 ${refuge}`, params: { floor: refuge }, source: '面板' });
+    addSceneAction({ action: 'batchHighlight', target: `${refuge} 避难层设施`, params: { floor: refuge }, source: '面板' });
+    showToast('已写入场景动作日志');
   };
 
   const copyPhone = (text: string) => {
+    if (!text) return;
     void navigator.clipboard?.writeText(text).catch(() => {});
-    showToast('已复制消控室电话 · 演示数据');
+    showToast('已复制联系电话');
   };
 
   return (
     <div className="flex h-full flex-col">
-      {/* 顶部：建筑名 + 摘要 + 状态演示 */}
+      {/* 顶部:建筑名 + 摘要 + 切换 */}
       <div className="border-b border-line px-4 pb-2.5 pt-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <span className="truncate text-[16px] font-bold text-text-1">{meta.name}</span>
-              <ReadinessBadge buildingName={meta.name} />
-              <DemoTag />
             </div>
-            <div className="mt-0.5 text-[13px] text-text-2">
-              {meta.floors} · {meta.structure}
+            <div className="mt-0.5 truncate text-[13px] text-text-2">
+              {'buildingType' in meta && meta.buildingType ? `${meta.buildingType} · ` : ''}
+              {'buildingUsage' in meta && meta.buildingUsage ? meta.buildingUsage : ''}
+              {!('buildingType' in meta) && profile ? `${profile.overview.buildingType} · ${profile.overview.buildingUsage}` : ''}
             </div>
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1.5">
-            <StateSelect value={demoState} onChange={setDemoState} title="状态演示" prefix="状态演示" />
             <div className="relative">
               <select
                 value={curBuildingId}
@@ -138,9 +164,13 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
                 className="h-7 appearance-none rounded-md border border-line bg-bg-panel-2 pl-2 pr-6 text-[12px] text-text-2 focus:border-line-glow focus:outline-none"
                 title="切换建筑"
               >
-                {BUILDING_LIST.map((b) => (
-                  <option key={b.id} value={b.id}>切换建筑：{b.name}</option>
-                ))}
+                {buildings.length === 0 ? (
+                  <option value={curBuildingId}>建筑列表加载中</option>
+                ) : (
+                  buildings.map((b) => (
+                    <option key={b.id} value={b.id}>切换建筑：{b.name}</option>
+                  ))
+                )}
               </select>
               <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
             </div>
@@ -153,7 +183,7 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
         <div className="min-h-0 flex-1">
           <PanelStateView
             state={state}
-            onRetry={state === 'error' ? () => load(curBuildingId, 'ok') : undefined}
+            onRetry={state === 'error' ? () => load(curBuildingId) : undefined}
             skeletonRows={9}
           />
         </div>
@@ -168,10 +198,16 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
                 open={!!expanded[g]}
                 onToggle={() => toggleGroup(g)}
               >
-                {g === '建筑概况' && <OverviewGroup profile={profile} />}
-                {g === '供水设施' && <WaterGroup profile={profile} onRow={focusFacility} />}
-                {g === '关键部位' && <KeyPartsGroup profile={profile} onRow={focusFacility} onRefuge={focusRefuge} />}
-                {g === '室内固定消防设施' && <IndoorGroup profile={profile} onRow={focusIndoor} />}
+                {g === '建筑概况' && <OverviewGroup overview={profile.overview} />}
+                {g === '消防系统' && <FireSystemsGroup facilities={profile.facilities} onRow={focusFacility} />}
+                {g === '关键部位' && <KeyFloorsGroup keyFloors={profile.keyFloors} onRow={focusKeyFloor} />}
+                {g === '防火设计' && (
+                  <StructureGroup
+                    designs={profile.structureDesigns}
+                    surroundings={profile.surroundings}
+                    onRefuge={focusRefuge}
+                  />
+                )}
                 {g === '联系人' && <ContactsGroup profile={profile} onCopyPhone={copyPhone} />}
               </AccordionGroup>
             ))}
@@ -182,41 +218,13 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
   );
 }
 
-function StateSelect({
-  value,
-  onChange,
-  title,
-  prefix,
-}: {
-  value: FetchState;
-  onChange: (v: FetchState) => void;
-  title: string;
-  prefix: string;
-}) {
-  return (
-    <div className="relative">
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as FetchState)}
-        className="h-7 appearance-none rounded-md border border-line bg-bg-panel-2 pl-2 pr-6 text-[12px] text-text-2 focus:border-line-glow focus:outline-none"
-        title={title}
-      >
-        {STATE_OPTIONS.map((o) => (
-          <option key={o.value} value={o.value}>{prefix}：{o.label}</option>
-        ))}
-      </select>
-      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
-    </div>
-  );
-}
-
-function groupIcon(g: string): LucideIcon {
+function groupIcon(g: GroupName): LucideIcon {
   switch (g) {
     case '建筑概况': return Building2;
-    case '供水设施': return Droplets;
+    case '消防系统': return Droplets;
     case '关键部位': return DoorOpen;
-    case '室内固定消防设施': return FlameKindling;
-    default: return Phone;
+    case '防火设计': return FlameKindling;
+    case '联系人': return Phone;
   }
 }
 
@@ -272,31 +280,46 @@ const rowStagger = {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex gap-2 py-1 text-[13px] leading-5">
-      <span className="w-16 shrink-0 text-text-3">{label}</span>
+      <span className="w-20 shrink-0 text-text-3">{label}</span>
       <span className="min-w-0 flex-1 text-text-1">{children}</span>
     </div>
   );
 }
 
-function OverviewGroup({ profile }: { profile: BuildingProfile }) {
-  const o = profile.overview;
+function floorsText(o: BuildingOverview): string {
+  const parts: string[] = [];
+  if (o.groundFloors != null) parts.push(`地上 ${o.groundFloors} 层`);
+  if (o.undergroundFloors != null) parts.push(`地下 ${o.undergroundFloors} 层`);
+  return parts.length ? parts.join(' / ') : '—';
+}
+
+function fmtNum(n: number | null, suffix = ''): string {
+  return n == null ? '—' : `${n}${suffix}`;
+}
+
+function OverviewGroup({ overview }: { overview: BuildingOverview }) {
+  const o = overview;
   const fields: Array<{ label: string; node: React.ReactNode }> = [
     { label: '单位名称', node: o.name },
-    { label: '地址', node: o.address },
-    { label: '结构', node: o.structure },
-    { label: '层数', node: o.floors },
-    { label: '面积', node: o.area },
     {
-      label: '功能分区',
+      label: '地址',
       node: (
-        <span className="flex flex-wrap gap-1">
-          {o.zones.map((z) => (
-            <span key={z} className="rounded border border-line bg-bg-panel-2 px-1.5 py-px text-[12px] text-text-2">{z}</span>
-          ))}
+        <span className="inline-flex items-start gap-1">
+          <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-text-3" />
+          <span>{o.address || '—'}</span>
         </span>
       ),
     },
-    { label: '毗邻', node: o.adjacent.join(' / ') },
+    { label: '建筑类型', node: o.buildingType || '—' },
+    { label: '使用性质', node: o.buildingUsage || '—' },
+    { label: '层数', node: floorsText(o) },
+    { label: '建筑高度', node: fmtNum(o.heightMeters, ' m') },
+    { label: '占地面积', node: fmtNum(o.floorAreaSqm, ' m²') },
+    { label: '标准层面积', node: fmtNum(o.standardFloorAreaSqm, ' m²') },
+    { label: '建成年份', node: fmtNum(o.builtYear) },
+    { label: '产权单位', node: o.propertyOwner || '—' },
+    { label: '管理单位', node: o.managementUnit || '—' },
+    { label: '数据完整度', node: fmtNum(o.completionRate, '%') },
   ];
   return (
     <div>
@@ -309,197 +332,226 @@ function OverviewGroup({ profile }: { profile: BuildingProfile }) {
   );
 }
 
-function FacilityRow({
-  facility,
-  onClick,
-  right,
+function FireSystemsGroup({
+  facilities,
+  onRow,
 }: {
-  facility: Facility;
-  onClick?: () => void;
-  right?: React.ReactNode;
+  facilities: FireSystemItem[];
+  onRow: (f: FireSystemItem) => void;
 }) {
+  if (facilities.length === 0) {
+    return <div className="py-4 text-center text-[12px] text-text-3">暂无登记消防系统</div>;
+  }
   return (
-    <button
-      onClick={onClick}
-      className="group flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee]"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13px] text-text-1">{facility.name}</div>
-        {facility.location && <div className="truncate text-[12px] text-text-3">{facility.location}</div>}
+    <div>
+      <div className="mb-1.5 px-2 py-1 text-[12px] font-bold text-text-2">
+        建筑级消防系统 <span className="ml-1 font-mono text-[11px] text-text-3">{facilities.length} 项</span>
       </div>
-      {right ?? <StatusBadge label={facility.status} variant={statusVariantOf(facility.status)} pulse={facility.status === '告警'} />}
-    </button>
-  );
-}
-
-function SubList({ title, items, onRow }: { title: string; items: Facility[]; onRow?: (f: Facility) => void }) {
-  return (
-    <div className="mb-1.5">
-      <div className="px-2 py-1 text-[12px] font-bold text-text-2">
-        {title} <span className="ml-1 font-mono text-[11px] text-text-3">{items.length} 项</span>
-      </div>
-      {items.map((f) => (
-        <FacilityRow key={f.id} facility={f} onClick={onRow ? () => onRow(f) : undefined} />
+      {facilities.map((f, i) => (
+        <motion.button
+          key={f.id}
+          custom={i}
+          variants={rowStagger}
+          initial="hidden"
+          animate="show"
+          onClick={() => onRow(f)}
+          className="group flex w-full cursor-pointer flex-col gap-0.5 rounded px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee]"
+        >
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[13px] text-text-1">{f.name}</span>
+            <StatusBadge
+              label={f.status || '正常'}
+              variant={statusVariantOf(f.status || '正常')}
+              pulse={f.status === '告警'}
+            />
+          </div>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-text-3">
+            {f.locationPath && <span>位置：{f.locationPath}</span>}
+            {f.quantityCapacity && <span>容量：{f.quantityCapacity}</span>}
+            {f.inspectionDate && <span>巡检：{f.inspectionDate}</span>}
+          </div>
+        </motion.button>
       ))}
     </div>
   );
 }
 
-function WaterGroup({ profile, onRow }: { profile: BuildingProfile; onRow: (f: Facility) => void }) {
-  const w = profile.waterSupply;
+function KeyFloorsGroup({
+  keyFloors,
+  onRow,
+}: {
+  keyFloors: BuildingKeyFloor[];
+  onRow: (kf: BuildingKeyFloor) => void;
+}) {
+  if (keyFloors.length === 0) {
+    return <div className="py-4 text-center text-[12px] text-text-3">暂无重点楼层登记</div>;
+  }
   return (
     <div>
-      <SubList title="消防水池" items={w.pools} onRow={onRow} />
-      <SubList title="消防水泵" items={w.pumps} onRow={onRow} />
-      <SubList title="水泵接合器" items={w.adapters} onRow={onRow} />
-      <SubList title="室外消火栓" items={w.outdoorHydrants} onRow={onRow} />
+      <div className="mb-1.5 px-2 py-1 text-[12px] font-bold text-text-2">
+        重点楼层 / 功能区 <span className="ml-1 font-mono text-[11px] text-text-3">{keyFloors.length} 项</span>
+      </div>
+      {keyFloors.map((kf, i) => (
+        <motion.button
+          key={kf.id}
+          custom={i}
+          variants={rowStagger}
+          initial="hidden"
+          animate="show"
+          onClick={() => onRow(kf)}
+          className="group flex w-full cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee]"
+        >
+          <span className="mt-0.5 shrink-0 rounded border border-line bg-bg-panel-2 px-1.5 py-px font-mono text-[11px] text-cyan">
+            {kf.floor}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="truncate text-[13px] text-text-1">{kf.name}</span>
+              <span className="shrink-0 text-[11px] text-text-3">{kf.func}</span>
+            </div>
+            <div className="mt-0.5 line-clamp-2 text-[11px] text-text-3">
+              {kf.fireHazard}{kf.hazardSource ? ` · ${kf.hazardSource}` : ''}
+            </div>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-text-3">
+              {kf.exitCount != null && <span>出口 {kf.exitCount}</span>}
+              {kf.responsiblePerson && <span>负责人 {kf.responsiblePerson}</span>}
+            </div>
+          </div>
+        </motion.button>
+      ))}
     </div>
   );
 }
 
-function KeyPartsGroup({
-  profile,
-  onRow,
+function StructureGroup({
+  designs,
+  surroundings,
   onRefuge,
 }: {
-  profile: BuildingProfile;
-  onRow: (f: Facility) => void;
-  onRefuge: (f: Facility) => void;
+  designs: StructureDesign[];
+  surroundings: BuildingSurrounding[];
+  onRefuge: (refuge: string) => void;
 }) {
-  const k = profile.keyParts;
-  return (
-    <div>
-      <SubList title="首层安全出口" items={k.exits} onRow={onRow} />
-      <SubList title="消防电梯" items={k.fireElevators} onRow={onRow} />
-      <SubList title="防火分区" items={k.fireCompartments} onRow={onRow} />
-      <SubList title="消控室" items={[k.controlRoom]} onRow={onRow} />
-      <div className="mb-1.5">
-        <div className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-bold text-text-2">
-          <Landmark className="h-3 w-3 text-cyan-dim" />
-          避难层 <span className="font-mono text-[11px] font-normal text-text-3">{k.refugeFloors.length} 层</span>
-        </div>
-        {k.refugeFloors.map((f) => (
-          <FacilityRow key={f.id} facility={f} onClick={() => onRefuge(f)} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function IndoorGroup({
-  profile,
-  onRow,
-}: {
-  profile: BuildingProfile;
-  onRow: (floor: string, item: { id: string; name: string }) => void;
-}) {
-  const floors = profile.indoorFacilities;
-  const [sel, setSel] = useState(0);
-  const cur = floors[Math.min(sel, floors.length - 1)];
-
-  const alarmFloors = useMemo(
-    () => new Set(floors.filter((f) => f.items.some((it) => it.status !== '正常')).map((f) => f.floor)),
-    [floors],
-  );
-
-  if (!cur) return <FloorEmpty />;
-  const total = cur.items.length;
-  const normal = cur.items.filter((i) => i.status === '正常').length;
-  const warn = cur.items.filter((i) => i.status === '告警').length;
-  const offline = total - normal - warn;
+  const d = designs[0];
+  const s2 = surroundings[0];
+  const refugeList = useMemo(() => {
+    if (!d?.refugeFloor) return [];
+    return d.refugeFloor
+      .split(/[,，、\s]+/)
+      .map((x) => x.trim())
+      .filter((x): x is string => !!x);
+  }, [d?.refugeFloor]);
 
   return (
     <div>
-      {/* 楼层 Tabs */}
-      <div className="mb-2 flex gap-1 overflow-x-auto pb-1 [scrollbar-width:thin]">
-        {floors.map((f, i) => (
-          <button
-            key={f.floor}
-            onClick={() => setSel(i)}
-            className={`relative shrink-0 rounded-md border px-2 py-1 font-mono text-[12px] transition ${
-              i === sel
-                ? 'border-cyan/60 bg-cyan/10 text-cyan shadow-[0_0_8px_rgba(34,211,238,.2)]'
-                : 'border-line bg-bg-panel-2 text-text-2 hover:border-line-glow hover:text-text-1'
-            }`}
-          >
-            {f.floor}
-            {alarmFloors.has(f.floor) && (
-              <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 rounded-full bg-amber animate-pulse" />
-            )}
-          </button>
-        ))}
-      </div>
+      {d && (
+        <>
+          <div className="mb-1 px-2 py-1 text-[12px] font-bold text-text-2">结构防火设计</div>
+          <Field label="结构类型">{d.structureType || '—'}</Field>
+          <Field label="耐火等级">{d.fireResistanceRating || '—'}</Field>
+          <Field label="防火分区">{d.fireCompartmentCount != null ? `${d.fireCompartmentCount} 个` : '—'}</Field>
+          <Field label="最大分区面积">{fmtNum(d.maxFireCompartmentArea, ' m²')}</Field>
+          <Field label="防烟分区">{d.smokeCompartmentCount != null ? `${d.smokeCompartmentCount} 个` : '—'}</Field>
+          <Field label="楼梯类型">{d.stairType || '—'}</Field>
+          <Field label="防火墙">{d.firewall || '—'}</Field>
+          <Field label="保温材料">{d.insulationMaterial || '—'}</Field>
+        </>
+      )}
 
-      {/* 统计行 */}
-      {total > 0 && (
-        <div className="mb-1.5 flex items-center gap-1 rounded-md border border-line bg-bg-panel-2/60 px-2 py-1.5 text-[12px] text-text-2">
-          <Layers className="h-3.5 w-3.5 text-cyan-dim" />
-          本层设施 <span className="font-num text-text-1">{total}</span> 项 · 正常
-          <span className="font-num text-green">{normal}</span> · 告警
-          <span className="font-num text-amber">{warn}</span> · 离线
-          <span className="font-num text-red">{offline}</span>
+      {/* 消防电梯(可点击切换楼层) */}
+      {d && (
+        <div className="mb-1.5 mt-2">
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-bold text-text-2">
+            <Layers className="h-3 w-3 text-cyan-dim" />
+            消防电梯
+            <span className="font-mono text-[11px] font-normal text-text-3">
+              {d.fireElevatorCount != null ? `${d.fireElevatorCount} 部` : '—'}
+            </span>
+          </div>
+          {d.fireElevatorLocation && (
+            <div className="px-2 py-0.5 text-[12px] text-text-3">{d.fireElevatorLocation}</div>
+          )}
         </div>
       )}
 
-      {/* 设施列表 */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={cur.floor}
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
-          transition={{ duration: 0.25 }}
-        >
-          {total === 0 ? (
-            <FloorEmpty />
-          ) : (
-            cur.items.map((it) => (
-              <button
-                key={it.id}
-                onClick={() => onRow(cur.floor, it)}
-                className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee]"
-              >
-                <span className="shrink-0 font-mono text-[12px] text-text-3">{it.id}</span>
-                <span className="min-w-0 flex-1 truncate text-[13px] text-text-1">{it.name}</span>
-                <span className="shrink-0 rounded border border-line px-1 py-px text-[11px] text-text-3">{it.type}</span>
-                <StatusBadge label={it.status} variant={statusVariantOf(it.status)} pulse={it.status === '告警'} />
-              </button>
-            ))
-          )}
-        </motion.div>
-      </AnimatePresence>
+      {/* 避难层(可点击 → switchFloor) */}
+      {refugeList.length > 0 && (
+        <div className="mb-1.5">
+          <div className="flex items-center gap-1.5 px-2 py-1 text-[12px] font-bold text-text-2">
+            <Landmark className="h-3 w-3 text-cyan-dim" />
+            避难层 <span className="font-mono text-[11px] font-normal text-text-3">{refugeList.length} 处</span>
+          </div>
+          {refugeList.map((r) => (
+            <button
+              key={r}
+              onClick={() => onRefuge(r)}
+              className="flex w-full cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee]"
+            >
+              <span className="shrink-0 rounded border border-line bg-bg-panel-2 px-1.5 py-px font-mono text-[11px] text-cyan">
+                {r}
+              </span>
+              <span className="text-[13px] text-text-1">避难层</span>
+              {d.refugeFloorArea != null && (
+                <span className="ml-auto text-[11px] text-text-3">面积 {d.refugeFloorArea} m²</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {s2 && (
+        <>
+          <div className="mb-1 mt-2 px-2 py-1 text-[12px] font-bold text-text-2">周边与扑救条件</div>
+          <Field label="周边道路">{s2.surroundingRoads || '—'}</Field>
+          <Field label="消防车道">{s2.fireLane || '—'}</Field>
+          <Field label="车道尺寸">
+            {s2.fireLaneWidth != null || s2.fireLaneHeight != null
+              ? `宽 ${fmtNum(s2.fireLaneWidth, ' m')} × 高 ${fmtNum(s2.fireLaneHeight, ' m')}`
+              : '—'}
+          </Field>
+          <Field label="扑救场地">{s2.aerialOperationSite || '—'}</Field>
+          {s2.aerialSiteLocation && <Field label="场地位置">{s2.aerialSiteLocation}</Field>}
+          {s2.aerialSiteSize && <Field label="场地尺寸">{s2.aerialSiteSize}</Field>}
+          {s2.aerialSiteLoad && <Field label="场地荷载">{s2.aerialSiteLoad}</Field>}
+          {s2.rescueWindow && <Field label="救援窗">{s2.rescueWindow}</Field>}
+          {s2.naturalWaterSource && <Field label="天然水源">{s2.naturalWaterSource}</Field>}
+          {s2.municipalHydrant && <Field label="市政消火栓">{s2.municipalHydrant}</Field>}
+          {s2.adjacentBuildingSpacing && <Field label="毗邻建筑">{s2.adjacentBuildingSpacing}</Field>}
+        </>
+      )}
+
+      {!d && !s2 && <div className="py-4 text-center text-[12px] text-text-3">暂无结构 / 周边数据</div>}
     </div>
   );
 }
 
-function FloorEmpty() {
-  return (
-    <div className="flex flex-col items-center gap-2 py-6">
-      <img src="/empty-box.svg" alt="" className="h-[72px] w-[96px] opacity-80" />
-      <div className="text-[12px] text-text-3">该楼层暂无登记设施 · 演示数据</div>
-    </div>
-  );
-}
-
-function ContactsGroup({ profile, onCopyPhone }: { profile: BuildingProfile; onCopyPhone: (t: string) => void }) {
+function ContactsGroup({
+  profile,
+  onCopyPhone,
+}: {
+  profile: RealBuildingProfile;
+  onCopyPhone: (t: string) => void;
+}) {
   const c = profile.contacts;
   const rows: Array<{ label: string; node: React.ReactNode }> = [
     {
-      label: '消控室电话',
-      node: (
+      label: '联系电话',
+      node: c.contactPhone ? (
         <button
-          onClick={() => onCopyPhone(c.controlRoomPhone)}
+          onClick={() => onCopyPhone(c.contactPhone)}
           className="inline-flex cursor-pointer items-center gap-1 font-mono text-cyan transition hover:brightness-110"
           title="点击复制"
         >
-          {c.controlRoomPhone}
+          {c.contactPhone}
           <Copy className="h-3 w-3" />
         </button>
+      ) : (
+        '—'
       ),
     },
-    { label: '法人', node: c.legalPerson },
-    { label: '消防负责人', node: c.fireManager },
-    { label: '专兼职管理人', node: c.partTimeManager },
+    { label: '联系人', node: c.contactName || '—' },
+    { label: '产权单位', node: c.propertyOwner || '—' },
+    { label: '管理单位', node: c.managementUnit || '—' },
   ];
   return (
     <div>
@@ -508,42 +560,6 @@ function ContactsGroup({ profile, onCopyPhone }: { profile: BuildingProfile; onC
           <Field label={r.label}>{r.node}</Field>
         </motion.div>
       ))}
-    </div>
-  );
-}
-
-/** 左上「当前对象」小卡（受控组件，需与面板共享 buildingId 状态） */
-export function BuildingSwitcherCard({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (id: string) => void;
-}) {
-  const meta = BUILDING_LIST.find((b) => b.id === value) ?? BUILDING_LIST[0];
-  return (
-    <div className="w-[280px] rounded-lg border border-line bg-bg-panel/90 p-3 shadow-xl backdrop-blur-[8px]">
-      <div className="mb-1 flex items-center gap-2 text-[12px] text-text-3">
-        当前对象
-        <DemoTag />
-      </div>
-      <div className="flex items-center gap-2">
-        <Building2 className="h-4 w-4 shrink-0 text-cyan" />
-        <span className="truncate text-[14px] font-bold text-text-1">{meta.name}（演示数据）</span>
-      </div>
-      <div className="mt-0.5 truncate pl-6 text-[12px] text-text-2">{meta.address}</div>
-      <div className="relative mt-2">
-        <select
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          className="h-8 w-full appearance-none rounded-md border border-line bg-bg-panel-2 pl-2 pr-7 text-[12px] text-text-2 focus:border-line-glow focus:outline-none"
-        >
-          {BUILDING_LIST.map((b) => (
-            <option key={b.id} value={b.id}>切换建筑：{b.name}</option>
-          ))}
-        </select>
-        <ChevronDown className="pointer-events-none absolute right-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
-      </div>
     </div>
   );
 }
