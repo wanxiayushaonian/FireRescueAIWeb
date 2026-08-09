@@ -46,6 +46,7 @@
     "@soonspacejs/plugin-gs3d-loader": "2.15.17",
     "@soonspacejs/plugin-poi-renderer": "2.15.17",
     "@soonspacejs/plugin-tiles": "2.15.17",
+    "@xyflow/react": "^12.11.2",
     "camera-controls": "^3.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
