@@ -9,6 +9,7 @@ export interface ZnyaKeyBuilding {
   latitude?: number | null;
   key_unit_id?: string | null;
   status?: string | null;
+  scene_id?: string | null;
 }
 
 export interface KeyBuilding {
@@ -20,6 +21,7 @@ export interface KeyBuilding {
   lat: number;
   keyUnitId?: string;
   status: string;
+  sceneId?: string; // uStudio 建模场景 ID(3D引导用)
 }
 
 /** 映射 znya 重点建筑 → KeyBuilding;无坐标返回 null,不在地图显示。 */
@@ -34,5 +36,6 @@ export function mapKeyBuilding(z: ZnyaKeyBuilding): KeyBuilding | null {
     lat: z.latitude,
     keyUnitId: z.key_unit_id ?? undefined,
     status: z.status ?? 'draft',
+    sceneId: z.scene_id ?? undefined,
   };
 }

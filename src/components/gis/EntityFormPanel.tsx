@@ -2,7 +2,8 @@
 // 点位增删改表单:水源/重点单位/重点建筑三类共用一个面板,字段按 kind 切换。
 // 坐标段与 CoordinateFixPanel 同一套三来源交互(地址查询/地图拾取/手动输入),
 // 但坐标直接存进表单 values(不借道 draftCoord);删除仅 edit 模式,二次确认由父组件负责。
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { useWheelGuard } from './hooks/use-wheel-guard';
 import { Pencil, Plus, Save, X, Loader2, Search, Crosshair, Trash2 } from 'lucide-react';
 import type { GeoCandidate } from '@/api/geocode';
 import type { KeyUnit } from '@/lib/key-unit-mapper';
@@ -33,6 +34,10 @@ export default function EntityFormPanel({
   candidates, querying, pickMode, onQuery, onStartPick,
   saving, error, onSave, onDelete, onClose,
 }: Props) {
+  // 阻止滚轮冒泡到 Leaflet 地图(否则缩放地图而非滚动面板列表)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useWheelGuard(rootRef);
+
   const [address, setAddress] = useState('');
   const [mLng, setMLng] = useState('');
   const [mLat, setMLat] = useState('');
@@ -45,7 +50,7 @@ export default function EntityFormPanel({
   const labelCls = 'mb-0.5 block text-text-3';
 
   return (
-    <div className="absolute left-1/2 top-16 z-[600] w-[360px] -translate-x-1/2">
+    <div ref={rootRef} className="absolute left-1/2 top-16 z-[600] w-[360px] -translate-x-1/2">
       <div
         className="max-h-[75vh] overflow-y-auto rounded-lg border border-cyan/40 bg-bg-panel/95 backdrop-blur-[8px]"
         style={{ boxShadow: '0 0 24px rgba(34,211,238,.15)' }}

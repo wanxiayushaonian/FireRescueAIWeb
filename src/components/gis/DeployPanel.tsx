@@ -1,7 +1,8 @@
 'use client';
 // 多站派遣路线面板:圆环菜单「派遣」唤出,锚定目标上方。多选消防站 → 规划到场路线。
 // dumb 组件:选站触发 onPlan,规划结果 planned 由父填。AI 派遣占位(待 MCP 工具接入)。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useWheelGuard } from './hooks/use-wheel-guard';
 import { X, Truck, Rocket, Bot, Loader2, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Station } from '@/mock/types';
 
@@ -23,6 +24,7 @@ interface Props {
   planned: PlannedRoute[] | null;
   planning: boolean;
   anchor: { x: number; y: number; maxX: number };
+  emptyHint?: string; // 小眼睛关闭/周边无常规主力站时的空态文案
   onPlan: (stationIds: string[]) => void;
   onClear: () => void;
   onClose: () => void;
@@ -30,7 +32,11 @@ interface Props {
 
 const fmtDur = (s: number) => (s >= 60 ? `${Math.round(s / 60)} 分钟` : `${s} 秒`);
 
-export default function DeployPanel({ targetName, stations, planned, planning, anchor, onPlan, onClear, onClose }: Props) {
+export default function DeployPanel({ targetName, stations, planned, planning, anchor, emptyHint, onPlan, onClear, onClose }: Props) {
+  // 阻止滚轮冒泡到 Leaflet 地图(否则缩放地图而非滚动面板列表)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useWheelGuard(rootRef);
+
   // 默认勾选最近 3 个
   const [selected, setSelected] = useState<Set<string>>(() => new Set(stations.slice(0, 3).map((s) => s.id)));
 
@@ -56,6 +62,7 @@ export default function DeployPanel({ targetName, stations, planned, planning, a
 
   return (
     <div
+      ref={rootRef}
       className="absolute z-[600]"
       style={{
         left: Math.min(Math.max(anchor.x, 180), Math.max(anchor.maxX - 180, 180)),
@@ -107,17 +114,21 @@ export default function DeployPanel({ targetName, stations, planned, planning, a
         </div>
         {/* 站列表(多选,带直线距离)*/}
         <div className="max-h-[200px] overflow-y-auto">
-          {stations.map((s) => {
-            const checked = selected.has(s.id);
-            return (
-              <label key={s.id} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-white/5">
-                <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} className="accent-cyan" />
-                <Truck className="h-3 w-3 shrink-0 text-text-3" />
-                <span className="min-w-0 flex-1 truncate text-text-1">{s.name}</span>
-                <span className="shrink-0 font-mono text-[11px] text-text-3">{s.distKm.toFixed(1)}km</span>
-              </label>
-            );
-          })}
+          {emptyHint || stations.length === 0 ? (
+            <div className="px-3 py-4 text-center text-[12px] text-text-3">{emptyHint ?? '周边无可派遣消防站'}</div>
+          ) : (
+            stations.map((s) => {
+              const checked = selected.has(s.id);
+              return (
+                <label key={s.id} className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-[12px] hover:bg-white/5">
+                  <input type="checkbox" checked={checked} onChange={() => toggle(s.id)} className="accent-cyan" />
+                  <Truck className="h-3 w-3 shrink-0 text-text-3" />
+                  <span className="min-w-0 flex-1 truncate text-text-1">{s.name}</span>
+                  <span className="shrink-0 font-mono text-[11px] text-text-3">{s.distKm.toFixed(1)}km</span>
+                </label>
+              );
+            })
+          )}
         </div>
         {/* 操作 */}
         <div className="flex gap-1.5 border-t border-line px-2 py-2">

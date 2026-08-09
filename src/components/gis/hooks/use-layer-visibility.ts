@@ -8,7 +8,7 @@ export function useLayerVisibility(
   mapRef: React.MutableRefObject<L.Map | null>,
   layers: GisLayers,
   mapInited: boolean,
-  flags: { boundary: boolean; stations: boolean; water: boolean; incidents: boolean; keyUnits: boolean; buildings: boolean; regions: boolean },
+  flags: { boundary: boolean; stations: boolean; water: boolean; incidents: boolean; keyUnits: boolean; buildings: boolean; regions: boolean; incidentResponse: boolean },
 ): void {
   useEffect(() => {
     const map = mapRef.current;
@@ -20,5 +20,5 @@ export function useLayerVisibility(
       else map.removeLayer(layer);
     });
     // 逐 key 依赖,与原 7 个独立 effect 的触发时机一致
-  }, [mapInited, flags.boundary, flags.stations, flags.water, flags.incidents, flags.keyUnits, flags.buildings, flags.regions]);
+  }, [mapInited, flags.boundary, flags.stations, flags.water, flags.incidents, flags.keyUnits, flags.buildings, flags.regions, flags.incidentResponse]);
 }

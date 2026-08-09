@@ -12,10 +12,15 @@ import { addSceneAction } from '@/mock/sceneLog';
 import type { CoordFixTarget } from '../CoordinateFixPanel';
 import type { DeployStation, PlannedRoute } from '../DeployPanel';
 
+// 只派遣常规主力(支队/救援大队/救援站);与灾情响应分析(use-incident-response)口径一致,
+// 排除专职站/微型/志愿等辅助力量
+const DEPLOY_STATION_TYPES = ['支队', '救援大队', '救援站'];
+
 export interface DeployState {
   target: { name: string; lng: number; lat: number };
   stations: DeployStation[];
   anchor: { x: number; y: number; maxX: number };
+  emptyHint?: string; // 小眼睛关闭/周边无常规主力站时的空态文案
 }
 
 type SetRadial = React.Dispatch<React.SetStateAction<{ target: CoordFixTarget; x: number; y: number } | null>>;
@@ -26,6 +31,7 @@ export function useDeployRoutes(deps: {
   highlightLayer: L.LayerGroup | null;
   stationsRef: React.MutableRefObject<Station[]>;
   setRadial: SetRadial; // openDeploy 联动关闭圆环菜单
+  stationsVisible: boolean; // 消防站图层小眼睛:关闭 → 面板空态提示
 }): {
   deploy: DeployState | null;
   openDeploy: (t: { name: string; lng: number; lat: number }) => void;
@@ -37,7 +43,7 @@ export function useDeployRoutes(deps: {
   clearRoutes: () => void;
   highlightNearbyWater: (t: { lng: number; lat: number }) => void;
 } {
-  const { mapRef, routeLayer, highlightLayer, stationsRef, setRadial } = deps;
+  const { mapRef, routeLayer, highlightLayer, stationsRef, setRadial, stationsVisible } = deps;
 
   const [deploy, setDeploy] = useState<DeployState | null>(null);
   const [planned, setPlanned] = useState<PlannedRoute[]>([]);
@@ -67,21 +73,36 @@ export function useDeployRoutes(deps: {
     [mapRef, highlightLayer],
   );
 
-  // 打开派遣面板:站点(已与地图同为 GCJ02)按到目标直线距离排序 + 算锚点 + 周边水源
+  // 打开派遣面板:消防站图层可见时,只列常规主力(支队/救援大队/救援站,与响应分析口径一致),
+  // 按到目标直线距离排序 + 算锚点 + 周边水源高亮;小眼睛关闭或无常规主力 → 空态提示
   const openDeploy = useCallback(
     (t: { name: string; lng: number; lat: number }) => {
       const map = mapRef.current;
       if (!map) return;
-      const sorted = stationsRef.current
-        .map((s) => ({ ...s, distKm: haversineKm(s.lng, s.lat, t.lng, t.lat) }))
-        .sort((a, b) => a.distKm - b.distKm);
       const p = map.latLngToContainerPoint(L.latLng(t.lat, t.lng));
-      setDeploy({ target: { name: t.name, lng: t.lng, lat: t.lat }, stations: sorted, anchor: { x: p.x, y: p.y, maxX: map.getSize().x } });
+      const anchor = { x: p.x, y: p.y, maxX: map.getSize().x };
+      const base = { target: { name: t.name, lng: t.lng, lat: t.lat }, anchor };
+
+      if (!stationsVisible) {
+        // 小眼睛关闭 → 空态(与灾情响应分析一致)
+        setDeploy({ ...base, stations: [], emptyHint: '请打开消防站图层小眼睛以选择派遣力量' });
+      } else {
+        // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量
+        const eligible = stationsRef.current.filter((s) => DEPLOY_STATION_TYPES.includes(s.type as string));
+        if (eligible.length === 0) {
+          setDeploy({ ...base, stations: [], emptyHint: '周边无常规主力消防站(支队/救援大队/救援站)' });
+        } else {
+          const sorted = eligible
+            .map((s) => ({ ...s, distKm: haversineKm(s.lng, s.lat, t.lng, t.lat) }))
+            .sort((a, b) => a.distKm - b.distKm);
+          setDeploy({ ...base, stations: sorted });
+        }
+      }
       setPlanned([]);
       setRadial(null);
       highlightNearbyWater(t);
     },
-    [mapRef, stationsRef, setRadial, highlightNearbyWater],
+    [mapRef, stationsRef, setRadial, highlightNearbyWater, stationsVisible],
   );
 
   // 多站到场路线规划:每站 driving(GCJ02)→ renderRoutes 统一渲染(色板/tipHtml 在 lib/gis/route-render);写 showRoute scene action(MCP 通道)

@@ -46,7 +46,7 @@ export function renderKeyBuildings(
       }),
     })
       .bindPopup(popupForKeyBuilding(b, unitName), { className: 'gis-popup' })
-      .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat }, [b.lat, b.lng]); });
+      .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat, sceneId: b.sceneId }, [b.lat, b.lng]); });
     marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
     marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     markers.set(b.id, marker);
