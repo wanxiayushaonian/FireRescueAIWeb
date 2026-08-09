@@ -1,7 +1,8 @@
 'use client';
 // 多站派遣路线面板:圆环菜单「派遣」唤出,锚定目标上方。多选消防站 → 规划到场路线。
 // dumb 组件:选站触发 onPlan,规划结果 planned 由父填。AI 派遣占位(待 MCP 工具接入)。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useWheelGuard } from './hooks/use-wheel-guard';
 import { X, Truck, Rocket, Bot, Loader2, Zap, ChevronDown, ChevronUp } from 'lucide-react';
 import type { Station } from '@/mock/types';
 
@@ -32,6 +33,10 @@ interface Props {
 const fmtDur = (s: number) => (s >= 60 ? `${Math.round(s / 60)} 分钟` : `${s} 秒`);
 
 export default function DeployPanel({ targetName, stations, planned, planning, anchor, emptyHint, onPlan, onClear, onClose }: Props) {
+  // 阻止滚轮冒泡到 Leaflet 地图(否则缩放地图而非滚动面板列表)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useWheelGuard(rootRef);
+
   // 默认勾选最近 3 个
   const [selected, setSelected] = useState<Set<string>>(() => new Set(stations.slice(0, 3).map((s) => s.id)));
 
@@ -57,6 +62,7 @@ export default function DeployPanel({ targetName, stations, planned, planning, a
 
   return (
     <div
+      ref={rootRef}
       className="absolute z-[600]"
       style={{
         left: Math.min(Math.max(anchor.x, 180), Math.max(anchor.maxX - 180, 180)),

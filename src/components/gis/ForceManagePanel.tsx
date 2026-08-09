@@ -1,7 +1,8 @@
 'use client';
 // 消防站执勤力量明细浮层(只读):右键环形菜单「力量明细」唤出,锚定在消防站图标上方。
 // 只查看,不修改;tab 切换 人员/车辆/装备 重新拉取。
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useWheelGuard } from './hooks/use-wheel-guard';
 import { X, Users, Truck, Package, Loader2 } from 'lucide-react';
 import type { ResourceItem } from '@/mock/types';
 import { fetchStationForce } from '@/api/force';
@@ -35,6 +36,10 @@ interface Props {
 }
 
 export default function ForceManagePanel({ station, anchor, onClose }: Props) {
+  // 阻止滚轮冒泡到 Leaflet 地图(否则缩放地图而非滚动面板列表)
+  const rootRef = useRef<HTMLDivElement>(null);
+  useWheelGuard(rootRef);
+
   const [tab, setTab] = useState<TabKey>('人员');
   const [items, setItems] = useState<ResourceItem[]>([]);
   // 初始即 loading:防首帧/切站 remount 显示空列表;切 tab 由 switchTab 同步置 true 防"新 tab+旧数据"错位帧
@@ -75,6 +80,7 @@ export default function ForceManagePanel({ station, anchor, onClose }: Props) {
 
   return (
     <div
+      ref={rootRef}
       className="absolute z-[600]"
       style={{
         left: Math.min(Math.max(anchor.x, 170), Math.max(anchor.maxX - 170, 170)),
