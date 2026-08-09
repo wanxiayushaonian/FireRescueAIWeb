@@ -776,6 +776,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       />
       {forcePanel && (
         <ForceManagePanel
+          key={forcePanel.station.id}
           station={forcePanel.station}
           anchor={forcePanel}
           onClose={() => setForcePanel(null)}

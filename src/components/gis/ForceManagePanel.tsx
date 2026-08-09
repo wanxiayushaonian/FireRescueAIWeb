@@ -37,13 +37,24 @@ interface Props {
 export default function ForceManagePanel({ station, anchor, onClose }: Props) {
   const [tab, setTab] = useState<TabKey>('人员');
   const [items, setItems] = useState<ResourceItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  // 初始即 loading:防首帧/切站 remount 显示空列表;切 tab 由 switchTab 同步置 true 防"新 tab+旧数据"错位帧
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  // 切 tab:同步 setTab + setLoading(true) + 清空旧明细 → 批处理后下一帧即 loading 态,
+  // 避免 useEffect(paint 后才跑)之前那一帧出现"新 tab 高亮 + 旧 tab 明细"的错位
+  const switchTab = (next: TabKey) => {
+    if (next === tab) return;
+    setTab(next);
+    setLoading(true);
+    setItems([]);
+  };
 
   useEffect(() => {
     let alive = true;
     setLoading(true);
     setError(false);
+    setItems([]); // 切站(组件复用)/切 tab 时先清空,防 effect 期间残留旧明细
     fetchStationForce(station.id, tab)
       .then((rs) => {
         if (alive) setItems(rs);
@@ -88,14 +99,15 @@ export default function ForceManagePanel({ station, anchor, onClose }: Props) {
             return (
               <button
                 key={t.key}
-                onClick={() => setTab(t.key)}
+                onClick={() => switchTab(t.key)}
                 className={`flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-[12px] transition ${
                   active ? 'bg-cyan/12 text-cyan' : 'text-text-3 hover:text-text-1'
                 }`}
               >
                 <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: active ? undefined : t.color }} />
                 {t.key}
-                {!loading && <span className="text-[10px] text-text-3">{items.length}</span>}
+                {/* 仅当前 tab 显示明细数,避免三按钮同显一个数被误读为各类计数 */}
+                {active && !loading && <span className="text-[10px] text-text-3">{items.length}</span>}
               </button>
             );
           })}
