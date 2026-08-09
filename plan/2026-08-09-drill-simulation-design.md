@@ -107,20 +107,16 @@ AgentChat(本地 mock) → addSceneAction → sceneLog
 - **AgentChat 真接**:替代 mock,用户对话也走真实 agent-chat
 - 复用:推演引擎(AgentRunner)+ AgentChat(用户对话)都经此客户端
 
-### 5B. 本体功能桥接 + executor 扩展
+### 5B. 平台 WS 执行监听(Task0 实测后简化)
 
-**function_identifier → SoonspaceRuntime 映射**(对照主智能体内置功能):
+**实测发现**:本体功能执行经 **平台 WS → 在线场景前端 SDK 自动执行**(agent `batchInvokeTwinsFunction` → 平台 message → WS → SDK),web **不用 function_call 桥接**(详见 `plan/drill-agent-chat-sse-format.md` §6)。
 
-| 本体功能(function_identifier) | SoonspaceRuntime 方法 |
-|---|---|
-| 飞向 | flyToObject |
-| 高亮 / 取消高亮 | highlightObject / clearObjectHighlight |
-| 沿路径移动 / 导航(场景内/外) | drawReachableRoutes / navigateWithinScene / navigateFromExternal |
-| 摆放实例 / 删除实例 | placeTwins / deleteTwins |
-| 模型操作(楼层显隐/2D-3D/炸开) | setViewMode |
-| 设置透明度 / 显隐 | ObjectBatch(setOpacity/show/hide) |
+只需:
+- **SDK init 连平台 WS**(RealSceneView 已有 `createUStudioSdk` init,自动建 WS)
+- **监听 WS 执行事件**(function_identifier + twins_instance_ids + 结果)→ 写入事件树 / 推演状态
+- 不做 function_identifier → SoonspaceRuntime 映射(平台自动驱动 SDK)
 
-**scene-action-executor 扩展**:新增 action(place_role/navigate_indoor/set_view_mode/batch_highlight/clear_tactical)→ SoonspaceRuntime,与现有 4 action 并存。
+> 前提:演练时 RealSceneView 必须在线(SDK 连 WS),否则 agent `batchInvokeTwinsFunction` 返回 FAIL(实测提示"无在线场景前端可执行")。
 
 ### 5C. 业务查询 + 推演控制 MCP(mcp-server 注册)
 

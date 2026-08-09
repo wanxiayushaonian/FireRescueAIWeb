@@ -53,25 +53,18 @@
 
 ---
 
-### Task 5B:本体功能桥接 + executor 扩展
+### Task 5B:平台 WS 执行监听(Task0 简化)
 
-**5B.1 lib/function-bridge.ts(纯逻辑映射,可单测)**
-- `mapFunctionCall(fc: FunctionCall): {sceneAction?: SceneAction, directCall?: (runtime: SoonspaceRuntime)=>void} | null`
-- 映射表(function_identifier → SoonspaceRuntime 方法):
-  - 飞向→flyToObject;高亮/取消→highlightObject/clearObjectHighlight
-  - 沿路径移动/导航(场景内)→ drawReachableRoutes / navigateWithinScene;场景外→navigateFromExternal
-  - 摆放实例→placeTwins;删除实例→deleteTwins
-  - 模型操作(楼层显隐/2D-3D/炸开)→setViewMode
-  - 设置透明度/显隐→ObjectBatch
-- 单测:各 function_identifier 映射正确(输入参数 → SDK 调用参数)
+**5B.1 SDK WS 执行事件监听**
+- `lib/sdk-execution-listener.ts`(或扩展 `lib/soonspace-runtime.ts`):监听平台 WS 的本体功能执行事件(`batchInvokeTwinsFunction` 的 function_identifier + twins_instance_ids + 执行结果)→ 回调上报
+- 暴露 hook(`useSdkExecutions`)给推演引擎/事件树,记录 agent 触发的 3D 执行
+- 单测:WS 事件解析(用固定事件载荷)
 
-**5B.2 scene-action-executor 扩展**
-- `lib/scene-action-executor.ts`:SceneExecutorRuntime 加方法(placeRole/navigateIndoor/setViewMode/batchHighlight/clearTactical)
-- `mapSceneAction` 扩展:新 action → runtime 新方法
-- `RealSceneView.tsx`:executor 实现接 SoonspaceRuntime(setViewMode/drawReachableRoutes/placeTwins/ObjectBatch)
+**5B.2 端到端验证**
+- RealSceneView 在线(SDK 连 WS)→ AgentChat/推演引擎触发 agent → agent `batchInvokeTwinsFunction(flyto)` → 3D 相机移动 → 监听到执行 → 记事件树
 
-**验收**:addSceneAction({action:'place_role',...})→ 场景出现 twin;navigate_indoor → 路线绘制;set_view_mode → 2D 平面
-**依赖**:5A.1(FunctionCall 类型)
+**验收**:agent 飞向指令 → 3D 实际执行(相机移动)+ 事件树记录该执行
+**依赖**:5A(agent-chat 接入,触发 agent)+ RealSceneView SDK init(已有)
 
 ---
 
