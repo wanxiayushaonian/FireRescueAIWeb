@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { RealSceneView } from '@/components/RealSceneView';
-import { EventTree } from '@/drill/EventTree';
+import { EventTreeOverlay } from '@/drill/EventTreeOverlay';
 import { DrillToolbar } from '@/drill/DrillToolbar';
 import { DrillStatusPanel } from '@/drill/DrillStatusPanel';
 import { useTimeline } from '@/drill/hooks/use-timeline';
@@ -112,8 +112,22 @@ export default function DrillView() {
 
   // ---- 显示状态 ----
   const [snapshot, setSnapshot] = useState<DisasterStatus | null>(null);
+  /** 事件树悬浮面板开关(Ctrl+K 唤出/切换,ESC 关闭)。 */
+  const [treeOpen, setTreeOpen] = useState(false);
   /** 上次处理过的 tick,防止 resume 时同 clock 重复处理。 */
   const lastTickRef = useRef(-1);
+
+  // ---- Ctrl+K 唤出事件树悬浮面板(演练模块局部,不冲突态势总览 overview 的 Ctrl+K)----
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setTreeOpen((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   // ---- tick 编排:clock 变化 → 推演一个 tick ----
   useEffect(() => {
@@ -183,20 +197,25 @@ export default function DrillView() {
       />
 
       <div className="flex min-h-0 flex-1 gap-2 p-2">
-        {/* 左:3D 场景 */}
+        {/* 左:3D 场景(事件树移出右栏后扩大)*/}
         <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-line">
           <RealSceneView sceneId={BUILDING_21_SCENE_ID} />
         </div>
 
-        {/* 右:事件树 + 态势面板 */}
-        <aside className="flex w-[420px] shrink-0 flex-col gap-2 overflow-y-auto">
-          <div className="flex flex-col">
-            <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-text-2">
-              事件树
-            </div>
-            <EventTree recorder={recorder} height={380} />
-          </div>
-          <div className="rounded-lg border border-line bg-bg-panel/60">
+        {/* 右:事件树入口按钮 + 态势面板(事件树本体改 Ctrl+K 悬浮唤出)*/}
+        <aside className="flex w-[360px] shrink-0 flex-col gap-2 overflow-y-auto">
+          <button
+            type="button"
+            onClick={() => setTreeOpen(true)}
+            className="flex items-center justify-between rounded-lg border border-line bg-bg-panel/60 px-3 py-2 text-left transition hover:border-line-glow"
+            title="Ctrl+K 唤出事件树(实时增长 / 事后复盘)"
+          >
+            <span className="text-[13px] text-text-1">事件树(实时 / 复盘)</span>
+            <kbd className="rounded border border-line bg-bg-deep px-1.5 py-0.5 text-[10px] text-text-3">
+              Ctrl+K
+            </kbd>
+          </button>
+          <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-line bg-bg-panel/60">
             <div className="border-b border-line px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-2">
               态势
             </div>
@@ -204,6 +223,13 @@ export default function DrillView() {
           </div>
         </aside>
       </div>
+
+      {/* 事件树悬浮面板(Ctrl+K 唤出,大尺寸;演练中实时增长 + 结束后复盘)*/}
+      <EventTreeOverlay
+        recorder={recorder}
+        open={treeOpen}
+        onClose={() => setTreeOpen(false)}
+      />
     </div>
   );
 }

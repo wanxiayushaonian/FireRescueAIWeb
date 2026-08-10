@@ -39,46 +39,47 @@ function EventTreeNodeComponent({ data, selected }: NodeProps<FlowNode>) {
   return (
     <div
       style={{
-        background: style.backgroundColor,
-        borderColor: style.borderColor,
-        borderLeftWidth: '4px',
-        color: style.textColor,
+        background: 'rgba(15, 23, 42, 0.7)',
         boxShadow: selected
-          ? `0 0 0 2px ${style.borderColor}, 0 4px 12px rgba(0,0,0,0.35)`
-          : '0 2px 8px rgba(0,0,0,0.25)',
+          ? '0 0 0 1px var(--color-cyan), 0 0 20px rgba(34,211,238,0.3), 0 4px 16px rgba(0,0,0,0.4)'
+          : '0 2px 10px rgba(0,0,0,0.35)',
+        backdropFilter: 'blur(10px)',
       }}
-      className="w-56 rounded-md border px-3 py-2 transition-shadow"
+      className={`w-60 rounded-lg border px-3 py-2.5 text-text-1 transition-all duration-150 hover:-translate-y-0.5 hover:border-line-glow ${
+        selected ? 'border-cyan' : 'border-line'
+      }`}
       title={data.detail ?? data.label}
     >
       <Handle type="target" position={Position.Top} isConnectable={false} />
 
       <div className="flex items-center justify-between gap-2">
-        <span
-          className="text-[10px] font-semibold tracking-wide"
-          style={{ color: style.borderColor }}
-        >
-          {style.label}
-        </span>
-        <span className="font-mono text-[10px] opacity-70">
+        <div className="flex items-center gap-1.5">
+          <span
+            className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+            style={{ background: style.borderColor }}
+            aria-hidden
+          />
+          <span className="text-[10px] font-medium uppercase tracking-wide text-text-3">
+            {style.label}
+          </span>
+        </div>
+        <span className="font-mono text-[10px] text-text-3">
           {formatTs(data.ts)}
         </span>
       </div>
 
-      <div
-        className="mt-0.5 truncate text-sm font-semibold"
-        title={data.label}
-      >
+      <div className="mt-1 truncate text-sm font-medium" title={data.label}>
         {data.label}
       </div>
 
       {data.detail ? (
-        <div className="mt-0.5 line-clamp-2 text-xs opacity-80">
+        <div className="mt-1 line-clamp-2 text-xs text-text-2/80">
           {truncate(data.detail, DETAIL_MAX_CHARS)}
         </div>
       ) : null}
 
       {data.agentName ? (
-        <div className="mt-0.5 truncate text-[10px] opacity-60">
+        <div className="mt-1 truncate text-[10px] text-text-3">
           {data.agentName}
         </div>
       ) : null}

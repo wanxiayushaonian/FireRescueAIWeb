@@ -511,3 +511,11 @@
   0%, 100% { opacity: 0.3; }
   50% { opacity: 1; }
 }
+
+/* React Flow 画布透明:事件树悬浮面板需透出后面 3D(容器透明不够,内部 viewport/pane 有默认底)*/
+.react-flow,
+.react-flow__viewport,
+.react-flow__pane,
+.react-flow__renderer {
+  background: transparent !important;
+}

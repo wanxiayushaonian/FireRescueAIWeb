@@ -14,7 +14,6 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import {
-  Background,
   Controls,
   MiniMap,
   ReactFlow,
@@ -35,8 +34,8 @@ import { EventTreeNode } from './EventTreeNode';
 export interface EventTreeProps {
   /** 事件树数据源(6.3 DrillRecorder)。 */
   readonly recorder: DrillRecorder;
-  /** 容器高度(px),默认 480。 */
-  readonly height?: number;
+  /** 容器高度(px 或 CSS 字符串如 '100%',默认 480)。 */
+  readonly height?: number | string;
   /**
    * 节点点击回调(MVP:显示详情面板;预留 6.6 推演引擎回放接入点)。
    */
@@ -125,7 +124,7 @@ export function EventTree({ recorder, height = 480, onNodeClick }: EventTreeProp
   return (
     <div
       style={{ height, width: '100%', position: 'relative' }}
-      className="overflow-hidden rounded-lg border border-slate-700/60 bg-slate-900/60"
+      className="overflow-hidden rounded-lg border border-line/20 bg-transparent"
     >
       <ReactFlow
         nodes={flowNodes}
@@ -139,7 +138,6 @@ export function EventTree({ recorder, height = 480, onNodeClick }: EventTreeProp
         proOptions={{ hideAttribution: true }}
         colorMode="dark"
       >
-        <Background gap={20} size={1} color="#1e293b" />
         <Controls showInteractive={false} />
         {showMiniMap ? (
           <MiniMap
