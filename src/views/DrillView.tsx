@@ -1,0 +1,209 @@
+'use client';
+
+/**
+ * DrillView — 演练对抗大屏(6.5 集成)。
+ *
+ * 布局(plan §5.5):
+ * - 顶部条(DrillToolbar):标题 + 剧本选择 + 启动/暂停/恢复/1×/5×/停止 + T+{clock}
+ * - 主区:左 3D 场景(RealSceneView,scene_id=BUILDING_21_SCENE_ID)
+ *   + 右栏(上 EventTree / 下 DrillStatusPanel)
+ *
+ * tick 编排(useEffect[clock] 驱动,避免与 useTimeline 内部 onTick 冲突):
+ * 每 tick → bus.getEvents(clock,clock) → state.tick(evs) → recorder.record(evs) → runner.onTick(clock)
+ *
+ * @see plan/2026-08-09-drill-simulation-plan.md §6.5
+ */
+import { useEffect, useRef, useState } from 'react';
+import { RealSceneView } from '@/components/RealSceneView';
+import { EventTree } from '@/drill/EventTree';
+import { DrillToolbar } from '@/drill/DrillToolbar';
+import { DrillStatusPanel } from '@/drill/DrillStatusPanel';
+import { useTimeline } from '@/drill/hooks/use-timeline';
+import { useAgentRunner } from '@/drill/hooks/use-agent-runner';
+import { EventBus, type DrillEvent } from '@/lib/drill/event-bus';
+import { DisasterState, type DisasterStatus } from '@/lib/drill/disaster-state';
+import { DrillRecorder } from '@/lib/drill/drill-recorder';
+import {
+  BUILDING_21_SCENARIO,
+  BUILDING_21_SEED_EVENTS,
+  BUILDING_21_SCENE_ID,
+  BUILDING_21_ID,
+  BUILDING_21_DRILL_ID,
+  COMMANDER_APP_ID,
+} from '@/drill/scenarios/building-21-placeholder';
+
+// ============================================================
+// 事件 → 事件树节点 label 辅助
+// ============================================================
+
+/** 从 DrillEvent 构造事件树节点 label(展示用)。 */
+function eventLabel(ev: DrillEvent): string {
+  switch (ev.type) {
+    case 'disaster': {
+      const desc = ev.payload.description;
+      return typeof desc === 'string' ? desc : '灾情事件';
+    }
+    case 'arrival': {
+      const s = Number(ev.payload.stations ?? 0);
+      const v = Number(ev.payload.vehicles ?? 0);
+      const p = Number(ev.payload.personnel ?? 0);
+      return `力量派遣: ${s}站 ${v}车 ${p}人`;
+    }
+    case 'status': {
+      const desc = ev.payload.description;
+      return typeof desc === 'string' ? desc : '状态更新';
+    }
+    default:
+      return '事件';
+  }
+}
+
+/** 从 DrillEvent 提取详情文本(事件树节点 detail 字段)。 */
+function eventDetail(ev: DrillEvent): string | undefined {
+  const desc = ev.payload.description;
+  return typeof desc === 'string' ? desc : undefined;
+}
+
+/** 将种子/剧本事件记录到 DrillRecorder(事件树展示用)。 */
+function recordSeedEvents(recorder: DrillRecorder, events: readonly DrillEvent[]): void {
+  for (const ev of events) {
+    recorder.record({
+      ts: ev.ts,
+      type: ev.type,
+      label: eventLabel(ev),
+      detail: eventDetail(ev),
+    });
+  }
+}
+
+// ============================================================
+// DrillView
+// ============================================================
+
+const SCENARIO_NAME = '21号楼(占位剧本)';
+
+export default function DrillView() {
+  // ---- 单例(useRef 懒初始化,贯穿组件生命周期)----
+  const busRef = useRef<EventBus | null>(null);
+  if (busRef.current === null) busRef.current = new EventBus();
+  const bus = busRef.current;
+
+  const stateRef = useRef<DisasterState | null>(null);
+  if (stateRef.current === null) stateRef.current = new DisasterState();
+  const state = stateRef.current;
+
+  const recorderRef = useRef<DrillRecorder | null>(null);
+  if (recorderRef.current === null) recorderRef.current = new DrillRecorder();
+  const recorder = recorderRef.current;
+
+  // ---- Timeline + AgentRunner ----
+  const { status, speed, clock, start, pause, resume, setSpeed, stop } = useTimeline();
+
+  const { runner } = useAgentRunner({
+    bus,
+    state,
+    recorder,
+    commanderAppId: COMMANDER_APP_ID,
+    buildingId: BUILDING_21_ID,
+    sceneId: BUILDING_21_SCENE_ID,
+    drillId: BUILDING_21_DRILL_ID,
+    adversaryEveryNTicks: 0, // MVP 禁用对抗(agent),6.6 联调
+  });
+
+  // ---- 显示状态 ----
+  const [snapshot, setSnapshot] = useState<DisasterStatus | null>(null);
+  /** 上次处理过的 tick,防止 resume 时同 clock 重复处理。 */
+  const lastTickRef = useRef(-1);
+
+  // ---- tick 编排:clock 变化 → 推演一个 tick ----
+  useEffect(() => {
+    if (clock <= 0 || clock <= lastTickRef.current) return;
+    lastTickRef.current = clock;
+
+    // 1. 取本 tick 事件
+    const evs = bus.getEvents(clock, clock);
+    // 2. 推进态势
+    state.tick(evs);
+    // 3. 记录事件树(种子事件;agent 决策/特情由 AgentRunner 直接 record)
+    recordSeedEvents(recorder, evs);
+    // 4. 对抗 agent 触发检查(adversaryEveryNTicks=0 时 no-op)
+    runner.onTick(clock);
+    // 5. 刷新态势面板
+    setSnapshot(state.getStatus());
+  }, [clock, bus, state, recorder, runner]);
+
+  // ---- 启动 ----
+  const handleStart = (): void => {
+    // 防御:仅 idle 允许启动(running 时 Toolbar 已隐藏启动按钮,此处兜底防 race)
+    if (status !== 'idle') return;
+    // 重置(支持反复启动)
+    bus.clear();
+    recorder.clear();
+    state.init(BUILDING_21_SCENARIO);
+    bus.seed(BUILDING_21_SEED_EVENTS);
+    lastTickRef.current = -1;
+
+    // ts=0 事件(engine 首 tick clock=1,ts=0 不会被 effect 捕获,在此显式记录)
+    recordSeedEvents(recorder, bus.getEvents(0, 0));
+
+    // 初始快照
+    setSnapshot(state.getStatus());
+
+    // 启动时间轴(1× 起步)
+    start();
+
+    // 触发指挥 agent(异步 fire-and-forget,不阻塞 tick)
+    void runner.triggerCommander(
+      '演练开始:21号楼5层电气起火,火势初起,请评估态势并部署力量。',
+    );
+  };
+
+  // ---- 停止 ----
+  const handleStop = (): void => {
+    stop();
+    bus.clear();
+    recorder.clear();
+    lastTickRef.current = -1;
+    setSnapshot(null);
+  };
+
+  // ---- 渲染 ----
+  return (
+    <div className="flex h-full flex-col">
+      <DrillToolbar
+        status={status}
+        speed={speed}
+        clock={clock}
+        scenarioName={SCENARIO_NAME}
+        onStart={handleStart}
+        onPause={pause}
+        onResume={resume}
+        onSetSpeed={setSpeed}
+        onStop={handleStop}
+      />
+
+      <div className="flex min-h-0 flex-1 gap-2 p-2">
+        {/* 左:3D 场景 */}
+        <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-line">
+          <RealSceneView sceneId={BUILDING_21_SCENE_ID} />
+        </div>
+
+        {/* 右:事件树 + 态势面板 */}
+        <aside className="flex w-[420px] shrink-0 flex-col gap-2 overflow-y-auto">
+          <div className="flex flex-col">
+            <div className="mb-1 px-1 text-[11px] font-semibold uppercase tracking-wide text-text-2">
+              事件树
+            </div>
+            <EventTree recorder={recorder} height={380} />
+          </div>
+          <div className="rounded-lg border border-line bg-bg-panel/60">
+            <div className="border-b border-line px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-2">
+              态势
+            </div>
+            <DrillStatusPanel status={snapshot} />
+          </div>
+        </aside>
+      </div>
+    </div>
+  );
+}

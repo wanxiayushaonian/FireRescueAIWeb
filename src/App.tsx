@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Archive, Database, Building2, Crosshair, Droplet, FileText } from 'lucide-react';
+import { Database, Building2, Droplet } from 'lucide-react';
 import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
 import type { ModuleKey } from '@/components/SideNav';
@@ -17,16 +17,11 @@ import ToastHost from '@/components/Toast';
 import ForceResourcePanel from '@/components/panels/ForceResourcePanel';
 import WaterSourcePanel from '@/components/panels/WaterSourcePanel';
 import BuildingProfilePanel from '@/components/panels/BuildingProfilePanel';
-import ScenarioPanel from '@/components/panels/ScenarioPanel';
-import PlanOutputPanel from '@/components/panels/PlanOutputPanel';
 import AgentChat from '@/components/AgentChat';
 import type { AgentPanelId } from '@/mock/agentScripts';
-import { beginGenerate, finishGenerate, beginConfrontation } from '@/mock/drillStore';
-import { buildDrillPlan } from '@/mock/drill';
 import TrainingView from '@/views/TrainingView';
 import CommandView from '@/views/CommandView';
-import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
-import { BUILDINGS } from '@/mock/drill';
+import DrillView from '@/views/DrillView';
 
 export default function App() {
   const [module, setModule] = useState<ModuleKey>('overview');
@@ -34,9 +29,6 @@ export default function App() {
   const [forcePanelOpen, setForcePanelOpen] = useState(true);
   const [waterPanelOpen, setWaterPanelOpen] = useState(true);
   const [buildingPanelOpen, setBuildingPanelOpen] = useState(true);
-  const [scenarioPanelOpen, setScenarioPanelOpen] = useState(true);
-  const [planPanelOpen, setPlanPanelOpen] = useState(true);
-  const [libraryPanelOpen, setLibraryPanelOpen] = useState(false);
 
   const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
   const [selectedSceneId, setSelectedSceneId] = useState<string>('');
@@ -75,10 +67,6 @@ export default function App() {
     setModule(k);
     if (k === 'overview') { setForcePanelOpen(true); setWaterPanelOpen(true); }
     if (k === 'objects') setBuildingPanelOpen(true);
-    if (k === 'drill') {
-      setScenarioPanelOpen(true);
-      setPlanPanelOpen(true);
-    }
   };
 
   // 智能体远程调起业务面板
@@ -91,29 +79,16 @@ export default function App() {
       setBuildingPanelOpen(true);
     } else if (panelId === 'drill-scenario') {
       setModule('drill');
-      setScenarioPanelOpen(true);
-      setPlanPanelOpen(true);
-      // 智能体代填灾情参数并触发生成（情景面板经 drillStore 订阅同步表单，输出面板流式展示）
-      const scenario = { buildingId: 'jm', buildingName: '金茂大厦', floor: '5F', material: '电气', trapped: 3 };
-      beginGenerate(scenario);
-      window.setTimeout(() => finishGenerate(buildDrillPlan(scenario)), 600);
     } else if (panelId === 'close-panels') {
       // 智能体远程收起当前模块全部业务面板（不切模块）
       setForcePanelOpen(false);
       setBuildingPanelOpen(false);
-      setScenarioPanelOpen(false);
-      setPlanPanelOpen(false);
-      setLibraryPanelOpen(false);
     } else if (panelId === 'training') {
       setModule('training');
     } else if (panelId === 'command') {
       setModule('command');
     } else if (panelId === 'confront-mode') {
       setModule('drill');
-      setScenarioPanelOpen(true);
-      setPlanPanelOpen(true);
-      // 智能体直接开启一局对抗模式（预案输出智能体随机灾情 + 对抗智能体自动注入特情）
-      window.setTimeout(() => beginConfrontation(), 400);
     }
   };
 
@@ -125,30 +100,13 @@ export default function App() {
       setModule('objects');
       setBuildingPanelOpen(true);
     };
-    const onIgnite = (e: Event) => {
-      const d = (e as CustomEvent<{ buildingId: string; buildingName: string }>).detail;
+    const onIgnite = () => {
       setModule('drill');
-      setScenarioPanelOpen(true);
-      setPlanPanelOpen(true);
-      const scenario = { buildingId: d.buildingId, buildingName: d.buildingName, floor: '5F', material: '电气', trapped: 2 };
-      beginGenerate(scenario);
-      window.setTimeout(() => finishGenerate(buildDrillPlan(scenario)), 600);
     };
     // TopBar 告警点击 → 跳转对象总览定位告警楼层
     const onOpenAlert = () => {
       setModule('objects');
       setBuildingPanelOpen(true);
-    };
-    // 预案库「重新载入演练」→ 切演练对抗并按库中预案重生成
-    const onReloadPlan = (e: Event) => {
-      const d = (e as CustomEvent<{ buildingName?: string }>).detail;
-      const b = BUILDINGS.find((x) => x.name === d?.buildingName) ?? BUILDINGS[0];
-      setModule('drill');
-      setScenarioPanelOpen(true);
-      setPlanPanelOpen(true);
-      const scenario = { buildingId: b.id, buildingName: b.name, floor: '5F', material: '电气', trapped: 2 };
-      beginGenerate(scenario);
-      window.setTimeout(() => finishGenerate(buildDrillPlan(scenario)), 600);
     };
     // 全局演示剧本：demoScript 派发模块切换（一键串联汇报演示）
     const onDemoSwitch = (e: Event) => {
@@ -158,13 +116,11 @@ export default function App() {
     window.addEventListener('gis:open-building-profile', onOpenProfile);
     window.addEventListener('gis:ignite-building', onIgnite);
     window.addEventListener('topbar:open-alert', onOpenAlert);
-    window.addEventListener('library:reload-plan', onReloadPlan);
     window.addEventListener('demo:switch-module', onDemoSwitch);
     return () => {
       window.removeEventListener('gis:open-building-profile', onOpenProfile);
       window.removeEventListener('gis:ignite-building', onIgnite);
       window.removeEventListener('topbar:open-alert', onOpenAlert);
-      window.removeEventListener('library:reload-plan', onReloadPlan);
       window.removeEventListener('demo:switch-module', onDemoSwitch);
     };
   }, []);
@@ -193,6 +149,8 @@ export default function App() {
                 <TrainingView />
               ) : module === 'command' ? (
                 <CommandView />
+              ) : module === 'drill' ? (
+                <DrillView />
               ) : module === 'overview' ? (
                 <RealGisMap
                   onEnterScene={(id) => {
@@ -251,57 +209,6 @@ export default function App() {
                 onBuildingChange={setObjectsBuildingId}
               />
             </DraggablePanel>
-          )}
-          {module === 'drill' && (
-            <>
-              <DraggablePanel
-                panelId="drill-scenario"
-                title="情景参数设置"
-                icon={Crosshair}
-                width={400}
-                dock="left"
-                defaultPos={{ x: 16, y: 16 }}
-                open={scenarioPanelOpen}
-                onOpenChange={setScenarioPanelOpen}
-              >
-                <ScenarioPanel />
-              </DraggablePanel>
-              <DraggablePanel
-                panelId="drill-plan"
-                title="预案输出"
-                icon={FileText}
-                width={480}
-                dock="right"
-                defaultPos={{ x: 16, y: 16 }}
-                height="calc(100% - 280px)"
-                open={planPanelOpen}
-                onOpenChange={setPlanPanelOpen}
-              >
-                <PlanOutputPanel />
-              </DraggablePanel>
-              {!libraryPanelOpen && (
-                <button
-                  onClick={() => setLibraryPanelOpen(true)}
-                  className="absolute bottom-6 left-4 z-40 flex items-center gap-1.5 rounded-lg border border-line bg-bg-panel/90 px-3 py-2 text-[13px] text-text-2 backdrop-blur transition hover:border-line-glow hover:text-cyan"
-                  title="打开预案库（归档预案/对抗评估/改进措施）"
-                >
-                  <Archive className="h-4 w-4 text-cyan" />
-                  预案库
-                </button>
-              )}
-              <DraggablePanel
-                panelId="plan-library"
-                title="预案库"
-                icon={Archive}
-                width={420}
-                dock="left"
-                defaultPos={{ x: 16, y: 430 }}
-                open={libraryPanelOpen}
-                onOpenChange={setLibraryPanelOpen}
-              >
-                <PlanLibraryPanel />
-              </DraggablePanel>
-            </>
           )}
           <SceneCommandBridge />
           <AgentChat module={module} onOpenPanel={handleAgentOpenPanel} />

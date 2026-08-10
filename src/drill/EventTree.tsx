@@ -74,8 +74,15 @@ export function EventTree({ recorder, height = 480, onNodeClick }: EventTreeProp
     };
     rebuild();
     const unsub = recorder.subscribe(() => rebuild());
+    // clear 通知:recorder.clear() 后刷新(清空残留节点 + 选中态)
+    const unsubClear = recorder.onClear(() => {
+      selectedIdRef.current = null;
+      setSelected(null);
+      rebuild();
+    });
     return () => {
       unsub();
+      unsubClear();
     };
   }, [recorder]);
 

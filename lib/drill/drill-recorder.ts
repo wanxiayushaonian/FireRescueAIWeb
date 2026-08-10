@@ -94,6 +94,7 @@ export function genNodeId(prefix = 'node'): string {
 export class DrillRecorder {
   private readonly nodes: TreeNode[] = [];
   private readonly subscribers: Set<NodeCallback> = new Set();
+  private readonly clearSubscribers: Set<() => void> = new Set();
 
   /**
    * 追加一个节点。id 缺省时由 genNodeId 生成。
@@ -136,9 +137,21 @@ export class DrillRecorder {
     };
   }
 
-  /** 清空所有节点(重置/测试用)。不清订阅者。 */
+  /**
+   * 订阅清空通知(clear() 触发;与 record 的 subscribe 分离,clear 无节点可传)。
+   * 返回取消订阅函数(幂等)。供 EventTree 在 clear 后刷新,避免残留 stale 节点。
+   */
+  onClear(cb: () => void): () => void {
+    this.clearSubscribers.add(cb);
+    return () => {
+      this.clearSubscribers.delete(cb);
+    };
+  }
+
+  /** 清空所有节点(重置/测试用)。不清 record 订阅者,但通知 onClear 订阅者刷新。 */
   clear(): void {
     this.nodes.length = 0;
+    for (const cb of this.clearSubscribers) cb();
   }
 
   /** 当前节点总数。 */

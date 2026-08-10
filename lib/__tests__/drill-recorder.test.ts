@@ -186,6 +186,30 @@ describe('DrillRecorder', () => {
     expect(cb).toHaveBeenCalledTimes(2);
   });
 
+  it('onClear 在 clear 时收到通知(与 record subscribe 分离)', () => {
+    const rec = new DrillRecorder();
+    const clearCb = vi.fn();
+    rec.onClear(clearCb);
+    rec.record(makeNode({ ts: 1, type: 'decision', label: 'a' }));
+    expect(clearCb).not.toHaveBeenCalled(); // record 不触发 onClear
+
+    rec.clear();
+    expect(clearCb).toHaveBeenCalledTimes(1);
+  });
+
+  it('onClear 返回取消订阅函数,调用后不再通知', () => {
+    const rec = new DrillRecorder();
+    const clearCb = vi.fn();
+    const unsub = rec.onClear(clearCb);
+
+    rec.clear();
+    expect(clearCb).toHaveBeenCalledTimes(1);
+
+    unsub();
+    rec.clear();
+    expect(clearCb).toHaveBeenCalledTimes(1); // 取消后不再触发
+  });
+
   it('支持全部节点类型(disaster/decision/special/arrival/status/execution/generic)', () => {
     const rec = new DrillRecorder();
     const types: TreeNode['type'][] = [
