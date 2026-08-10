@@ -9,11 +9,22 @@
 import { Play, Pause, FastForward, Square, Gauge } from 'lucide-react';
 import type { EngineStatus, Speed, ActiveSpeed } from '@/lib/drill/timeline-engine';
 
+/** 剧本选项(最小信息,Toolbar 不依赖 domain 类型)。 */
+export interface ScenarioOption {
+  readonly id: string;
+  readonly name: string;
+}
+
 export interface DrillToolbarProps {
   readonly status: EngineStatus;
   readonly speed: Speed;
   readonly clock: number;
-  readonly scenarioName: string;
+  /** 可选剧本列表(listScenarios() 驱动)。 */
+  readonly scenarios: readonly ScenarioOption[];
+  /** 当前选中剧本 id。 */
+  readonly selectedScenarioId: string;
+  /** 切换剧本(idle 时可调;running/paused 时选择器禁用)。 */
+  readonly onSelectScenario: (id: string) => void;
   readonly onStart: () => void;
   readonly onPause: () => void;
   readonly onResume: () => void;
@@ -32,7 +43,9 @@ export function DrillToolbar({
   status,
   speed,
   clock,
-  scenarioName,
+  scenarios,
+  selectedScenarioId,
+  onSelectScenario,
   onStart,
   onPause,
   onResume,
@@ -43,15 +56,37 @@ export function DrillToolbar({
   const isRunning = status === 'running';
   const isPaused = status === 'paused';
 
+  // 当前剧本展示名(非 idle 时 select 禁用,用 span 显示);找不到时显式标错
+  const selectedName =
+    scenarios.find((s) => s.id === selectedScenarioId)?.name ?? '(未知剧本)';
+
   return (
     <div className="flex items-center gap-3 border-b border-line bg-bg-panel/80 px-4 py-2.5 backdrop-blur-sm">
       {/* 标题 + 剧本选择 */}
       <div className="flex items-center gap-2">
         <span className="text-sm font-bold text-text-1">演练对抗</span>
         <span className="text-text-3">·</span>
-        <span className="rounded border border-line bg-bg-deep px-2 py-0.5 text-xs text-text-2">
-          {scenarioName}
-        </span>
+        {isIdle ? (
+          <select
+            value={selectedScenarioId}
+            onChange={(e) => onSelectScenario(e.target.value)}
+            className="rounded border border-line bg-bg-deep px-2 py-0.5 text-xs text-text-2 outline-none transition hover:border-line-glow focus:border-cyan"
+            aria-label="选择演练剧本"
+          >
+            {scenarios.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span
+            className="cursor-not-allowed rounded border border-line bg-bg-deep px-2 py-0.5 text-xs text-text-2"
+            title="演练进行中,不可切换剧本"
+          >
+            {selectedName}
+          </span>
+        )}
       </div>
 
       <div className="h-5 w-px bg-line" />

@@ -13,7 +13,7 @@
  *
  * @see plan/2026-08-09-drill-simulation-plan.md §6.5
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { RealSceneView } from '@/components/RealSceneView';
 import { EventTreeOverlay } from '@/drill/EventTreeOverlay';
 import { DrillToolbar } from '@/drill/DrillToolbar';
@@ -24,13 +24,12 @@ import { EventBus, type DrillEvent } from '@/lib/drill/event-bus';
 import { DisasterState, type DisasterStatus } from '@/lib/drill/disaster-state';
 import { DrillRecorder } from '@/lib/drill/drill-recorder';
 import {
-  BUILDING_21_SCENARIO,
-  BUILDING_21_SEED_EVENTS,
-  BUILDING_21_SCENE_ID,
-  BUILDING_21_ID,
-  BUILDING_21_DRILL_ID,
-  COMMANDER_APP_ID,
-} from '@/drill/scenarios/building-21-placeholder';
+  DEFAULT_SCENARIO_ID,
+  getScenario,
+  getDefaultScenario,
+  listScenarios,
+  type DrillScenarioDef,
+} from '@/drill/scenarios';
 
 // ============================================================
 // 事件 → 事件树节点 label 辅助
@@ -80,8 +79,6 @@ function recordSeedEvents(recorder: DrillRecorder, events: readonly DrillEvent[]
 // DrillView
 // ============================================================
 
-const SCENARIO_NAME = '21号楼(占位剧本)';
-
 export default function DrillView() {
   // ---- 单例(useRef 懒初始化,贯穿组件生命周期)----
   const busRef = useRef<EventBus | null>(null);
@@ -96,6 +93,15 @@ export default function DrillView() {
   if (recorderRef.current === null) recorderRef.current = new DrillRecorder();
   const recorder = recorderRef.current;
 
+  // ---- 剧本选择(Scenario Registry;listScenarios 驱动工具栏下拉)----
+  const scenarios = useMemo(() => listScenarios(), []);
+  const [selectedScenarioId, setSelectedScenarioId] =
+    useState<string>(DEFAULT_SCENARIO_ID);
+  // registry 启动时已注册 DEFAULT_SCENARIO_ID(index.ts import 触发 building-21 注册);
+  // getDefaultScenario 内部保证非空(未注册时 throw,封装在函数内不破坏 hooks 顺序)。
+  const activeScenario: DrillScenarioDef =
+    getScenario(selectedScenarioId) ?? getDefaultScenario();
+
   // ---- Timeline + AgentRunner ----
   const { status, speed, clock, start, pause, resume, setSpeed, stop } = useTimeline();
 
@@ -103,11 +109,12 @@ export default function DrillView() {
     bus,
     state,
     recorder,
-    commanderAppId: COMMANDER_APP_ID,
-    buildingId: BUILDING_21_ID,
-    sceneId: BUILDING_21_SCENE_ID,
-    drillId: BUILDING_21_DRILL_ID,
-    adversaryEveryNTicks: 0, // MVP 禁用对抗(agent),6.6 联调
+    commanderAppId: activeScenario.commanderAppId,
+    buildingId: activeScenario.buildingId,
+    sceneId: activeScenario.sceneId,
+    drillId: activeScenario.drillId,
+    adversaryEveryNTicks: activeScenario.adversaryEveryNTicks, // 剧本配置;MVP=0
+    scenarioKey: activeScenario.id, // 切换剧本时重建 runner,确保新 appId/sceneId 生效
   });
 
   // ---- 显示状态 ----
@@ -153,8 +160,8 @@ export default function DrillView() {
     // 重置(支持反复启动)
     bus.clear();
     recorder.clear();
-    state.init(BUILDING_21_SCENARIO);
-    bus.seed(BUILDING_21_SEED_EVENTS);
+    state.init(activeScenario.scenario);
+    bus.seed(activeScenario.seedEvents);
     lastTickRef.current = -1;
 
     // ts=0 事件(engine 首 tick clock=1,ts=0 不会被 effect 捕获,在此显式记录)
@@ -167,9 +174,9 @@ export default function DrillView() {
     start();
 
     // 触发指挥 agent(异步 fire-and-forget,不阻塞 tick)
-    void runner.triggerCommander(
-      '演练开始:21号楼5层电气起火,火势初起,请评估态势并部署力量。',
-    );
+    // TODO(6.6): runAgent 失败仅 logger.warn,UI 无感知;后续注入 status/execution
+    // 事件到 bus/recorder 让操作员看到「agent 触发失败」。
+    void runner.triggerCommander(activeScenario.briefing);
   };
 
   // ---- 停止 ----
@@ -188,7 +195,9 @@ export default function DrillView() {
         status={status}
         speed={speed}
         clock={clock}
-        scenarioName={SCENARIO_NAME}
+        scenarios={scenarios}
+        selectedScenarioId={selectedScenarioId}
+        onSelectScenario={setSelectedScenarioId}
         onStart={handleStart}
         onPause={pause}
         onResume={resume}
@@ -199,7 +208,7 @@ export default function DrillView() {
       <div className="flex min-h-0 flex-1 gap-2 p-2">
         {/* 左:3D 场景(事件树移出右栏后扩大)*/}
         <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-line">
-          <RealSceneView sceneId={BUILDING_21_SCENE_ID} />
+          <RealSceneView sceneId={activeScenario.sceneId} />
         </div>
 
         {/* 右:事件树入口按钮 + 态势面板(事件树本体改 Ctrl+K 悬浮唤出)*/}

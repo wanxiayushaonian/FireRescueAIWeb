@@ -32,6 +32,12 @@ export interface UseAgentRunnerParams {
   readonly postChat?: AgentRunnerOptions['postChat'];
   readonly adversaryEveryNTicks?: number;
   readonly logger?: DrillLogger;
+  /**
+   * 场景身份 key(通常 = 剧本 id)。变化时重建 runner,确保切换剧本后
+   * commanderAppId/sceneId/buildingId/drillId 用新值(DrillToolbar 仅 idle 允许
+   * 切换剧本,故重建不会 mid-session 中断运行中演练)。
+   */
+  readonly scenarioKey: string;
 }
 
 export interface UseAgentRunnerResult {
@@ -44,7 +50,8 @@ export interface UseAgentRunnerResult {
 
 /**
  * 持有 AgentRunner + 引用 bus/state/recorder。
- * runner 实例在参数 identity 稳定时复用(避免每 render 重建)。
+ * runner 在 scenarioKey 变化时重建(切换剧本用新 appId/sceneId);其余参数经
+ * paramsRef 实时读取(bus/state/recorder 等单例 identity 稳定)。
  */
 export function useAgentRunner(params: UseAgentRunnerParams): UseAgentRunnerResult {
   const paramsRef = useRef(params);
@@ -65,9 +72,9 @@ export function useAgentRunner(params: UseAgentRunnerParams): UseAgentRunnerResu
       adversaryEveryNTicks: p.adversaryEveryNTicks,
       logger: p.logger,
     });
-    // 仅在首次构建 runner;参数变更不重建(避免会话中断)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    // scenarioKey 变化(切换剧本)时重建 runner;Toolbar 锁定非 idle 选择器,
+    // 故重建只在 idle 发生,不中断运行中演练。
+  }, [params.scenarioKey]);
 
   // unmount 时无需显式清理(AgentRunner 无 timer/监听器);保留 effect 位置以便后续扩展
   useEffect(() => {
