@@ -33,3 +33,5 @@ Thumbs.db
 
 
 temp/
+# ZCode 工具产物(计划/会话,不入库)
+.zcode/
