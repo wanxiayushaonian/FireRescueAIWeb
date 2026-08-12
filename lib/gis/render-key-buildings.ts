@@ -5,7 +5,7 @@
 import type L from 'leaflet';
 import type { KeyUnit } from '../key-unit-mapper';
 import type { KeyBuilding } from '../key-building-mapper';
-import { popupForKeyBuilding } from './popup-html';
+import { popupForKeyBuilding, popupBuildingAnalysis } from './popup-html';
 import { keyBuildingIconSvg, clusterBubbleSvg, waterClusterCell, MARKER_CLUSTER_MAX_ZOOM } from '../map-icons';
 import { gridCluster } from '../grid-cluster';
 import { POINT_CAP, cullToBounds, decidePointRender, type ViewportBounds } from './point-render';
@@ -17,6 +17,8 @@ export interface RenderKeyBuildingsOpts {
   prevMarkers: Map<string, L.Marker>; // 上一帧注册表,用于 popup openId 恢复
   cap?: number; // 视口内点位上限,超限回落聚合气泡(默认 POINT_CAP)
   onRadial: (target: RadialTarget, latlng: [number, number]) => void;
+  /** popup 打开时异步取周边响应摘要(主力站数/最近 ETA/水源数),返回 null 则不追加。失败由调用方静默处理。 */
+  onPopupAnalyze?: (b: KeyBuilding) => Promise<{ stationCount: number; nearestEtaMin: number | null; waterCount: number } | null>;
 }
 
 /** 渲染重点建筑图层(先 clearLayers),返回 id → marker 注册表(聚合气泡不入表;调用方接管 buildingMarkersRef)。 */
@@ -47,7 +49,18 @@ export function renderKeyBuildings(
     })
       .bindPopup(popupForKeyBuilding(b, unitName), { className: 'gis-popup' })
       .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'building', id: b.id, name: b.name, lng: b.lng, lat: b.lat, sceneId: b.sceneId }, [b.lat, b.lng]); });
-    marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
+    marker.on('popupopen', () => {
+      marker.getElement()?.classList.add('gis-marker-active');
+      // 异步追加周边响应摘要(主力站/最近 ETA/水源);用户关闭 popup 后到达则跳过
+      if (!opts.onPopupAnalyze) return;
+      opts.onPopupAnalyze(b)
+        .then((summary) => {
+          if (!summary || !marker.isPopupOpen()) return;
+          const popup = marker.getPopup();
+          if (popup) popup.setContent(popupForKeyBuilding(b, unitName) + popupBuildingAnalysis(summary));
+        })
+        .catch(() => { /* 静默:摘要失败时 popup 保持基础内容 */ });
+    });
     marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     markers.set(b.id, marker);
     layer.addLayer(marker);

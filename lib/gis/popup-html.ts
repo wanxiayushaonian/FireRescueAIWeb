@@ -35,6 +35,15 @@ export function popupForKeyBuilding(b: KeyBuilding, unitName?: string): string {
   );
 }
 
+/** 建筑 popup 的周边响应摘要行(由 analyze_response 聚合后注入)。纯函数。
+ *  nearestEtaMin=null → 无可达主力站;stationCount=0 → 周边无主力站。 */
+export function popupBuildingAnalysis(s: { stationCount: number; nearestEtaMin: number | null; waterCount: number }): string {
+  const eta = s.nearestEtaMin != null ? ` · 最近 <b>${s.nearestEtaMin}</b> 分` : '';
+  return (
+    `<br/><span style="color:#22d3ee">周边主力站 <b>${s.stationCount}</b>${eta} · 水源 <b>${s.waterCount}</b></span>`
+  );
+}
+
 /** 单位 popup 追加的警情行(有活跃警情时)。 */
 export function popupIncidentSuffix(inc: Incident): string {
   return `<br/><span style="color:#ef4444">⚠ 警情:${inc.incidentType} · ${inc.level} 级 · ${inc.status}${inc.description ? `(${inc.description})` : ''}</span>`;

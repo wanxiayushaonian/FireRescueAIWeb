@@ -33,3 +33,40 @@ export async function fetchAiDispatch(target: {
   if (!data.ok) throw new Error(data.error || 'AI 派遣未能规划路线');
   return { target: data.target || target.name, routes: data.routes ?? [] };
 }
+
+/** analyze_response 成功响应。 */
+interface AnalyzeResponse {
+  ok: boolean;
+  error?: string;
+  stations?: Array<{ eta_sec: number | null }>;
+  water_sources?: unknown[];
+  summary?: { nearest_eta_sec: number | null };
+}
+
+/** 建筑 popup 摘要:周边主力站数 / 最近到场分钟 / 周边水源数。 */
+export interface BuildingAnalysisSummary {
+  stationCount: number;
+  nearestEtaMin: number | null; // null = 无可达主力站(或全部 driving 失败)
+  waterCount: number;
+}
+
+/**
+ * 灾情响应分析摘要(供建筑 popup 展示):周边主力站 ETA + 周边水源。
+ * 复用 znya analyze_response(MCP analyze_response 同源)。失败抛异常,调用方可静默忽略。
+ */
+export async function fetchBuildingAnalysis(lng: number, lat: number): Promise<BuildingAnalysisSummary> {
+  const res = await fetch('/api/business/dispatch/analyze', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ target_lng: lng, target_lat: lat }),
+  });
+  if (!res.ok) throw new Error(`响应分析请求失败 ${res.status}`);
+  const d = (await res.json()) as AnalyzeResponse;
+  if (!d.ok) throw new Error(d.error || '响应分析失败');
+  const nearest = d.summary?.nearest_eta_sec ?? null;
+  return {
+    stationCount: (d.stations ?? []).length,
+    nearestEtaMin: nearest != null ? Math.round(nearest / 60) : null,
+    waterCount: (d.water_sources ?? []).length,
+  };
+}

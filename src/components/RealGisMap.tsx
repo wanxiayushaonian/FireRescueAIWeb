@@ -16,6 +16,7 @@ import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import { fetchGeocode } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
+import { fetchBuildingAnalysis } from '@/api/dispatch';
 import { MARKER_CLUSTER_MAX_ZOOM, shouldShowWater, shouldShowWaterPoints, dispatchTargetIconSvg } from '@/lib/map-icons';
 import { decidePointRender } from '@/lib/gis/point-render';
 import { renderStations, type RenderStation } from '@/lib/gis/render-stations';
@@ -826,6 +827,17 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
   // 重点单位:zoom<14 网格聚合气泡(有警情的单位始终逐点,警情态不进气泡);>=14 视口裁剪逐点(超限回落聚合,popup 保活)。渲染函数体在 lib/gis/render-key-units
   // unitClusterMode:>=14 恒定 'points'(缩放不再重建千级 marker);<14 每级重建气泡(格宽随 zoom 变);viewportTick 驱动平移重建
   const unitClusterMode: string | number = zoom >= MARKER_CLUSTER_MAX_ZOOM ? 'points' : zoom;
+  // 重点建筑 popup 打开时,异步取周边响应摘要(主力站/最近 ETA/水源),注入 popup 末尾。失败静默。
+  const onBuildingPopupAnalyze = useCallback(
+    async (b: { lng: number; lat: number }) => {
+      try {
+        return await fetchBuildingAnalysis(b.lng, b.lat);
+      } catch {
+        return null;
+      }
+    },
+    [],
+  );
   // 按面板小眼睛过滤重点单位类型
   const visibleKeyUnits = useMemo(() => {
     if (layerPrefs.hiddenKeyUnitTypes.length === 0) return keyUnits;
@@ -865,8 +877,9 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       bounds,
       prevMarkers: buildingMarkersRef.current,
       onRadial: openRadial,
+      onPopupAnalyze: onBuildingPopupAnalyze,
     });
-  }, [buildings, keyUnits, mapInited, openRadial, unitClusterMode, viewportTick]);
+  }, [buildings, keyUnits, mapInited, openRadial, onBuildingPopupAnalyze, unitClusterMode, viewportTick]);
 
   // 重点区域图层:多边形高亮 + hover 名称;点击 flyTo 区域中心 zoom 16。渲染函数体在 lib/gis/render-regions
   useEffect(() => {
