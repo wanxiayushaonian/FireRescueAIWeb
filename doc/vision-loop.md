@@ -201,9 +201,9 @@
 | 预案生成(LLM) | 🟡 部分通 | generation_status: 2 done / 1 stuck running / 87 idle;LLM 链路通但有 stuck bug(reset-generation 端点可恢复) |
 | 推演引擎(drill) | ✅ 已实现 | lib/drill 1684 行 + 3 单测 + DrillView 接线;待运行时端到端跑 |
 | agent 对话 | ✅ 通 | assistant-ui 真接 + enable_thinking 已开(reasoning 流可见) |
-| **agent 工具闭环** | 🟡 **代码+配置就位,待公网放行** | 8788 streamable-http(协议对)+ 鉴权双通道 + mcp_server 配置切 8788;唯一卡点:云控制台放行 TCP 8788 |
+| **agent 工具闭环** | 🟡 **8787/mcp 公网通(12 工具可枚举),待 console 启用白名单** | 8787 streamable-http 升级(绕过 8788 放行);平台能拉工具但 agent-chat 未触发标准 tool-call,需 console 启用工具白名单(API 配 tools 字符串数组致 500,已回滚) |
 
-**唯一硬卡点:公网放行 8788**。放行后 agent 即可调 8 个业务工具(query_units/plan_dispatch/analyze_response...),智能派遣/响应分析闭环打通。其余环节均已通或可自主验证。
+**当前卡点(更新)**:8788 公网放行已绕过(8787 streamable 公网通,12 工具可枚举)。唯一剩余:console 启用工具白名单(让平台把 mcp_server 工具接入 agent function calling;API 探测会破坏 app,需 console)。代码侧全部就位并验证。
 
 ---
 
