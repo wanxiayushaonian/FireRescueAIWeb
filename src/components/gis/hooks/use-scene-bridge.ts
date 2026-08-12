@@ -46,8 +46,11 @@ export function useSceneBridge(deps: {
             const tryOpen = () => {
               tries += 1;
               const mk = stationMarkers.current.get(p.id!) ?? waterMarkers.current.get(p.id!) ?? keyUnitMarkers.current.get(p.id!);
-              if (mk) mk.openPopup();
-              else if (tries < 6) window.setTimeout(tryOpen, 400);
+              if (mk) {
+                // 选中态高亮(发光外圈,不依赖 popup 打开;popup 打开也会经 popupopen 加同 class)
+                mk.getElement()?.classList.add('gis-marker-active');
+                mk.openPopup();
+              } else if (tries < 6) window.setTimeout(tryOpen, 400);
             };
             window.setTimeout(tryOpen, 400);
           }
@@ -55,7 +58,11 @@ export function useSceneBridge(deps: {
         const hit = stationsRef.current.find((s) => latest.target?.includes(s.name));
         if (hit) {
           map.flyTo([hit.lat, hit.lng], Math.max(map.getZoom(), 14));
-          stationMarkers.current.get(hit.id)?.openPopup();
+          const mk = stationMarkers.current.get(hit.id);
+          if (mk) {
+            mk.getElement()?.classList.add('gis-marker-active');
+            mk.openPopup();
+          }
         } else {
           const w = waterRef.current.find((x) => latest.target?.includes(x.name));
           if (w) {
@@ -66,8 +73,10 @@ export function useSceneBridge(deps: {
             const tryOpen = () => {
               tries += 1;
               const mk = waterMarkers.current.get(w.id);
-              if (mk) mk.openPopup();
-              else if (tries < 6) window.setTimeout(tryOpen, 400);
+              if (mk) {
+                mk.getElement()?.classList.add('gis-marker-active');
+                mk.openPopup();
+              } else if (tries < 6) window.setTimeout(tryOpen, 400);
             };
             window.setTimeout(tryOpen, 400);
           } else if (latest.target) {

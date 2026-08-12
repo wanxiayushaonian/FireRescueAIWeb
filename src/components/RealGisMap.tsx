@@ -25,6 +25,7 @@ import { renderIncidents } from '@/lib/gis/render-incidents';
 import { renderKeyBuildings } from '@/lib/gis/render-key-buildings';
 import { renderRegions } from '@/lib/gis/render-regions';
 import { buildDistrictIndex, hitDistrict, type DistrictIndex } from '@/lib/gis/district-hit';
+import { useDistrictStats } from '@/lib/district-stats-store';
 import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
 import type { Region } from '@/lib/region-mapper';
@@ -58,6 +59,10 @@ const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: string) => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
+  // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
+  const cityBoundsRef = useRef<L.LatLngBounds | null>(null);
+  // 区县路径表(adcode → polygon),选中区县高亮用
+  const districtPathsRef = useRef<Map<string, L.Polygon>>(new Map());
   // 区县命中索引(任意比例尺鼠标坐标反查用) + 上次命中 adcode(仅变化时派发事件)
   const districtIndexRef = useRef<DistrictIndex[]>([]);
   const lastHitDistrictRef = useRef<string | null>(null);
@@ -239,10 +244,12 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
             }
             const path = l as L.Polygon;
             if (level === 'district') {
+              // 注册区县路径表(选中高亮用)
+              const adcode = String(f?.properties?.adcode ?? '');
+              if (adcode) districtPathsRef.current.set(adcode, path);
               // 悬停/点击区县 → 面板联动加载该区县数据（派发 gis:select-district）
               // 同时同步 lastHitDistrictRef,与 mousemove 反查共享去重
               const selectDistrict = () => {
-                const adcode = String(f?.properties?.adcode ?? '');
                 if (adcode) lastHitDistrictRef.current = adcode;
                 window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: adcode || null } }));
               };
@@ -263,6 +270,8 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
                 selectDistrict();
               });
             } else if (level === 'city') {
+              // 保存九江整体边界(「九江全景」按钮 flyToBounds 用)
+              cityBoundsRef.current = path.getBounds();
               // 点击市级外框 → 清除区县过滤（面板恢复全部数据）
               path.on('click', () => {
                 map.flyToBounds(path.getBounds(), { padding: [24, 24] });
@@ -295,12 +304,31 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     };
     map.on('mousemove', onMouseMove);
 
+    // 选中区县高亮:监听 gis:select-district,高亮当前区县(描边加粗 + 填充加深),清除其他
+    const HIGHLIGHT_STYLE = {
+      color: 'rgba(34, 211, 238, 1)',
+      weight: 3,
+      fillColor: 'rgba(34, 211, 238, 0.22)',
+      fillOpacity: 0.22,
+    };
+    const onSelectDistrict = (e: Event) => {
+      const code = (e as CustomEvent<{ districtCode: string | null }>).detail?.districtCode ?? null;
+      districtPathsRef.current.forEach((p, adcode) => {
+        // L.geoJSON 创建的 layer 自带原始 feature(styleFor 恢复样式用)
+        const f = (p as L.Path & { feature?: any }).feature;
+        p.setStyle(code === adcode ? HIGHLIGHT_STYLE : styleFor(f));
+      });
+    };
+    window.addEventListener('gis:select-district', onSelectDistrict);
+
     return () => {
       alive = false;
       map.off('zoomend', onZoom);
       map.off('mousemove', onMouseMove);
+      window.removeEventListener('gis:select-district', onSelectDistrict);
       boundaryGeoRef.current = null;
       districtIndexRef.current = [];
+      districtPathsRef.current.clear();
       lastHitDistrictRef.current = null;
     };
   }, [mapInited]);
@@ -797,6 +825,9 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     }
   }, [draftCoord, coordFix, queryMarker]);
 
+  // 当前区县统计快照(由 ResourceOverviewPanel 写入共享 store):顶部信息条展示
+  const districtStats = useDistrictStats();
+
   return (
     <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
       <MapLayerControl
@@ -814,7 +845,33 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
         onToggleIncidents={() => setShowIncidents((v) => !v)}
         showRegions={showRegions}
         onToggleRegions={() => setShowRegions((v) => !v)}
+        onResetView={() => {
+          // 返回整个九江市比例:flyToBounds 适配整体边界 + 清除区县过滤
+          const map = mapRef.current;
+          if (map && cityBoundsRef.current) {
+            map.flyToBounds(cityBoundsRef.current, { padding: [24, 24] });
+          } else {
+            addSceneAction({ action: 'resetView', target: '返回九江市全景', source: '面板' });
+          }
+          window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: null } }));
+        }}
       />
+      {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化) */}
+      <div className="absolute bottom-8 left-3 z-[450] flex items-center gap-3 rounded-lg border border-line bg-bg-panel/90 px-3 py-2 shadow-lg backdrop-blur">
+        <div className="flex items-center gap-1.5">
+          <MapPin className="h-3.5 w-3.5 text-cyan" />
+          <span className="whitespace-nowrap text-[13px] font-bold text-cyan">{districtStats.districtName}</span>
+        </div>
+        <span className="h-4 w-px bg-line/60" />
+        <div className="flex items-center gap-3 font-num text-[12px] text-text-2">
+          <span>队站 <b className="text-text-1">{districtStats.stations.toLocaleString()}</b></span>
+          <span>人员 <b className="text-text-1">{districtStats.personnel.toLocaleString()}</b></span>
+          <span>车辆 <b className="text-text-1">{districtStats.vehicles.toLocaleString()}</b></span>
+          <span>装备 <b className="text-text-1">{districtStats.equipment.toLocaleString()}</b></span>
+          <span>水源 <b className="text-text-1">{districtStats.water.toLocaleString()}</b></span>
+          <span>单位 <b className="text-text-1">{districtStats.keyUnits.toLocaleString()}</b></span>
+        </div>
+      </div>
       <CommandPalette
         open={paletteOpen}
         query={paletteQuery}
