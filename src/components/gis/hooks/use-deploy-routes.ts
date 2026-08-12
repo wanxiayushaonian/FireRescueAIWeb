@@ -6,6 +6,7 @@ import L from 'leaflet';
 import type { Station } from '@/mock/types';
 import { fetchNearbyWaterSources } from '@/api/water';
 import { fetchDrivingRoute } from '@/api/route';
+import { fetchAiDispatch } from '@/api/dispatch';
 import { haversineKm } from '@/lib/geo-query';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { addSceneAction } from '@/mock/sceneLog';
@@ -43,6 +44,7 @@ export function useDeployRoutes(deps: {
   setPlanned: React.Dispatch<React.SetStateAction<PlannedRoute[]>>;
   planning: boolean;
   planRoutes: (stationIds: string[]) => Promise<void>;
+  aiDispatch: () => Promise<void>;
   clearRoutes: () => void;
   highlightNearbyWater: (t: { lng: number; lat: number }) => void;
 } {
@@ -175,6 +177,35 @@ export function useDeployRoutes(deps: {
     setPlanned([]);
   }, [routeLayer, highlightLayer]);
 
+  // AI 智能派遣:后端 plan_dispatch 自动推荐主力站 + 规划路线(复用 MCP 同源逻辑)。
+  // 渲染链路与 planRoutes 一致(renderRoutes → setPlanned → flyToBounds → sceneLog),
+  // 区别仅在路线来源:planRoutes 逐站调 driving,aiDispatch 由后端一次性返回。
+  const aiDispatch = useCallback(async () => {
+    const map = mapRef.current;
+    if (!map || !routeLayer || !deploy) return;
+    setPlanning(true);
+    setPlanned([]);
+    highlightLayer?.clearLayers();
+    try {
+      const { routes } = await fetchAiDispatch({
+        name: deploy.target.name, lng: deploy.target.lng, lat: deploy.target.lat,
+      });
+      const { bounds, summary } = renderRoutes(routeLayer, routes);
+      setPlanned(summary);
+      if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
+      addSceneAction({
+        action: 'showRoute',
+        target: `AI 派遣路线:${deploy.target.name}(${summary.length} 站)`,
+        params: { routes: summary },
+        source: '面板',
+      });
+    } catch {
+      // 后端规划失败:不假装成功,planned 保持空;具体错误由调用方/日志体现
+    } finally {
+      setPlanning(false);
+    }
+  }, [mapRef, routeLayer, highlightLayer, deploy]);
+
   // 原 DeployPanel onClose 的 setDeploy(null)+clearRoutes
   const closeDeploy = useCallback(() => {
     setDeploy(null);
@@ -203,6 +234,7 @@ export function useDeployRoutes(deps: {
     setPlanned,
     planning,
     planRoutes,
+    aiDispatch,
     clearRoutes,
     highlightNearbyWater,
   };

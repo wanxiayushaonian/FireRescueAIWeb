@@ -160,7 +160,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
   const {
     deploy, openDeploy, closeDeploy,
     planned, setPlanned,
-    planning, planRoutes, clearRoutes, highlightNearbyWater,
+    planning, planRoutes, aiDispatch, clearRoutes, highlightNearbyWater,
   } = useDeployRoutes({
     mapRef,
     routeLayer: layers.route,
@@ -1160,6 +1160,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           emptyHint={deploy.emptyHint}
           forceCounts={stationForce}
           onPlan={(ids) => planRoutes(ids)}
+          onAiDispatch={aiDispatch}
           onClear={clearRoutes}
           onClose={closeDeploy}
         />

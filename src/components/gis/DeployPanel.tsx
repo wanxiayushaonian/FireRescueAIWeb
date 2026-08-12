@@ -35,13 +35,14 @@ interface Props {
   /** 各站真实力量(人员/车辆/装备),缺失时回退到 station 字段;用于选站汇总 */
   forceCounts?: Map<string, StationForce>;
   onPlan: (stationIds: string[]) => void;
+  onAiDispatch?: () => void; // AI 智能派遣:后端自动推荐主力站 + 规划路线
   onClear: () => void;
   onClose: () => void;
 }
 
 const fmtDur = (s: number) => (s >= 60 ? `${Math.round(s / 60)} 分钟` : `${s} 秒`);
 
-export default function DeployPanel({ targetName, stations, planned, planning, anchor, emptyHint, forceCounts, onPlan, onClear, onClose }: Props) {
+export default function DeployPanel({ targetName, stations, planned, planning, anchor, emptyHint, forceCounts, onPlan, onAiDispatch, onClear, onClose }: Props) {
   // 阻止滚轮冒泡到 Leaflet 地图(否则缩放地图而非滚动面板列表)
   const rootRef = useRef<HTMLDivElement>(null);
   useWheelGuard(rootRef);
@@ -178,11 +179,12 @@ export default function DeployPanel({ targetName, stations, planned, planning, a
             规划到场路线({selected.size})
           </button>
           <button
-            disabled
-            title="待 MCP 工具接入(agent 智能派遣)"
-            className="flex items-center justify-center gap-1 rounded border border-line px-2 py-1 text-[12px] text-text-3 opacity-60"
+            onClick={onAiDispatch}
+            disabled={!onAiDispatch || planning}
+            title="AI 智能派遣:自动推荐主力站并规划到场路线"
+            className="flex items-center justify-center gap-1 rounded border border-violet-400/50 bg-violet-400/10 px-2 py-1 text-[12px] text-violet-300 transition hover:bg-violet-400/20 disabled:opacity-50"
           >
-            <Bot className="h-3.5 w-3.5" /> AI
+            {planning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5" />} AI
           </button>
         </div>
         {/* 路线摘要 */}
