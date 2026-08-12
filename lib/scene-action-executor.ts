@@ -1,5 +1,6 @@
 import { subscribeSceneLog } from '../src/mock/sceneLog';
 import type { SceneAction } from '../src/mock/sceneLog';
+import type { RecipeStore } from './scene-recipe/store';
 
 /**
  * sceneLog action → SoonspaceRuntime 真实 SDK 调用的映射层。
@@ -38,7 +39,7 @@ export type SceneExecutorRuntime = {
 
 export type MapResult = { executed: boolean; reason?: string };
 
-export function mapSceneAction(action: SceneAction, runtime: SceneExecutorRuntime): MapResult {
+export function mapSceneAction(action: SceneAction, runtime: SceneExecutorRuntime, store?: RecipeStore): MapResult {
   const { action: name, target, params } = action;
   if (IGNORED.has(name)) return { executed: false, reason: `忽略:${name} 留架构第4步` };
   switch (name) {
@@ -59,6 +60,11 @@ export function mapSceneAction(action: SceneAction, runtime: SceneExecutorRuntim
       const storyIds = Array.isArray((params as { storyIds?: unknown })?.storyIds)
         ? (params as { storyIds: string[] }).storyIds
         : [];
+      // 经 Recipe 单一真相源(若 store 可用);否则回退原直调
+      if (store) {
+        store.patchStructural({ visibleStories: storyIds });
+        return { executed: true };
+      }
       runtime.switchFloor(storyIds);
       return { executed: true };
     }
@@ -76,10 +82,10 @@ export function mapSceneAction(action: SceneAction, runtime: SceneExecutorRuntim
  * 跳过的动作(IGNORED / target 非 id / 未知)打 warn,便于排查。
  * @returns 退订函数。
  */
-export function subscribeSceneActions(runtime: SceneExecutorRuntime): () => void {
+export function subscribeSceneActions(runtime: SceneExecutorRuntime, store?: RecipeStore): () => void {
   return subscribeSceneLog((_list, latest) => {
     if (!latest) return;
-    const res = mapSceneAction(latest, runtime);
+    const res = mapSceneAction(latest, runtime, store);
     if (!res.executed && res.reason) {
       console.warn('[real-scene] action skipped', latest.action, res.reason);
     }

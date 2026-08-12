@@ -2,6 +2,7 @@ import { sceneSdk } from '@/lib/scene-sdk';
 import { registerDefaultTools, type AddSceneActionFn } from './handlers';
 import { connectSceneEvents } from './transport';
 import type { SceneSdkLike } from './types';
+import type { RecipeStore } from '../scene-recipe/store';
 
 const SCENE_EVENT = 'ustudio:scene';
 
@@ -24,6 +25,8 @@ export type BridgeDeps = {
   eventTarget: EventTargetLike;
   /** show_route 写场景总线用(透传给 registerDefaultTools);可选。 */
   addSceneAction?: AddSceneActionFn;
+  /** Recipe 真相源(透传给 registerDefaultTools,focus_floors 经此落地);可选。 */
+  store?: RecipeStore | null;
 };
 
 /**
@@ -45,10 +48,11 @@ export function manageSceneBridge(
 ): () => void {
   const getSdk = deps?.getSdk ?? (() => sceneSdk() as unknown as SceneSdkLike);
   const addSceneAction = deps?.addSceneAction;
+  const store = deps?.store ?? undefined;
   const register =
     deps?.register ??
     ((sdk: SceneSdkLike) =>
-      registerDefaultTools(sdk, addSceneAction ? { addSceneAction } : undefined));
+      registerDefaultTools(sdk, addSceneAction ? { addSceneAction } : undefined, store));
   const connect = deps?.connect ?? connectSceneEvents;
   const eventTarget: EventTargetLike | null =
     deps?.eventTarget ??
