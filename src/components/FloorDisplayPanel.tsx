@@ -145,7 +145,7 @@ function extractBuildings(tree: SceneTreeNode | null): BuildingOption[] {
 // ============================================================
 
 export function FloorDisplayPanel() {
-  const { tree, runtime, view, initialView, setCustomInitialView, resetCustomInitialView } = useScene();
+  const { tree, runtime, view, initialView, recipeStore, setCustomInitialView, resetCustomInitialView } = useScene();
   const [expanded, setExpanded] = useState(true);
   const [selectedStoryKeys, setSelectedStoryKeys] = useState<Set<string>>(new Set());
   const [selectedBuildingKeys, setSelectedBuildingKeys] = useState<Set<string>>(new Set());
@@ -204,25 +204,23 @@ export function FloorDisplayPanel() {
       .filter(Boolean);
   }, [buildings, selectedBuildingKeys, selectedStoryKeys]);
 
-  // 应用视图模式到场景
+  // 应用视图模式:经 RecipeStore 单一真相源(不再直调 runtime.setViewMode)
   const applyViewMode = useCallback(() => {
-    // 用户未主动操作前不调用 setViewMode，避免挂载即重置场景
+    // 用户未主动操作前不 patch,避免挂载即重置场景
     if (!dirtyRef.current) return;
-    if (!runtime || view !== 'ready' || !tree) return;
+    if (!recipeStore || view !== 'ready') return;
 
-    const storyOutIds = selectedStoryOutIds;
-    const buildingOutIds = selectedBuildingOutIds;
-
-    // 构建 params：基础 mode + 可选炸开（参照参考项目）
-    const params: Array<{ type: string; ids: string[] }> = [{ type: mode, ids: storyOutIds }];
-    if (yExtend) params.push({ type: 'YExtend', ids: storyOutIds });
-
-    console.info('[FloorDisplay] setViewMode', { mode, yExtend, storyCount: storyOutIds.length, buildingCount: buildingOutIds.length });
-
-    void (async () => {
-      await runtime.setViewMode(params, tree, storyOutIds, buildingOutIds);
-    })();
-  }, [runtime, view, tree, selectedStoryOutIds, selectedBuildingOutIds, mode, yExtend]);
+    // 全选 → null(全集不裁剪);子集 → outId 数组
+    const storyAll = selectedStoryKeys.size === allStories.length;
+    const bldAll = selectedBuildingKeys.size === buildings.length;
+    recipeStore.patchStructural({
+      visibleStories: storyAll ? null : selectedStoryOutIds,
+      visibleBuildings: bldAll ? null : selectedBuildingOutIds,
+      mode,
+      yExtend,
+    });
+    console.info('[FloorDisplay] patchStructural', { mode, yExtend, storyAll, bldAll, storyCount: selectedStoryOutIds.length });
+  }, [recipeStore, view, selectedStoryKeys, selectedBuildingKeys, allStories.length, buildings.length, selectedStoryOutIds, selectedBuildingOutIds, mode, yExtend]);
 
   // 选择/模式变化时自动应用
   useEffect(() => {
