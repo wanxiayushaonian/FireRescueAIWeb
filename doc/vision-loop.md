@@ -191,6 +191,21 @@
 
 > 已切到 8788(协议正确方向);8787 老 SSE 协议不兼容平台,留着也没用。8788 公网未放行期间平台 connection refused,但放行后立即生效——代码与配置均已就位。
 
+#### 闭环验证状态(R1-R3 汇总,2026-08-13 夜)
+
+愿景闭环「孪生→档案→预案→演练→实战→复盘」各环节验证结果:
+
+| 环节 | 状态 | 证据 |
+|---|---|---|
+| 知识库 RAG 燃料 | ✅ 通 | 191 chunks;retrieval 实测语义精准(「高层火灾风险」→21号楼29F烟囱效应;「医院疏散」→病人疏散预案,score>0.57) |
+| 预案生成(LLM) | 🟡 部分通 | generation_status: 2 done / 1 stuck running / 87 idle;LLM 链路通但有 stuck bug(reset-generation 端点可恢复) |
+| 推演引擎(drill) | ✅ 已实现 | lib/drill 1684 行 + 3 单测 + DrillView 接线;待运行时端到端跑 |
+| agent 对话 | ✅ 通 | assistant-ui 真接 + enable_thinking 已开(reasoning 流可见) |
+| **agent 工具闭环** | 🟡 **代码+配置就位,待公网放行** | 8788 streamable-http(协议对)+ 鉴权双通道 + mcp_server 配置切 8788;唯一卡点:云控制台放行 TCP 8788 |
+
+**唯一硬卡点:公网放行 8788**。放行后 agent 即可调 8 个业务工具(query_units/plan_dispatch/analyze_response...),智能派遣/响应分析闭环打通。其余环节均已通或可自主验证。
+
+
 #### Round 2 提交
 - `web/doc/vision-loop.md`(本文件,加 Round 2 日志)
 - 平台 app 配置变更(mcp_servers + enable_thinking,经网关 API,非 git)
