@@ -307,6 +307,39 @@ dev server 运行正常(HTTP 200),drill 模块编译无报错(无 module not fou
 - `src/views/DrillView.tsx`(toolbar/aside z-index 修复)
 - `doc/vision-loop.md`(本文件 Round 6)
 
+---
+
+### Round 7 — 2026-08-13 夜(预案生成端到端验证 + 2 阻塞 bug 修复)
+
+**目标**:预案生成此前只有 2 个 done、1 个 stuck,从未主动验证 worker→LLM 完整链路。本轮起后端+arq worker 触发生成,验证 generation_tasks.task_generate_all。
+
+#### ✅ 完成项
+
+**1. 发现并修复 2 个阻塞 bug(预案生成从未 worker 驱动跑通的根因)**
+
+- **bug A:`WorkerSettings.functions` 没注册 `task_generate_all`**(`app/worker.py`)
+  - `queue.enqueue_generate_all` 用 `enqueue_job("task_generate_all")`,但 worker 只注册了 `task_parse_document`/`task_index_document` → 任务入队后无 worker 消费,永久卡 pending
+  - 修复:functions 加 `task_generate_all`
+
+- **bug B:worker 进程模型注册不全(FK 表未注册)**(`app/worker.py`)
+  - worker 不走后端路由 import 链,只 import task_generate_all 相关模型;`emergency_plans.creator_id` / `model_invocations.user_id` FK 引用 `users` 表,但 `User` 未注册 → SQLAlchemy `NoReferencedTableError` → LLM 审计写 model_invocations 时 flush 失败 → generation_status=failed
+  - 修复:worker.py 显式 `from app.models.user import User` + `from app.models.ai_model import AiModel, ModelInvocation`(注册 users/model_invocations 表)
+
+**2. 端到端验证:plan idle→pending→running→done,LLM 真实生成**
+- 起本地后端(9100)+ arq worker(`uv run arq app.worker.WorkerSettings`)
+- 选九江市政府大楼(idle,有 basic_info),DB 设 pending + `enqueue_generate_all`
+- worker 消费 `task_generate_all`(30.68s 完成)
+- **generation_status: done**(progress 7,message「指挥提示生成完成」)✓
+- **LLM 真实生成专业内容**:灾情场景(5层档案室「高层办公建筑火灾,火势沿竖井向上蔓延,产生大量有毒烟气」+ 10层办公区「火势沿竖向管井迅速蔓延」)+ 战斗部署 7 + 力量部署 7 + 安全提示 8 + 水源 2 + 通信 5
+
+#### 结论
+**预案生成 worker→LLM 链路完整跑通**(闭环「预案生成」环节验证通过)。两个 bug 是阻塞性的——修复前预案生成从未能 worker 驱动(卡 pending 或 model_invocations FK 失败)。生成的内容经 new-api chat 模型(deepseek-v4-flash)真实产出,质量专业。
+
+#### Round 7 提交
+- `znya_jjxf119/server/app/worker.py`(注册 task_generate_all + 显式模型注册)
+- `doc/vision-loop.md`(本文件 Round 7)
+
+
 
 
 
