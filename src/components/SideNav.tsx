@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { Radar, Building2, Target, BookOpen, Flag, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
+import SettingsMenu from './SettingsMenu';
 
 export type ModuleKey = 'overview' | 'objects' | 'drill' | 'training' | 'command';
 
@@ -81,6 +82,7 @@ export default function SideNav({
         })}
       </nav>
       <div className="mt-auto flex flex-col gap-1 px-2 pb-3">
+        <SettingsMenu collapsed={collapsed} />
         <button
           onClick={onToggleCollapsed}
           className="flex h-10 items-center gap-3 rounded-md px-3 text-text-3 transition hover:bg-white/5 hover:text-text-1"

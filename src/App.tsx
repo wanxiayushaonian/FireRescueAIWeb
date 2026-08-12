@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Database, Building2 } from 'lucide-react';
 import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
+import SceneSwitcher from '@/components/SceneSwitcher';
 import type { ModuleKey } from '@/components/SideNav';
 import { SceneProvider, useScene } from '@/components/SceneProvider';
 import { SceneCommandBridge } from '@/components/SceneCommandBridge';
@@ -47,7 +48,7 @@ function SceneContainer() {
         <div className="absolute inset-0 grid place-items-center text-center">
           <div className="rounded-xl border border-dashed border-line-glow bg-bg-panel/40 px-8 py-6 backdrop-blur-sm">
             <div className="mb-1 text-base font-bold text-text-1">未选择场景</div>
-            <div className="text-sm text-text-2">从顶栏场景下拉切换</div>
+            <div className="text-sm text-text-2">点击左上角切换场景</div>
           </div>
         </div>
       )}
@@ -80,7 +81,7 @@ function AppContent() {
         const initial = recent && list.some((s) => s.scene_id === recent) ? recent : (list[0]?.scene_id ?? '');
         setSceneId(initial);
       } catch {
-        /* bootstrap 失败留空,TopBar 下拉空 + RealSceneView 显示未选择 */
+        /* bootstrap 失败留空,SceneSwitcher 空 + RealSceneView 显示未选择 */
       }
     })();
   }, [setSceneId]);
@@ -173,7 +174,7 @@ function AppContent() {
 
   return (
     <div className="flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-bg-deep text-text-1">
-      <TopBar scenes={scenes} selectedSceneId={sceneId} onSelectScene={handleSelectScene} />
+      <TopBar />
       <div className="flex min-h-0 flex-1">
         <SideNav
           active={module}
@@ -247,6 +248,10 @@ function AppContent() {
                 onBuildingChange={setObjectsBuildingId}
               />
             </DraggablePanel>
+          )}
+          {/* 3D 场景左上角场景切换(仅非 overview 模块显示;overview 用 GIS 地图无场景包) */}
+          {module !== 'overview' && scenes.length > 0 && (
+            <SceneSwitcher scenes={scenes} selectedSceneId={sceneId} onSelectScene={handleSelectScene} />
           )}
           <SceneCommandBridge />
         </main>

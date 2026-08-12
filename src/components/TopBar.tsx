@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Play, Square, Settings } from 'lucide-react';
+import { Play, Square } from 'lucide-react';
 import { addSceneAction } from '@/mock/sceneLog';
 import { getScriptState, startScript, stopScript, subscribeScript } from '@/mock/demoScript';
 import type { ScriptState } from '@/mock/demoScript';
@@ -8,8 +8,6 @@ import type { AlertItem } from '@/mock/alerts';
 import { ALERTS } from '@/mock/alerts';
 import { showToast } from './Toast';
 import DemoTag from './DemoTag';
-import { useScene } from './SceneProvider';
-import type { PerfStats } from '@/lib/soonspace-runtime';
 
 function useClock() {
   // 初始 null:SSR 与客户端首次渲染都为 null(一致),避免时钟 hydration mismatch;
@@ -25,42 +23,20 @@ function useClock() {
 
 const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
 
-export default function TopBar(props: {
-  scenes?: { scene_id: string; scene_name: string }[];
-  selectedSceneId?: string;
-  onSelectScene?: (id: string) => void;
-}) {
+export default function TopBar() {
   const now = useClock();
   const [alertOpen, setAlertOpen] = useState(false);
-  const [perfOpen, setPerfOpen] = useState(false);
   const [script, setScript] = useState<ScriptState>(() => getScriptState());
   const wrapRef = useRef<HTMLDivElement>(null);
-  const perfRef = useRef<HTMLDivElement>(null);
-  const { runtime, view } = useScene();
-  const [perfStats, setPerfStats] = useState<PerfStats | null>(null);
 
   useEffect(() => subscribeScript(setScript), []);
-
-  // 轮询性能数据
-  useEffect(() => {
-    if (!runtime || view !== 'ready') return;
-    setPerfStats(runtime.getPerfStats());
-    const timer = window.setInterval(() => {
-      setPerfStats(runtime.getPerfStats());
-    }, 500);
-    return () => window.clearInterval(timer);
-  }, [runtime, view]);
 
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setAlertOpen(false);
-      if (perfRef.current && !perfRef.current.contains(e.target as Node)) setPerfOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setAlertOpen(false);
-        setPerfOpen(false);
-      }
+      if (e.key === 'Escape') setAlertOpen(false);
     };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
@@ -113,151 +89,6 @@ export default function TopBar(props: {
       </div>
       {/* 右 */}
       <div className="flex items-center gap-4">
-        {props.scenes && props.scenes.length > 0 && (
-          <select
-            value={props.selectedSceneId ?? ''}
-            onChange={(e) => props.onSelectScene?.(e.target.value)}
-            className="rounded-md border border-line bg-bg-panel-2 px-2 py-1.5 text-[12px] text-text-1"
-            title="切换场景"
-          >
-            {props.scenes.map((s) => (
-              <option key={s.scene_id} value={s.scene_id}>
-                {s.scene_name || s.scene_id}
-              </option>
-            ))}
-          </select>
-        )}
-        {/* 性能优化设置 */}
-        <div className="relative" ref={perfRef}>
-          <button
-            onClick={() => setPerfOpen((v) => !v)}
-            className={`flex items-center gap-1.5 rounded-md border px-2 py-1.5 text-[12px] transition ${
-              perfOpen
-                ? 'border-cyan/60 bg-cyan/10 text-cyan'
-                : 'border-line bg-bg-panel-2 text-text-2 hover:border-line-glow hover:text-text-1'
-            }`}
-            title="渲染性能设置"
-          >
-            <Settings className="h-3.5 w-3.5" />
-            <span>性能</span>
-          </button>
-          <AnimatePresence>
-            {perfOpen && (
-              <motion.div
-                initial={{ opacity: 0, y: 6, scale: 0.96 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, y: 6, scale: 0.96 }}
-                transition={{ duration: 0.2 }}
-                className="absolute right-0 top-full mt-2 w-72 rounded-lg border border-line bg-bg-panel-2 p-3 shadow-xl"
-              >
-                <div className="mb-2 flex items-center gap-2 border-b border-line pb-2 text-[12px] text-text-3">
-                  <Settings className="h-3.5 w-3.5" />
-                  渲染优化设置
-                </div>
-                {runtime && view === 'ready' ? (
-                  <div className="space-y-3">
-                    {/* 像素比 */}
-                    <div>
-                      <div className="mb-1.5 text-[11px] text-text-3">像素比（填充率优化）</div>
-                      <div className="flex gap-1">
-                        {[1, 1.5, 2].map((p) => (
-                          <button
-                            key={p}
-                            onClick={() => {
-                              runtime.setPixelRatio(p);
-                              setPerfStats(runtime.getPerfStats());
-                            }}
-                            className={`flex-1 rounded border px-2 py-1 text-[11px] transition ${
-                              perfStats?.pixelRatio === p
-                                ? 'border-cyan bg-cyan/10 text-cyan'
-                                : 'border-line bg-bg-panel text-text-2 hover:border-line-glow'
-                            }`}
-                          >
-                            {p}x
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                    {/* 阴影 */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-text-3">阴影（关闭省一半重绘）</span>
-                      <button
-                        onClick={() => {
-                          runtime.setShadows(!perfStats?.shadowOn);
-                          setPerfStats(runtime.getPerfStats());
-                        }}
-                        className={`rounded border px-2 py-1 text-[11px] transition ${
-                          perfStats?.shadowOn
-                            ? 'border-green bg-green/10 text-green'
-                            : 'border-line bg-bg-panel text-text-2 hover:border-line-glow'
-                        }`}
-                      >
-                        {perfStats?.shadowOn ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    {/* SMAA */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-text-3">SMAA 抗锯齿</span>
-                      <button
-                        onClick={() => {
-                          runtime.setSmaa(!perfStats?.smaaOn);
-                          setPerfStats(runtime.getPerfStats());
-                        }}
-                        className={`rounded border px-2 py-1 text-[11px] transition ${
-                          perfStats?.smaaOn
-                            ? 'border-green bg-green/10 text-green'
-                            : 'border-line bg-bg-panel text-text-2 hover:border-line-glow'
-                        }`}
-                      >
-                        {perfStats?.smaaOn ? 'ON' : 'OFF'}
-                      </button>
-                    </div>
-                    {/* BVH */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] text-text-3">BVH 加速拾取</span>
-                      <button
-                        onClick={() => {
-                          void runtime.computeBvh();
-                          setPerfStats(runtime.getPerfStats());
-                        }}
-                        disabled={perfStats?.bvhRunning}
-                        className={`rounded border px-2 py-1 text-[11px] transition ${
-                          perfStats?.bvhReady
-                            ? 'border-green bg-green/10 text-green'
-                            : perfStats?.bvhRunning
-                              ? 'border-amber bg-amber/10 text-amber'
-                              : 'border-line bg-bg-panel text-text-2 hover:border-line-glow'
-                        }`}
-                      >
-                        {perfStats?.bvhRunning ? '计算中…' : perfStats?.bvhReady ? '就绪' : '计算'}
-                      </button>
-                    </div>
-                    {/* 当前统计 */}
-                    <div className="border-t border-line pt-2 text-[10px] text-text-3">
-                      <div className="flex justify-between">
-                        <span>Draw Calls</span>
-                        <span className="font-num">{perfStats?.drawCalls ?? '—'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>三角形</span>
-                        <span className="font-num">{perfStats?.triangles?.toLocaleString() ?? '—'}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>网格数</span>
-                        <span className="font-num">{perfStats?.meshes?.toLocaleString() ?? '—'}</span>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="py-4 text-center text-[11px] text-text-3">
-                    3D 场景未加载
-                  </div>
-                )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
-        <span className="text-[13px] text-text-2">值班长：王建国 · 指挥中心</span>
         {/* 全局演示剧本：一键串联 接警→研判→生成→对抗→评估→归档（演示数据） */}
         <button
           onClick={() => (script.running ? stopScript() : startScript())}
