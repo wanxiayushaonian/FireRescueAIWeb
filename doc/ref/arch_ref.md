@@ -108,8 +108,8 @@ presets.ts ─► types.ts ◄─ diff.ts
 
 /** 结构层 — 决定"场景里显示哪些"，由模块预设 + agent 管控；持久 */
 export interface StructuralRecipe {
-  visibleStories: string[];            // 楼层 out_instance_id 集合 → setViewMode
-  visibleBuildings: string[];          // 楼栋 out_instance_id 集合 → setViewMode
+  visibleStories: string[] | null;     // null=全集不裁剪;string[]=仅这些楼层 → setViewMode
+  visibleBuildings: string[] | null;   // null=全集;string[]=仅这些楼栋 → setViewMode
   mode: '2D' | '3D';                   // → setViewMode params.type
   yExtend: boolean;                    // 楼层炸开 → setViewMode YExtend
   gisVisible: boolean;                 // GIS 底图 → gisSetVisible
