@@ -19,6 +19,33 @@ import type { PluginHost } from './scene-plugins/types';
 type AnyObject = Record<string, any>;
 type SceneSdk = CustomFunctionUStudioSdk<UStudioSdk>;
 type RenderOrigin = { longitude: number; latitude: number; altitude: number };
+type SceneCounts = { objects: number; meshes: number; vertices: number };
+
+/** 性能统计数据 */
+export type PerfStats = {
+  /** 场景加载耗时（毫秒） */
+  loadMs: number | null;
+  /** 当前帧 draw calls */
+  drawCalls: number;
+  /** 当前帧三角形数量 */
+  triangles: number;
+  /** 场景顶点总数 */
+  vertices: number;
+  /** 场景物体总数 */
+  objects: number;
+  /** 场景网格总数 */
+  meshes: number;
+  /** 当前像素比 */
+  pixelRatio: number;
+  /** 阴影是否开启 */
+  shadowOn: boolean;
+  /** SMAA 是否开启 */
+  smaaOn: boolean;
+  /** BVH 是否就绪 */
+  bvhReady: boolean;
+  /** BVH 是否正在计算 */
+  bvhRunning: boolean;
+};
 
 /** 镜头视角：位置、目标点、缩放（与 soonspacejs CameraViewpointData 对齐）。 */
 export type CameraViewpoint = {
@@ -114,13 +141,22 @@ export class SoonspaceRuntime {
   private wasdShiftDown = false;
   private resetEnabled = true;
 
+  // 性能优化相关
+  private initStartedAt = 0;
+  private loadMs: number | null = null;
+  private sceneCounts: SceneCounts = { objects: 0, meshes: 0, vertices: 0 };
+  private bvhReady = false;
+  private bvhRunning = false;
+  private perfPollCount = 0;
+  private warnedNoScene = false;
+
   async init(container: HTMLElement, sceneId: string, onProgress?: (progress: SoonspaceInitProgress) => void): Promise<void> {
     this.sceneId = sceneId;
     const { createUStudioSdk } = await import('ustudio-sdk');
     const sdk = createUStudioSdk();
     this.sdk = sdk;
     await sdk.init({
-      config: { hostUrl: sdkHostUrl(), appKey: X_APP_KEY },
+      config: { hostUrl: sdkHostUrl(), appKey: X_APP_KEY, timeoutMs: 60000, maxAttempts: 3 },
       locale: { lang: sdkLocale() },
       // TODO(增量后续):重接到原型 UI——panelList/panelSetVisible → 原型 DraggablePanel 系统,
       // showVideo → 原型 VideoPlaybackPanel。迁壳后旧 UI(generated-panel-runtime / UStudioVideoDialog)
@@ -180,6 +216,7 @@ export class SoonspaceRuntime {
     this.cps = this.resolveCpsManager();
     this.installWindowSceneBridge();
     this.enableWASDCameraControls();
+    this.applyPerfDefaults();
   }
 
   async dispose(): Promise<void> {
@@ -693,5 +730,192 @@ export class SoonspaceRuntime {
     this.wasdKeys.clear();
     this.wasdCleanup?.();
     this.wasdCleanup = null;
+  }
+
+  // ========== 性能优化方法 ==========
+
+  /**
+   * 加载完成后自动应用的渲染优化：
+   *  - 统计场景物体/网格/顶点总量
+   *  - 像素比上限（默认 1.5，减轻大场景填充率压力）
+   *  - 后台计算 BVH（加速大批量网格的拾取/高亮）
+   */
+  private applyPerfDefaults(): void {
+    this.loadMs = this.initStartedAt > 0 ? performance.now() - this.initStartedAt : null;
+    this.sceneCounts = this.countScene();
+    const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+    this.setPixelRatio(Math.min(dpr, 1.5));
+    void this.computeBvh();
+    console.info('[perf] init 完成: loadMs =', this.loadMs?.toFixed(0), 'ms, ssp =', this.ssp ? 'ok' : 'MISSING',
+      'counts =', this.sceneCounts, 'renderer =', !!this.getRenderer());
+    // 场景渲染几帧后按真实 draw call 数自适应
+    window.setTimeout(() => this.adaptPixelRatioByLoad(), 2000);
+    window.setTimeout(() => this.adaptPixelRatioByLoad(), 6000);
+  }
+
+  private adaptPixelRatioByLoad(): void {
+    const renderer = this.getRenderer();
+    const calls = renderer?.info?.render?.calls;
+    if (typeof calls !== 'number' || calls <= 0) return;
+    if (calls > 30000) {
+      console.info('[perf] 本帧 draw calls =', calls, '（> 30000），自动将像素比降至 1 缓解重绘压力');
+      this.setPixelRatio(1);
+    }
+  }
+
+  /** 设置渲染像素比（1/1.5/2） */
+  setPixelRatio(value: number): void {
+    const renderer = this.getRenderer();
+    if (!renderer || typeof renderer.setPixelRatio !== 'function') return;
+    const clamped = Math.max(1, Math.min(2, value));
+    renderer.setPixelRatio(clamped);
+    try {
+      this.getViewport()?.signals?.windowResize?.dispatch?.();
+    } catch {
+      // 内部信号不可用时忽略
+    }
+    this.render();
+  }
+
+  /** 开关阴影贴图渲染 */
+  setShadows(enabled: boolean): void {
+    const renderer = this.getRenderer();
+    if (!renderer) return;
+    if (renderer.shadowMap && typeof renderer.shadowMap === 'object') renderer.shadowMap.enabled = enabled;
+    this.render();
+  }
+
+  /** 开关 SMAA 抗锯齿 */
+  setSmaa(enabled: boolean): void {
+    const ssp = this.getSsp();
+    if (!ssp) return;
+    try {
+      const smaa = this.getViewport()?.effectManager?.effectsMap?.get?.('smaaEffect');
+      if (smaa && typeof smaa === 'object') smaa.enabled = enabled;
+      const effectManager = this.getViewport()?.effectManager;
+      if (effectManager) effectManager.effectsNeedsUpdate = true;
+    } catch {
+      // 效果管理器结构异常时忽略
+    }
+    this.render();
+  }
+
+  /** 计算/重建 mesh 包围体层级（BVH），加速大批量网格的射线拾取 */
+  async computeBvh(): Promise<void> {
+    const ssp = this.getSsp();
+    if (!ssp || typeof ssp.computeModelsBoundsTree !== 'function' || this.bvhRunning) return;
+    this.bvhRunning = true;
+    this.bvhReady = false;
+    try {
+      await ssp.computeModelsBoundsTree({ type: 'slice', frameSliceCount: 500 });
+      this.bvhReady = true;
+    } catch (error) {
+      console.warn('[perf] computeModelsBoundsTree 失败', error);
+    } finally {
+      this.bvhRunning = false;
+    }
+  }
+
+  /** 实时性能采样 */
+  getPerfStats(): PerfStats {
+    const ssp = this.getSsp();
+    const renderer = this.getRenderer();
+    const info = renderer?.info?.render;
+    this.perfPollCount += 1;
+    if (this.sceneCounts.objects === 0 || this.perfPollCount % 10 === 0) {
+      const counts = this.countScene();
+      if (counts.objects > 0) this.sceneCounts = counts;
+    }
+    let smaaOn = false;
+    try {
+      const smaa = this.getViewport()?.effectManager?.effectsMap?.get?.('smaaEffect');
+      smaaOn = typeof smaa?.enabled === 'boolean' ? smaa.enabled : false;
+    } catch {
+      // ignore
+    }
+    return {
+      loadMs: this.loadMs,
+      drawCalls: info?.calls ?? 0,
+      triangles: info?.triangles ?? 0,
+      vertices: this.sceneCounts.vertices,
+      objects: this.sceneCounts.objects,
+      meshes: this.sceneCounts.meshes,
+      pixelRatio: typeof renderer?.getPixelRatio === 'function' ? renderer.getPixelRatio() : 1,
+      shadowOn: !!renderer?.shadowMap?.enabled,
+      smaaOn,
+      bvhReady: this.bvhReady,
+      bvhRunning: this.bvhRunning,
+    };
+  }
+
+  /** 遍历场景统计物体节点、网格与顶点总量 */
+  private countScene(): SceneCounts {
+    let scene: AnyObject | null = null;
+    try {
+      scene = (this.getSsp()?.scene ?? null) as AnyObject | null;
+    } catch {
+      // ignore
+    }
+    if (!scene || typeof scene.traverse !== 'function') {
+      if (!this.warnedNoScene) {
+        this.warnedNoScene = true;
+        console.warn('[perf] countScene: 未获取到 soonspace 场景实例（scene 缺失）');
+      }
+      return { objects: 0, meshes: 0, vertices: 0 };
+    }
+    let objects = 0;
+    let meshes = 0;
+    let vertices = 0;
+    try {
+      scene.traverse((obj: AnyObject) => {
+        objects += 1;
+        if (obj?.isMesh || obj?.isInstancedMesh) {
+          meshes += 1;
+          const count = obj?.geometry?.attributes?.position?.count ?? 0;
+          vertices += count * (obj?.isInstancedMesh && typeof obj?.count === 'number' ? obj.count : 1);
+        }
+      });
+    } catch (error) {
+      if (!this.warnedNoScene) {
+        this.warnedNoScene = true;
+        console.warn('[perf] countScene: 场景遍历失败', error);
+      }
+      return { objects: 0, meshes: 0, vertices: 0 };
+    }
+    return { objects, meshes, vertices };
+  }
+
+  /** 获取场景 ID */
+  getSceneId(): string {
+    return this.sceneId;
+  }
+
+  /** 获取 viewport 实例 */
+  getViewport(): AnyObject | null {
+    const ssp = this.getSsp();
+    return ssp?.viewport ?? ssp?.viewPort ?? null;
+  }
+
+  /** 获取 WebGLRenderer */
+  getRenderer(): AnyObject | null {
+    const viewport = this.getViewport();
+    const renderer = viewport?.renderer ?? this.getSsp()?.renderer;
+    return renderer && typeof renderer === 'object' ? renderer : null;
+  }
+
+  /** 场景加载状态诊断 */
+  getSceneStatus(): { sceneChildren: number | null; renderer: boolean; lastCounts: SceneCounts; ssp: boolean } {
+    try {
+      const ssp = this.getSsp();
+      const scene = ssp?.scene as AnyObject | null;
+      return {
+        sceneChildren: scene && typeof scene.children?.length === 'number' ? scene.children.length : null,
+        renderer: !!this.getRenderer(),
+        lastCounts: this.sceneCounts,
+        ssp: !!ssp,
+      };
+    } catch {
+      return { sceneChildren: null, renderer: false, lastCounts: { objects: 0, meshes: 0, vertices: 0 }, ssp: false };
+    }
   }
 }

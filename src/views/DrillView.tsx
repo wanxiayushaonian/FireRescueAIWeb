@@ -5,7 +5,7 @@
  *
  * 布局(plan §5.5):
  * - 顶部条(DrillToolbar):标题 + 剧本选择 + 启动/暂停/恢复/1×/5×/停止 + T+{clock}
- * - 主区:左 3D 场景(RealSceneView,scene_id=BUILDING_21_SCENE_ID)
+ * - 主区:左 3D 场景(使用全局 SceneProvider,不重新加载)
  *   + 右栏(上 EventTree / 下 DrillStatusPanel)
  *
  * tick 编排(useEffect[clock] 驱动,避免与 useTimeline 内部 onTick 冲突):
@@ -15,6 +15,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RealSceneView } from '@/components/RealSceneView';
+import { useScene } from '@/components/SceneProvider';
 import { EventTreeOverlay } from '@/drill/EventTreeOverlay';
 import { DrillToolbar } from '@/drill/DrillToolbar';
 import { DrillStatusPanel } from '@/drill/DrillStatusPanel';
@@ -190,29 +191,30 @@ export default function DrillView() {
 
   // ---- 渲染 ----
   return (
-    <div className="flex h-full flex-col">
-      <DrillToolbar
-        status={status}
-        speed={speed}
-        clock={clock}
-        scenarios={scenarios}
-        selectedScenarioId={selectedScenarioId}
-        onSelectScenario={setSelectedScenarioId}
-        onStart={handleStart}
-        onPause={pause}
-        onResume={resume}
-        onSetSpeed={setSpeed}
-        onStop={handleStop}
-      />
+    <div className="flex h-full flex-col bg-transparent">
+      <div className="pointer-events-auto">
+        <DrillToolbar
+          status={status}
+          speed={speed}
+          clock={clock}
+          scenarios={scenarios}
+          selectedScenarioId={selectedScenarioId}
+          onSelectScenario={setSelectedScenarioId}
+          onStart={handleStart}
+          onPause={pause}
+          onResume={resume}
+          onSetSpeed={setSpeed}
+          onStop={handleStop}
+        />
+      </div>
+      {/* 顶部工具栏需恢复 pointer-events(父层 pointer-events-none) */}
 
-      <div className="flex min-h-0 flex-1 gap-2 p-2">
-        {/* 左:3D 场景(事件树移出右栏后扩大)*/}
-        <div className="relative min-w-0 flex-1 overflow-hidden rounded-lg border border-line">
-          <RealSceneView sceneId={activeScenario.sceneId} />
-        </div>
+      <div className="pointer-events-none flex min-h-0 flex-1 gap-2 p-2">
+        {/* 左侧占位：3D 场景已在 App 层作为背景渲染，鼠标穿透 */}
+        <div className="relative min-w-0 flex-1" />
 
-        {/* 右:事件树入口按钮 + 态势面板(事件树本体改 Ctrl+K 悬浮唤出)*/}
-        <aside className="flex w-[360px] shrink-0 flex-col gap-2 overflow-y-auto">
+        {/* 右:事件树入口按钮 + 态势面板 */}
+        <aside className="pointer-events-auto flex w-[360px] shrink-0 flex-col gap-2 overflow-y-auto">
           <button
             type="button"
             onClick={() => setTreeOpen(true)}

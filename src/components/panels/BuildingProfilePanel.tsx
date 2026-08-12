@@ -31,6 +31,7 @@ import type {
   StructureDesign,
   BuildingSurrounding,
 } from '@/lib/building-mapper';
+import { FloorDisplayPanel } from '@/components/FloorDisplayPanel';
 
 const GROUPS = ['建筑概况', '消防系统', '关键部位', '防火设计', '联系人'] as const;
 type GroupName = (typeof GROUPS)[number];
@@ -190,6 +191,8 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
       ) : (
         profile && (
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]">
+            {/* 楼层展示面板（3D 场景联动） */}
+            <FloorDisplayPanel />
             {GROUPS.map((g) => (
               <AccordionGroup
                 key={g}

@@ -4,6 +4,7 @@ import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react';
 import type { SceneAction, SceneState } from '@/mock/sceneLog';
 import { subscribeSceneLog, clearSceneLog } from '@/mock/sceneLog';
 import DemoTag from './DemoTag';
+import { useScene } from './SceneProvider';
 
 const ACTION_COLORS: Record<SceneAction['action'], string> = {
   flyTo: 'text-cyan',
@@ -29,16 +30,46 @@ const SOURCE_STYLES: Record<SceneAction['source'], string> = {
   预案引擎: 'border-green/50 text-green',
 };
 
-/** 右上：场景信息小卡（自订阅场景状态） */
+/** FPS 迷你显示 hook */
+function useFpsMini(): { fps: number; frameMs: number } {
+  const [fps, setFps] = useState(0);
+  const [frameMs, setFrameMs] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    let last = performance.now();
+    const frameWindow: number[] = [];
+    const loop = (now: number): void => {
+      const delta = now - last;
+      last = now;
+      if (delta > 0 && delta < 500) {
+        frameWindow.push(delta);
+        if (frameWindow.length > 30) frameWindow.shift();
+        const avg = frameWindow.reduce((a, b) => a + b, 0) / frameWindow.length;
+        setFps(avg > 0 ? 1000 / avg : 0);
+        setFrameMs(avg);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  return { fps, frameMs };
+}
+
+/** 右上：场景信息小卡（自订阅场景状态 + FPS 迷你显示） */
 export function SceneInfoCard() {
   const [scene, setScene] = useState<SceneState>({ view: '园区俯瞰', floor: '全部楼层', center: '118.7968, 32.0603' });
+  const { view } = useScene();
+  const { fps, frameMs } = useFpsMini();
 
   useEffect(() => subscribeSceneLog((_l, _latest, state) => setScene({ ...state })), []);
 
   const floorFlashKey = `${scene.floor}-${scene.center}`;
+  const fpsColor = fps > 50 ? 'text-green' : fps > 30 ? 'text-amber' : 'text-red';
+  const fpsDot = fps > 50 ? 'bg-green' : fps > 30 ? 'bg-amber' : 'bg-red';
 
   return (
-    <div className="absolute left-1/2 top-4 z-20 w-[240px] -translate-x-1/2 rounded-lg border border-line bg-bg-panel/90 p-3 backdrop-blur-[8px]">
+    <div className="absolute left-1/2 top-4 z-20 w-[260px] -translate-x-1/2 rounded-lg border border-line bg-bg-panel/90 p-3 backdrop-blur-[8px]">
       <div className="flex items-center justify-between">
         <span className="text-[13px] font-medium text-text-1">场景信息</span>
         <DemoTag />
@@ -52,6 +83,17 @@ export function SceneInfoCard() {
           </motion.span>
         </div>
         <div className="flex justify-between"><span className="text-text-3">中心坐标</span><span className="font-mono text-cyan">{scene.center}</span></div>
+        {/* FPS 迷你显示（仅 3D 场景就绪时显示） */}
+        {view === 'ready' && (
+          <div className="flex items-center justify-between border-t border-line/50 pt-1.5">
+            <span className="text-text-3">性能</span>
+            <div className="flex items-center gap-2">
+              <span className={`font-num text-[11px] ${fpsColor}`}>{fps.toFixed(0)} FPS</span>
+              <span className="font-num text-[10px] text-text-3">{frameMs.toFixed(1)}ms</span>
+              <span className={`h-1.5 w-1.5 rounded-full ${fpsDot}`} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

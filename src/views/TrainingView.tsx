@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, MapPinned } from 'lucide-react';
 import DraggablePanel from '@/components/DraggablePanel';
-import ScenePlaceholder from '@/components/ScenePlaceholder';
+import { SceneInfoCard, SceneLogPanel } from '@/components/SceneOverlays';
 import FamiliarPathPanel from '@/components/training/FamiliarPathPanel';
 import PointDetailPanel from '@/components/training/PointDetailPanel';
 import ExamView from '@/components/training/ExamView';
@@ -106,8 +106,9 @@ export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) 
 
   return (
     <div className="relative h-full w-full">
-      {/* 中央 3D 占位区（含场景信息卡 + 场景动作日志浮层） */}
-      <ScenePlaceholder />
+      {/* 3D 场景覆盖层（场景信息卡 + 场景动作日志） */}
+      <SceneInfoCard />
+      <SceneLogPanel />
 
       {/* 左面板：熟悉路径 */}
       <DraggablePanel
