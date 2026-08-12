@@ -247,3 +247,40 @@ export async function getKeyParts(buildingId: string): Promise<KeyPartSummary[]>
     responsiblePerson: s(k.responsible_person),
   }));
 }
+
+// ---- 知识库 RAG 检索(znya pgvector 191 chunks 真实预案)----
+
+/** 历史预案知识库(由 seed_kb_from_plans.py 灌入的 12 个真实预案)。 */
+export const DEFAULT_KB_ID = '265da1fb-a9c9-4046-b732-00b811b8564c';
+
+export interface KnowledgeChunk {
+  chunk_id: string;
+  document_id: string;
+  document_name: string;
+  content: string;
+  score: number;
+  chunk_index: number;
+  kb_id?: string;
+}
+
+/**
+ * 检索历史预案知识库(znya pgvector 余弦检索,经 web BFF /api/business 代理 + service token)。
+ * agent 用本工具回答消防预案/风险/处置类问题(基于真实预案,非 LLM 通用知识)。
+ */
+export async function getKnowledge(
+  query: string,
+  opts: { topK?: number; kbId?: string } = {},
+): Promise<{ query: string; kbId: string; count: number; chunks: KnowledgeChunk[] }> {
+  const kbId = opts.kbId || DEFAULT_KB_ID;
+  const topK = opts.topK ?? 5;
+  const r = await businessFetch<{ items: KnowledgeChunk[] }>(
+    `/api/business/knowledge/bases/${encodeURIComponent(kbId)}/retrieve`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, top_k: topK }),
+    },
+  );
+  const chunks = r.items ?? [];
+  return { query, kbId, count: chunks.length, chunks };
+}

@@ -370,6 +370,44 @@ dev server 运行正常(HTTP 200),drill 模块编译无报错(无 module not fou
 #### Round 8 提交
 - `doc/vision-loop.md`(本文件 Round 8;无代码改动,本轮为平台 API 验证 + 架构发现)
 
+---
+
+### Round 9 — 2026-08-13 夜(RAG→agent 经 8787 打通 + embedding 服务卡点)
+
+**目标**:Round 8 发现平台 file_search ≠ znya RAG(架构隔离)。本轮给 8787(公网通)加 query_knowledge 工具调 zyna RAG,打通 RAG→agent。
+
+#### ✅ 完成项(链路代码 + 数据全打通)
+
+**1. 8787 加 query_knowledge 工具(`mcp-server/src/`)**
+- `business-client.ts` 加 `getKnowledge(query, {topK, kbId})`:调 web BFF `/api/business/knowledge/bases/{kb_id}/retrieve`(BFF 注入 service token → znya)
+- `tools.ts` TOOLS 加 `query_knowledge` + handleToolCall 处理(检索 191 chunks 真实预案)
+- 部署:rsync + 服务器 `docker compose build mcp` 重建镜像。公网 tools/list 确认含 query_knowledge ✓
+
+**2. 服务器 DB 导入 191 chunks(带向量)**
+- 根因排查:8787 query_knowledge 初测 BFF 404 → 发现服务器 DB 无 kb_id 265da1fb(Round 1 灌的是本地 DB)
+- 修复:本地 pg_dump 三表(knowledge_bases/kb_documents/kb_chunks,含 191 chunks × 1024 维向量)→ scp → 服务器 truncate + 导入
+- 验证:服务器 kb_chunks=206,265da1fb 带 embedding 的 191 chunks ✓
+
+**3. 端到端链路验证(代码侧)**
+- 公网 8787/mcp initialize → tools/list 含 query_knowledge ✓
+- BFF 代理链路 work(fire-stations 200 验证 BFF 本身)✓
+- znya retrieve_chunks 路由在(镜像 knowledge.py)✓
+
+#### ❌ 卡点:embedding 服务(基础设施缺失)
+- query_knowledge 实测:`404`(kb 不在,已修)→ `500`(kb 在了,但 retrieve 内部 embedding 失败)
+- 根因:ai_models bge-m3 endpoint = `http://localhost:3001/v1/embeddings`(new-api),**服务器 3001 端口无服务**(new-api 未部署:ps 无进程、docker 无容器、host 不监听 3001)
+- 本地全链路 work(本地 new-api 跑);**服务器缺 embedding 服务**(预案生成 LLM 同源 new-api,Round 7 是本地 worker 验证,服务器 LLM/embedding 均未部署)
+
+#### 结论 + 下一轮
+RAG→agent 经 8787 的**链路代码 + 数据全打通**(8787 query_knowledge + BFF 代理 + znya retrieve + 191 chunks 服务器 DB),唯一卡在 **embedding 服务部署**(服务器 new-api 缺失,基础设施)。下一轮:服务器部署 new-api + bge-m3(embedding/chat 模型服务),或换容器可达的 embedding(如 ollama);部署后 8787 query_knowledge 即可真检索 191 chunks,agent RAG 闭环打通。
+
+#### Round 9 提交
+- `web/mcp-server/src/business-client.ts`(getKnowledge)
+- `web/mcp-server/src/tools.ts`(query_knowledge 工具)
+- `doc/vision-loop.md`(本文件 Round 9)
+- 数据:服务器 DB 导入 191 chunks(非 git,经 pg_dump)
+
+
 
 
 

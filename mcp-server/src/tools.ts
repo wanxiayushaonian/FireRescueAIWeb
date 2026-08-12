@@ -1,5 +1,5 @@
 import { getSceneOverview, getFireDeviceList, getFloorList } from './bff-client.js';
-import { getBuildingProfile, getFacilities, getKeyParts } from './business-client.js';
+import { getBuildingProfile, getFacilities, getKeyParts, getKnowledge } from './business-client.js';
 import { querySceneState, injectEvent, reportDecision } from './drill-control.js';
 import { publishCommand } from './command-bus.js';
 import type { SceneCommand } from './types.js';
@@ -118,6 +118,18 @@ export const TOOLS = [
         },
       },
       required: ['drill_id', 'event'],
+    },
+  },
+  {
+    name: 'query_knowledge',
+    description: '检索历史预案知识库(191 chunks 真实预案:万达/医院/21号楼/政府等的安全提示/灾情场景/战斗部署/力量部署/通信联络)。返回相关 chunks(content+score+来源文档名)。供 agent 回答消防预案/风险/处置类问题(基于真实预案,非 LLM 通用知识编造)。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '检索查询(如"高层建筑火灾风险""医院疏散病人""化工厂处置")' },
+        top_k: { type: 'number', description: '返回条数(默认 5)' },
+      },
+      required: ['query'],
     },
   },
   {
@@ -333,6 +345,19 @@ export async function handleToolCall(
     }
     const ack = injectEvent(drillId, event, publishCommand);
     return { content: [{ type: 'text', text: JSON.stringify(ack, null, 2) }] };
+  }
+
+  if (name === 'query_knowledge') {
+    const query = String(args.query ?? '').trim();
+    if (!query) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'query_knowledge 缺少 query:需提供检索查询(如"高层建筑火灾风险")' }],
+      };
+    }
+    const topK = args.top_k != null ? Number(args.top_k) : undefined;
+    const result = await getKnowledge(query, { topK });
+    return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] };
   }
 
   if (name === 'report_decision') {
