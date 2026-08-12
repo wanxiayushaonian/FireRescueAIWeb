@@ -191,8 +191,8 @@ export default function DrillView() {
 
   // ---- 渲染 ----
   return (
-    <div className="flex h-full flex-col bg-transparent">
-      <div className="pointer-events-auto">
+    <div className="relative z-20 flex h-full flex-col bg-transparent">
+      <div className="pointer-events-auto relative z-30">
         <DrillToolbar
           status={status}
           speed={speed}
@@ -214,7 +214,7 @@ export default function DrillView() {
         <div className="relative min-w-0 flex-1" />
 
         {/* 右:事件树入口按钮 + 态势面板 */}
-        <aside className="pointer-events-auto flex w-[360px] shrink-0 flex-col gap-2 overflow-y-auto">
+        <aside className="pointer-events-auto relative z-30 flex w-[360px] shrink-0 flex-col gap-2 overflow-y-auto">
           <button
             type="button"
             onClick={() => setTreeOpen(true)}

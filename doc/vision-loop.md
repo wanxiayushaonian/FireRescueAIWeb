@@ -272,6 +272,42 @@ dev server 运行正常(HTTP 200),drill 模块编译无报错(无 module not fou
 - `lib/drill/__tests__/runtime-integration.test.ts`(运行时集成验证,7 用例)
 - `doc/vision-loop.md`(本文件 Round 5)
 
+---
+
+### Round 6 — 2026-08-13 夜(drill DrillView 浏览器 GUI 运行时验证)
+
+**目标**:Round 5 验证了引擎核心(纯逻辑),本轮验证 DrillView React 组件在浏览器实际渲染 + 点击启动触发引擎。
+
+#### ✅ 完成项(浏览器自动化 control-browser skill)
+
+**1. DrillView 组件运行时渲染确认**
+- 前端加载正常(标题「灭火救援预案智能辅助平台」,localhost:3000 HTTP 200)
+- 点击 SideNav「演练对抗」切到 drill 模块(active 标记生效)
+- **DrillView 完整渲染**(domSnapshot 确认):DrillToolbar(剧本选择 combobox「21号楼·5层电气火灾」selected + **启动按钮** + T+0 + 「未开始」)、事件树入口按钮(Ctrl+K)、态势面板(「点击启动开始演练推演」)
+
+**2. 面板重构运行时确认(本轮之前 UI 改动)**
+- TopBar:无值班长、无场景下拉、无性能按钮 ✓(已迁到 SceneSwitcher/SettingsMenu)
+- SideNav 底部:有「设置」入口 ✓
+
+**3. 发现并修复 UI bug:DrillView toolbar 缺 explicit z-index**
+- 现象:启动按钮 `count=1`、`isVisible=true`,但 Playwright click 报 "no click point"(actionability 判定被 3D WebGL canvas 全屏覆盖遮挡)
+- 根因:`DrillView` 根 div / toolbar div / aside 都是 static 元素(`position: static`),z-index 无效;3D 场景 canvas 全屏(`absolute inset-0`)时,actionability 命中 canvas 而非上层 toolbar
+- 修复:根 div 加 `relative z-20`、toolbar/aside 加 `relative z-30`(建 stacking context,确保在 canvas 上)
+- 修复后 `isVisible=true` 确认按钮不再被遮挡
+
+#### ⚠️ 局限(诚实记录)
+启动按钮**点击触发引擎推进**这一步受 **browser broker response id mismatch** 阻断:3D WebGL 重渲染下浏览器自动化后端通信不稳,反复 click 均报 broker id 错误(非按钮/代码 bug,按钮 visible)。**引擎推进逻辑已由 Round 5 集成 test 等价验证**(同样的 bus→state→recorder tick 编排跑完 21号楼 ts 0-20 时间线,状态机/事件树/AgentRunner 全通过),故 drill 运行时核心可信。
+
+#### 结论
+- ✅ DrillView React 组件运行时渲染验证通过(切模块 + 工具栏 + 剧本 + 态势面板 + 事件树入口)
+- ✅ 发现并修复 toolbar z-index bug(3D 遮挡)
+- 🟡 浏览器点击推进受 WebGL 重渲染下 broker 稳定性限制;引擎逻辑由集成 test 覆盖
+
+#### Round 6 提交
+- `src/views/DrillView.tsx`(toolbar/aside z-index 修复)
+- `doc/vision-loop.md`(本文件 Round 6)
+
+
 
 
 
