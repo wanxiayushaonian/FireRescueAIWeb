@@ -1,6 +1,7 @@
 import { registerSceneTool } from './registry';
 import { getSceneTreeForView } from './scene-tree';
 import type { SceneSdkLike } from './types';
+import type { RecipeStore } from '../scene-recipe/store';
 
 // 聚焦高亮色:与 FIRE_TYPE_COLORS 告警色一致,agent 不操心配色。
 const FOCUS_HIGHLIGHT_COLOR = '#f87171';
@@ -34,7 +35,7 @@ export interface RegisterToolsAddons {
   addSceneAction?: AddSceneActionFn;
 }
 
-export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsAddons): void {
+export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsAddons, store?: RecipeStore): void {
   registerSceneTool('fly_to', async (args, sdk) => {
     const target = String(args.target ?? '');
     if (!target) {
@@ -62,6 +63,11 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
 
   registerSceneTool('focus_floors', async (args, sdk) => {
     const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
+    // 经 Recipe 单一真相源(若 store 可用);空数组 = null 恢复全楼层。否则回退直调 sdk
+    if (store) {
+      store.patchStructural({ visibleStories: storyIds.length ? storyIds : null });
+      return;
+    }
     const sceneId = typeof window !== 'undefined' ? window.__sceneId : undefined;
     if (!sceneId) {
       console.warn('[scene-bus] focus_floors: 场景未就绪(window.__sceneId 空),跳过');

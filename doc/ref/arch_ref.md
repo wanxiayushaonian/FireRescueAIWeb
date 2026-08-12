@@ -278,12 +278,19 @@ context 暴露 `{ store }`，下游经 `useRecipe()` 订阅、`useRecipeDispatch
 | **用户 · `FloorDisplayPanel`** | 直调 `runtime.setViewMode` | `toggleStory → store.patchStructural({visibleStories, yExtend})` |
 | **模块预设** | `App.tsx` 切模块不碰场景 | `handleSelect('objects') → store.setStructural(presets.objectsOverview)` |
 | **子流程** | 六熟悉步进未接场景 | 步进 → `store.applyPreset(presets.familiarize[k])`（含 focus） |
-| **agent · `AgentRunner`** | 决策未接场景 | 决策 → `store.patchObservational({focus:{objectId}})`；到场路线 → `patchObservational({routes})` |
+| **agent · `AgentRunner`** | 决策未接场景 | 3D 走**平台 WS**(drill §5B: batchInvoke→SDK 自动),**不经 Recipe**;Recipe 观察层留给 web 端驱动(用户点击飞向等,未来) |
 | **兼容 · `scene-action-executor`** | `addSceneAction → runtime` | 退化为适配器：`switchFloor action → store.patchStructural`，其余 action 透传不变 |
 
 ### 7.1 默认不套预设（保持现有语义）
 
-`SceneProvider` 在 runtime ready 时以 `defaultStructural()` 初始化 store，**不主动套模块预设**——只有用户切模块/步进才套。这与现有 `FloorDisplayPanel` 的 `dirtyRef`（挂载不重置场景）谨慎策略一致，避免进入模块即打断用户观察。
+`SceneProvider` 在 runtime ready 时以 `defaultStructural()` 初始化 store,本身不套模块预设——模块预设由 `App.tsx` 在切模块/场景就绪时套(§8/Task 9)。SceneProvider 层保持引擎默认,职责与模块预设分离。
+
+### 7.2 agent 3D 驱动路径边界(2026-08-12 实施期澄清)
+
+- agent(`AgentRunner`)的 3D 联动(fly/highlight 等)经 **平台 WS → SDK 自动**执行(drill-simulation-design §5B:`batchInvokeTwinsFunction` → 平台 message → WS → SDK),web 不桥接,**不经 Recipe 观察层**。前提:演练时 RealSceneView 必须在线(SDK 连 WS)。
+- Recipe 观察层 `focus` 字段预留给 **web 端驱动**(如用户点击重点单位飞向、预案引擎驱动),不接 agent。
+- 实施计划 **Task 10(AgentRunner 接观察层)因此跳过**;Task 12 的 `fly_to`/`focus_objects`(scene-command-bus)保留直调,待与平台 WS 关系确认后再定。
+- Task 11(scene-action-executor `switchFloor` 适配器)+ Task 12(`focus_floors` 适配器)已完成:这两条是**结构层**显隐,不涉 agent WS,明确经 Recipe。
 
 ---
 
