@@ -346,7 +346,10 @@ export const presets = {
 
 - 根 `components/SceneCommandBridge.tsx` → `lib/scene-command-bus/`（registry/handlers/transport/bridge）+ `lib/scene-plugins/`（PluginManager）：**模板原始体系**。
 - `src/components/RealSceneView.tsx` → `SceneProvider` + `SoonspaceRuntime`：**迁移后体系**。
-- `App.tsx` 同时挂载两者。是否共一个 SDK 实例、`SceneCommandBridge` 是否在做显隐，**未确认**（迁移阶段 0 实测）。
+- `App.tsx` 同时挂载两者。
+- **阶段 0 实测结论（2026-08-12）**：两者**共一个 SDK 实例**——`SceneCommandBridge` 的 `manageSceneBridge` 默认 `getSdk = sceneSdk()`（即 `window.__scene`），与 `RealSceneView` 经 `SceneProvider` 创建的 SoonspaceRuntime 同一实例（`SoonspaceRuntime.installWindowSceneBridge` 写 `window.__scene`）。
+- `SceneCommandBridge`（`scene-command-bus/handlers`）**确实在做显隐/聚焦**：`focus_floors` → `sdk.setViewMode`、`focus_objects`/`fly_to` → `sdk.fly`+`heighLight`、`show_route` → 经 `addSceneAction` 写 sceneLog。其输入是**云端 agent 的 MCP 命令流**（`/api/scene-events` SSE）。
+- 与 `RealSceneView` 的 `scene-action-executor`（`switchFloor` → `runtime.setViewMode`）形成**双写显隐管道**：一条来自 MCP 命令流（远程 agent），一条来自 sceneLog 总线（本地面板/推演）。两者最终都调 `SoonspaceRuntime.setViewMode/flyToObject`。
 
 ### 10.2 裁定规则（实测驱动）
 
@@ -356,9 +359,13 @@ export const presets = {
 | 只做插件面板命令（与显隐无关） | 保留，文档明确划界"不碰显隐" |
 | 根模板组件树（`SoonspaceSceneViewer`/`PluginPanel`/`MultiAgentWidget` 等 18 个）确无运行链路 | 标记可弃用 |
 
-### 10.3 本次范围
+### 10.3 本次范围（已实测，2026-08-12）
 
-实测出结论 + 文档写并归目标；动手并归放实施计划阶段 7（可选），避免一次铺太大。
+裁定 = 上表第一行（在做显隐 → 并归），但细化以保留其独特价值：
+- **`scene-command-bus/transport`（MCP SSE 命令流订阅）保留** —— 它是云端 agent 远程驱动场景的唯一通道；本架构的 `AgentRunner` 是本地推演驱动，两者来源不同，需并存。
+- **`scene-command-bus/handlers`（`fly_to`/`focus_objects`/`focus_floors`/`show_route`）退化为 Recipe 适配器** —— 改写为 `store.patchObservational({focus})` / `patchStructural({visibleStories})`，不再直调 `sdk.setViewMode/fly/heighLight`。这样本地 `AgentRunner` 与云端 MCP 命令流统一到 Recipe 单一真相源。
+- `scene-plugins`（PluginManager）经查未在 src 运行链路（仅根模板 `SoonspaceSceneViewer` 引用，而 `App.tsx` 实际渲染 `RealSceneView`）→ **标记可弃用**，随根模板组件树一并评估。
+- 动手并归放实施计划 Task 12（`plan/2026-08-12-scene-recipe-plan.md`），且 Task 11（scene-action-executor 适配器）应同步把 scene-command-bus handlers 一并改写。
 
 ---
 
