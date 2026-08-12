@@ -11,7 +11,9 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
+    // suppressHydrationWarning:浏览器扩展(如沉浸式翻译)会在 hydration 前给 <html> 注入
+    // data-immersive-translate-* 等属性,导致 SSR/客户端 HTML 不匹配报错;官方推荐此属性忽略差异
+    <html lang="zh-CN" suppressHydrationWarning>
       <body>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

@@ -84,6 +84,10 @@ export interface PostAgentChatParams {
   app_id: string;
   forwardedProps?: Record<string, unknown>;
   passthroughProps?: Record<string, unknown>;
+  /** 上一轮 SSE 返回的 conversation_id;传了则保持多轮上下文 */
+  conversationId?: string;
+  /** 图片 path 列表(经 uploadAgentImage 上传后获取);发给多模态 agent 理解 */
+  images?: string[];
   signal?: AbortSignal;
 }
 
@@ -102,7 +106,7 @@ const AGENT_CHAT_PATH = '/uagent-service/api/agent/v1/apps/agent-chat';
  *        ...(passthroughProps ? { passthrough_props } : {}) }
  */
 export async function postAgentChat(params: PostAgentChatParams): Promise<ReadableStream<Uint8Array>> {
-  const { content, app_id, forwardedProps, passthroughProps, signal } = params;
+  const { content, app_id, forwardedProps, passthroughProps, conversationId, images, signal } = params;
   const appKey = process.env.NEXT_PUBLIC_X_APP_KEY || '';
 
   const body: Record<string, unknown> = {
@@ -111,6 +115,12 @@ export async function postAgentChat(params: PostAgentChatParams): Promise<Readab
     forwardedProps: forwardedProps ?? {},
     stream: true,
   };
+  if (conversationId) {
+    body.conversation_id = conversationId;
+  }
+  if (images && images.length > 0) {
+    body.image_list = images;
+  }
   if (passthroughProps) {
     body.passthrough_props = passthroughProps;
   }
@@ -271,4 +281,38 @@ function safeJsonParse(v: unknown): unknown {
   } catch {
     return v;
   }
+}
+
+// ===== 图片上传 =====
+
+/** 上传接口返回结构:{ data: [{ path }] }。 */
+interface UploadResponse {
+  data?: Array<{ path?: string }>;
+}
+
+/**
+ * 上传图片到 agent 平台,返回 path(后续作为 image_list 传给 agent-chat)。
+ * 走 BFF rewrite(/uagent-service/* → AGENT_GATEWAY),同 agent-chat 鉴权(X-App-Key)。
+ */
+export async function uploadAgentImage(file: File): Promise<string> {
+  const appKey = process.env.NEXT_PUBLIC_X_APP_KEY || '';
+  const formData = new FormData();
+  formData.append('category', 'image');
+  formData.append('files', file);
+  const res = await fetch('/uagent-service/api/agent/v1/files/upload', {
+    method: 'POST',
+    headers: { 'X-App-Key': appKey },
+    body: formData,
+  });
+  if (!res.ok) throw new Error(`图片上传失败 ${res.status}`);
+  const json = (await res.json()) as UploadResponse;
+  const path = json.data?.[0]?.path;
+  if (!path) throw new Error('图片上传失败:未返回 path');
+  return path;
+}
+
+/** 图片 path → 预览 URL(带鉴权参数,浏览器直接 <img src>)。 */
+export function agentImageUrl(path: string): string {
+  const params = new URLSearchParams({ path, preview: 'true' });
+  return `/uagent-service/api/agent/v1/files/download?${params.toString()}`;
 }
