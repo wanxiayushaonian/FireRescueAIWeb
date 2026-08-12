@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Database, Building2, Droplet } from 'lucide-react';
+import { Database, Building2 } from 'lucide-react';
 import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
 import type { ModuleKey } from '@/components/SideNav';
@@ -14,10 +14,9 @@ const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
 });
 import DraggablePanel from '@/components/DraggablePanel';
 import ToastHost from '@/components/Toast';
-import ForceResourcePanel from '@/components/panels/ForceResourcePanel';
-import WaterSourcePanel from '@/components/panels/WaterSourcePanel';
+import ResourceOverviewPanel from '@/components/panels/ResourceOverviewPanel';
 import BuildingProfilePanel from '@/components/panels/BuildingProfilePanel';
-import AgentChat from '@/components/AgentChat';
+import AgentSidebar from '@/components/AgentSidebar';
 import type { AgentPanelId } from '@/mock/agentScripts';
 import TrainingView from '@/views/TrainingView';
 import CommandView from '@/views/CommandView';
@@ -59,8 +58,7 @@ function SceneContainer() {
 function AppContent() {
   const [module, setModule] = useState<ModuleKey>('overview');
   const [navCollapsed, setNavCollapsed] = useState(true);
-  const [forcePanelOpen, setForcePanelOpen] = useState(true);
-  const [waterPanelOpen, setWaterPanelOpen] = useState(true);
+  const [resourcePanelOpen, setResourcePanelOpen] = useState(true);
   const [buildingPanelOpen, setBuildingPanelOpen] = useState(true);
 
   const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
@@ -98,7 +96,7 @@ function AppContent() {
 
   const handleSelect = (k: ModuleKey) => {
     setModule(k);
-    if (k === 'overview') { setForcePanelOpen(true); setWaterPanelOpen(true); }
+    if (k === 'overview') { setResourcePanelOpen(true); }
     if (k === 'objects') setBuildingPanelOpen(true);
     // 首次进入 3D 模块时启用场景加载（之后保持 enabled=true，不再关闭）
     if ((k === 'objects' || k === 'drill' || k === 'training') && !enabled) {
@@ -117,7 +115,7 @@ function AppContent() {
   const handleAgentOpenPanel = (panelId: AgentPanelId) => {
     if (panelId === 'force-resource') {
       setModule('overview');
-      setForcePanelOpen(true);
+      setResourcePanelOpen(true);
     } else if (panelId === 'building-profile') {
       setModule('objects');
       setBuildingPanelOpen(true);
@@ -127,7 +125,7 @@ function AppContent() {
       if (!enabled) setEnabled(true);
     } else if (panelId === 'close-panels') {
       // 智能体远程收起当前模块全部业务面板（不切模块）
-      setForcePanelOpen(false);
+      setResourcePanelOpen(false);
       setBuildingPanelOpen(false);
     } else if (panelId === 'training') {
       setModule('training');
@@ -219,32 +217,18 @@ function AppContent() {
           </div>
 
           {module === 'overview' && (
-            <>
             <DraggablePanel
-              panelId="force-resource"
-              title="执勤力量资源库"
+              panelId="resource-overview"
+              title="资源总览"
               icon={Database}
-              width={420}
+              width={500}
               dock="left"
               defaultPos={{ x: 16, y: 16 }}
-              open={forcePanelOpen}
-              onOpenChange={setForcePanelOpen}
+              open={resourcePanelOpen}
+              onOpenChange={setResourcePanelOpen}
             >
-              <ForceResourcePanel />
+              <ResourceOverviewPanel />
             </DraggablePanel>
-            <DraggablePanel
-              panelId="water-source"
-              title="消防水源"
-              icon={Droplet}
-              width={380}
-              dock="right"
-              defaultPos={{ x: 16, y: 16 }}
-              open={waterPanelOpen}
-              onOpenChange={setWaterPanelOpen}
-            >
-              <WaterSourcePanel />
-            </DraggablePanel>
-            </>
           )}
           {module === 'objects' && (
             <DraggablePanel
@@ -265,8 +249,8 @@ function AppContent() {
             </DraggablePanel>
           )}
           <SceneCommandBridge />
-          <AgentChat module={module} onOpenPanel={handleAgentOpenPanel} />
         </main>
+        <AgentSidebar module={module} onOpenPanel={handleAgentOpenPanel} />
       </div>
     <ToastHost />
   </div>

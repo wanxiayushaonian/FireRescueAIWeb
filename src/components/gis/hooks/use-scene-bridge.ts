@@ -22,11 +22,12 @@ export function useSceneBridge(deps: {
   waterRef: React.MutableRefObject<WaterSource[]>;
   stationMarkers: React.MutableRefObject<Map<string, L.Marker>>;
   waterMarkers: React.MutableRefObject<Map<string, L.Marker>>;
+  keyUnitMarkers: React.MutableRefObject<Map<string, L.Marker>>;
   setPlanned: React.Dispatch<React.SetStateAction<PlannedRoute[]>>;
 }): void {
   const {
     mapRef, routeLayer, defaultCenter, defaultZoom,
-    stationsRef, waterRef, stationMarkers, waterMarkers, setPlanned,
+    stationsRef, waterRef, stationMarkers, waterMarkers, keyUnitMarkers, setPlanned,
   } = deps;
 
   // sceneLog 联动
@@ -44,7 +45,7 @@ export function useSceneBridge(deps: {
             let tries = 0;
             const tryOpen = () => {
               tries += 1;
-              const mk = stationMarkers.current.get(p.id!) ?? waterMarkers.current.get(p.id!);
+              const mk = stationMarkers.current.get(p.id!) ?? waterMarkers.current.get(p.id!) ?? keyUnitMarkers.current.get(p.id!);
               if (mk) mk.openPopup();
               else if (tries < 6) window.setTimeout(tryOpen, 400);
             };

@@ -13,15 +13,20 @@ export interface Station {
   personnel: number;
   vehicles: number;
   status?: string; // normal/维修/停用(后端 fire_stations.status)
+  /** 所属区县编码（用于区域过滤） */
+  districtCode?: string;
 }
 
 export interface ResourceItem {
   id: string;
   name: string;
   category: '人员' | '车辆' | '装备';
+  /** 新分类体系：人员=干部/消防员；车辆=水罐消防车/泡沫消防车/...；装备=防护装备/灭火器材/... */
   subtype: string;
   stationId: string;
   status: '在位' | '出警' | '维保' | '正常' | '告警' | '离线';
+  /** 所属区县编码（用于区域过滤） */
+  districtCode?: string;
 }
 
 export interface Facility {

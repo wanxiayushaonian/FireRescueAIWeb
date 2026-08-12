@@ -226,6 +226,11 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
             }
             const path = l as L.Polygon;
             if (level === 'district') {
+              // 悬停/点击区县 → 面板联动加载该区县数据（派发 gis:select-district）
+              const selectDistrict = () => {
+                const adcode = String(f?.properties?.adcode ?? '');
+                window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: adcode || null } }));
+              };
               path.on('mouseover', () => {
                 if (map.getZoom() > BOUNDARY_INTERACT_MAX_ZOOM) return;
                 path.setStyle({
@@ -234,15 +239,19 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
                   fillColor: 'rgba(34, 211, 238, 0.18)',
                   fillOpacity: 0.18,
                 });
+                selectDistrict();
               });
               path.on('mouseout', () => path.setStyle(styleFor(f)));
               path.on('click', () => {
                 if (map.getZoom() > BOUNDARY_INTERACT_MAX_ZOOM) return;
                 map.flyToBounds(path.getBounds(), { padding: [24, 24], maxZoom: 13 });
+                selectDistrict();
               });
             } else if (level === 'city') {
+              // 点击市级外框 → 清除区县过滤（面板恢复全部数据）
               path.on('click', () => {
                 map.flyToBounds(path.getBounds(), { padding: [24, 24] });
+                window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: null } }));
               });
             }
           },
@@ -646,20 +655,25 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
   // 重点单位:zoom<14 网格聚合气泡(有警情的单位始终逐点,警情态不进气泡);>=14 视口裁剪逐点(超限回落聚合,popup 保活)。渲染函数体在 lib/gis/render-key-units
   // unitClusterMode:>=14 恒定 'points'(缩放不再重建千级 marker);<14 每级重建气泡(格宽随 zoom 变);viewportTick 驱动平移重建
   const unitClusterMode: string | number = zoom >= MARKER_CLUSTER_MAX_ZOOM ? 'points' : zoom;
+  // 按面板小眼睛过滤重点单位类型
+  const visibleKeyUnits = useMemo(() => {
+    if (layerPrefs.hiddenKeyUnitTypes.length === 0) return keyUnits;
+    return keyUnits.filter((u) => !layerPrefs.hiddenKeyUnitTypes.includes(u.unitType));
+  }, [keyUnits, layerPrefs.hiddenKeyUnitTypes]);
   useEffect(() => {
     const layer = layers.keyUnits;
     const map = mapRef.current;
     if (!layer || !map || !mapInited) return;
     const b = map.getBounds().pad(0.1); // 外扩避免边缘点位闪进闪出
     const bounds = { west: b.getWest(), south: b.getSouth(), east: b.getEast(), north: b.getNorth() };
-    keyUnitMarkersRef.current = renderKeyUnits(layer, keyUnits, incidents, zoom, {
+    keyUnitMarkersRef.current = renderKeyUnits(layer, visibleKeyUnits, incidents, zoom, {
       map,
       bounds,
       prevMarkers: keyUnitMarkersRef.current,
       onRadial: openRadial,
       onDeploy: openDeploy,
     });
-  }, [keyUnits, mapInited, openRadial, incidents, openDeploy, unitClusterMode, viewportTick]);
+  }, [visibleKeyUnits, mapInited, openRadial, incidents, openDeploy, unitClusterMode, viewportTick]);
 
   // 警情/事件(红色脉冲点位 + level 数字;GCJ02 直显)。渲染函数体在 lib/gis/render-incidents
   useEffect(() => {
@@ -701,6 +715,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     waterRef,
     stationMarkers: markersRef,
     waterMarkers: waterMarkersRef,
+    keyUnitMarkers: keyUnitMarkersRef,
     setPlanned,
   });
 

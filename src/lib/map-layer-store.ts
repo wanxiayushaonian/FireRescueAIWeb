@@ -7,6 +7,8 @@ export interface MapLayerPrefs {
   visibleStationTypes: string[];
   /** 地图上隐藏的水源区划码(默认空 = 全部显示)。 */
   hiddenWaterDistricts: string[];
+  /** 地图上隐藏的重点单位类型(默认空 = 全部显示)。 */
+  hiddenKeyUnitTypes: string[];
 }
 
 export const DEFAULT_VISIBLE_STATION_TYPES = ['支队', '救援大队', '救援站'];
@@ -14,6 +16,7 @@ export const DEFAULT_VISIBLE_STATION_TYPES = ['支队', '救援大队', '救援�
 let prefs: MapLayerPrefs = {
   visibleStationTypes: DEFAULT_VISIBLE_STATION_TYPES,
   hiddenWaterDistricts: [],
+  hiddenKeyUnitTypes: [],
 };
 
 const listeners = new Set<() => void>();
@@ -45,6 +48,15 @@ export function toggleWaterDistrictHidden(code: string): void {
   prefs = {
     ...prefs,
     hiddenWaterDistricts: cur.includes(code) ? cur.filter((c) => c !== code) : [...cur, code],
+  };
+  emit();
+}
+
+export function toggleKeyUnitTypeHidden(type: string): void {
+  const cur = prefs.hiddenKeyUnitTypes;
+  prefs = {
+    ...prefs,
+    hiddenKeyUnitTypes: cur.includes(type) ? cur.filter((t) => t !== type) : [...cur, type],
   };
   emit();
 }
