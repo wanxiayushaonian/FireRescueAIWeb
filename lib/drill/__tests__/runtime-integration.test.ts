@@ -56,8 +56,8 @@ describe('drill 引擎运行时集成(21号楼完整时间线)', () => {
     const set = new Set(fires);
     // 火势应在过程中变化(初起→升级→压制),不是全程恒定
     expect(set.size).toBeGreaterThan(1);
-    // 初始火势 = scenario.initialFireLevel(1)
-    expect(fires[0]).toBe(BUILDING_21_SCENARIO_DEF.scenario.initialFireLevel);
+    // 初始火势 = scenario.initialFireLevel(1,默认)
+    expect(fires[0]).toBe(BUILDING_21_SCENARIO_DEF.scenario.initialFireLevel ?? 1);
   });
 
   it('到场力量 ETA 推进:种子 arrival 注册后,车辆最终到场(>0)', () => {
@@ -86,7 +86,7 @@ describe('drill 引擎运行时集成(21号楼完整时间线)', () => {
     // rescue(ts15)决策 → 后段 rescue 应曾激活
     expect(snapshots.some((s) => s.rescue)).toBe(true);
     // 终态火势应被压制下来(≤ 初始或更低趋势)
-    expect(last.fire).toBeLessThanOrEqual(BUILDING_21_SCENARIO_DEF.scenario.initialFireLevel + 1);
+    expect(last.fire).toBeLessThanOrEqual((BUILDING_21_SCENARIO_DEF.scenario.initialFireLevel ?? 1) + 1);
   });
 
   it('事件树随 tick 生长(节点数 > 种子事件数)', () => {

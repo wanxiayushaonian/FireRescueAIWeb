@@ -93,7 +93,7 @@ export default function IncidentListPanel({
   incidents: Incident[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  onInject: () => void;
+  onInject?: () => void;
   channelDown: boolean;
 }) {
   const [demoState, setDemoState] = useState<FetchState>('ok');
@@ -173,13 +173,15 @@ export default function IncidentListPanel({
       ) : (
         <>
           <div className="shrink-0 px-3 pt-3">
-            <button
-              onClick={onInject}
-              className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-orange text-[13px] font-bold text-bg-deep transition hover:brightness-110 hover:shadow-[0_0_10px_rgba(249,115,22,.4)]"
-            >
-              <AudioLines className="h-4 w-4 animate-pulse" />
-              模拟新警情接入
-            </button>
+            {onInject && (
+              <button
+                onClick={onInject}
+                className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-orange text-[13px] font-bold text-bg-deep transition hover:brightness-110 hover:shadow-[0_0_10px_rgba(249,115,22,.4)]"
+              >
+                <AudioLines className="h-4 w-4 animate-pulse" />
+                模拟新警情接入
+              </button>
+            )}
           </div>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-3">
             {list.length === 0 && (

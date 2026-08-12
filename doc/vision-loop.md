@@ -440,6 +440,37 @@ RAG→agent 经 8787 的**链路代码 + 数据全打通**(8787 query_knowledge 
 - 配置:ai_models bge-m3 指向公网 new-api(服务器 DB,非 git)
 - 清理:误拉的 ollama 容器已删(残留 root 模型文件可后续 sudo rm)
 
+---
+
+### Round 11 — 2026-08-13 夜(command 实战指挥模块:警情+调度真实化)
+
+**目标**:CommandView 已是完整 mock UI,本轮真实化(警情 incidents DB + 调度 plan_dispatch/analyze_response),补齐五场景最后一环「实战」。
+
+#### ✅ 完成项
+
+**1. 警情真实化(incidents DB → 面板)**
+- 新建 `src/lib/command-incident-adapter.ts`:mapper.Incident(真实)→ mock.Incident(面板)适配,补 type(危化品/建筑火灾/抢险救援分类)/caller/receivedAt/statusHistory;status 映射(结束→熄灭)
+- CommandView 加真实模式:`fetchIncidents()` → adapter → `realIncidents`(面板主源);顶部「真实警情 / 模拟演练」切换(默认真实),模拟模式走原 liveChannel 状态机(保留演示价值)
+- IncidentListPanel `onInject` 改可选(真实模式隐藏「模拟新警情」按钮)
+
+**2. 调度真实化(选中警情 → 真实派遣路线 + 响应摘要 + 推荐)**
+- 选中真实警情 → `fetchAiDispatch`(警情坐标)→ `RouteRenderItem[]`(真实多站 polyline)
+- 路线画线:sceneLog `showRoute` **source='智能体'**(避开 use-scene-bridge 的 `!=='面板'` 守卫)+ params.routes[] → use-scene-bridge `renderRoutes` 真实画线 + 飞适窗
+- 响应摘要 `fetchBuildingAnalysis` → `{stationCount, nearestEtaMin, waterCount}` → 灾情变量面板新增 AI 响应分析卡
+- 派遣推荐:routes → 推荐卡(`type:'force'`,站点名/ETA/距离)注入 RecommendPanel(替换 mock 推荐)
+
+#### 验证
+- `tsc --noEmit` 通过(两套 Incident 类型适配对齐)
+- drill 回归 75 单测通过
+
+#### Round 11 提交
+- `src/lib/command-incident-adapter.ts`(新)
+- `src/views/CommandView.tsx`(真实模式 + 调度接入)
+- `src/components/command/IncidentListPanel.tsx`(onInject 可选)
+- `lib/drill/__tests__/runtime-integration.test.ts`(initialFireLevel optional 修复)
+- `doc/vision-loop.md`(本文件 Round 11)
+
+
 
 
 
