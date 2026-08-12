@@ -12,7 +12,7 @@ import { useScene } from '@/components/SceneProvider';
  * 包含 3D 场景容器和 UI 覆盖层。
  */
 export function RealSceneView() {
-  const { runtime, view, error, containerRef, tree, initialView } = useScene();
+  const { runtime, view, error, containerRef, tree, initialView, recipeStore } = useScene();
   const treeRef = useRef(tree);
   const initialViewRef = useRef(initialView);
   treeRef.current = tree;
@@ -50,11 +50,11 @@ export function RealSceneView() {
       },
     };
 
-    const unsub = subscribeSceneActions(executor);
+    const unsub = subscribeSceneActions(executor, recipeStore ?? undefined);
     return () => {
       unsub();
     };
-  }, [runtime, view]);
+  }, [runtime, view, recipeStore]);
 
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
