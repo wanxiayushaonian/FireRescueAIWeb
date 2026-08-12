@@ -16,6 +16,9 @@ import type { DeployStation, PlannedRoute } from '../DeployPanel';
 // 排除专职站/微型/志愿等辅助力量
 const DEPLOY_STATION_TYPES = ['支队', '救援大队', '救援站'];
 
+// 排除不参与实战出动的站点(机关/勤务/机动大队不承担常规到场任务)
+const EXCLUDED_STATION_NAMES = ['九江支队', '机动一大队', '应急通信与车辆勤务站'];
+
 export interface DeployState {
   target: { name: string; lng: number; lat: number };
   stations: DeployStation[];
@@ -49,13 +52,25 @@ export function useDeployRoutes(deps: {
   const [planned, setPlanned] = useState<PlannedRoute[]>([]);
   const [planning, setPlanning] = useState(false);
 
-  // 周边水源高亮:500m 内水源画青色圈 + 适窗(独立可调,警情圆环"周边水源"复用)
+  // 周边水源高亮:目标点 500m 外部圈 + 圈内水源画青色点 + 适窗到水源逐点可见层级
+  // (zoom>=15 水源才逐点渲染;低于此级别是聚合气泡,看不到具体水源点位)
   const highlightNearbyWater = useCallback(
     (t: { lng: number; lat: number }) => {
       const map = mapRef.current;
       const highlight = highlightLayer;
       if (!map || !highlight) return;
       highlight.clearLayers();
+      // 目标点 500m 外部圈(虚线,表示周边水源覆盖范围)
+      L.circle([t.lat, t.lng], {
+        radius: 500,
+        color: '#22d3ee',
+        weight: 1.5,
+        opacity: 0.6,
+        dashArray: '4 6',
+        fill: false,
+      })
+        .bindTooltip('周边水源范围 500m', { direction: 'top', className: 'gis-tip' })
+        .addTo(highlight);
       // 地图与库同为 GCJ02,直接调 nearby 半径查询
       fetchNearbyWaterSources({ lng: t.lng, lat: t.lat, radius: 500 })
         .then((nearby) => {
@@ -66,7 +81,14 @@ export function useDeployRoutes(deps: {
               .addTo(highlight);
             bounds.extend(L.latLng(w.lat, w.lng));
           });
-          if (nearby.length) map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+          if (nearby.length) {
+            // 适配到包含全部水源点,且 zoom 至少到 15(水源逐点渲染层级)
+            map.flyToBounds(bounds, { padding: [80, 80], maxZoom: 17 });
+            const targetZoom = Math.max(map.getBoundsZoom(bounds), 15);
+            window.setTimeout(() => {
+              if (map.getZoom() < 15) map.setZoom(targetZoom);
+            }, 700);
+          }
         })
         .catch(() => {});
     },
@@ -74,7 +96,8 @@ export function useDeployRoutes(deps: {
   );
 
   // 打开派遣面板:消防站图层可见时,只列常规主力(支队/救援大队/救援站,与响应分析口径一致),
-  // 按到目标直线距离排序 + 算锚点 + 周边水源高亮;小眼睛关闭或无常规主力 → 空态提示
+  // 按到目标直线距离排序 + 算锚点;小眼睛关闭或无常规主力 → 空态提示。
+  // 不在此自动画周边水源高亮圈——派遣视图聚焦选站与路线,水源需用户从圆环菜单「周边水源」单独查看。
   const openDeploy = useCallback(
     (t: { name: string; lng: number; lat: number }) => {
       const map = mapRef.current;
@@ -87,8 +110,11 @@ export function useDeployRoutes(deps: {
         // 小眼睛关闭 → 空态(与灾情响应分析一致)
         setDeploy({ ...base, stations: [], emptyHint: '请打开消防站图层小眼睛以选择派遣力量' });
       } else {
-        // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量
-        const eligible = stationsRef.current.filter((s) => DEPLOY_STATION_TYPES.includes(s.type as string));
+        // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量;
+        // 再按名称排除机关/勤务/机动大队等不承担常规到场任务的站点
+        const eligible = stationsRef.current.filter(
+          (s) => DEPLOY_STATION_TYPES.includes(s.type as string) && !EXCLUDED_STATION_NAMES.includes(s.name),
+        );
         if (eligible.length === 0) {
           setDeploy({ ...base, stations: [], emptyHint: '周边无常规主力消防站(支队/救援大队/救援站)' });
         } else {
@@ -100,9 +126,8 @@ export function useDeployRoutes(deps: {
       }
       setPlanned([]);
       setRadial(null);
-      highlightNearbyWater(t);
     },
-    [mapRef, stationsRef, setRadial, highlightNearbyWater, stationsVisible],
+    [mapRef, stationsRef, setRadial, stationsVisible],
   );
 
   // 多站到场路线规划:每站 driving(GCJ02)→ renderRoutes 统一渲染(色板/tipHtml 在 lib/gis/route-render);写 showRoute scene action(MCP 通道)
@@ -112,6 +137,9 @@ export function useDeployRoutes(deps: {
       if (!map || !routeLayer || !deploy) return;
       setPlanning(true);
       setPlanned([]);
+      // 进入路线规划后,视口会缩放到路线整体尺度,此时周边水源高亮圈(500m 外圈+点位)
+      // 已脱离当前比例尺语境,清掉避免在路线视图上残留干扰
+      highlightLayer?.clearLayers();
       // 并发拉各站 driving;失败站跳过;按 stationIds 顺序组装(原实现靠 sort 恢复顺序,等价)
       const items = (
         await Promise.all(
@@ -138,7 +166,7 @@ export function useDeployRoutes(deps: {
         source: '面板',
       });
     },
-    [mapRef, routeLayer, stationsRef, deploy],
+    [mapRef, routeLayer, highlightLayer, stationsRef, deploy],
   );
 
   const clearRoutes = useCallback(() => {

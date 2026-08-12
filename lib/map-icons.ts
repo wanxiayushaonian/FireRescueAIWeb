@@ -130,3 +130,13 @@ export function keyBuildingIconSvg(status: string): string {
   <text x="12" y="16" font-size="11" text-anchor="middle" fill="#0b1220" font-weight="700" font-family="sans-serif">建</text>
 </svg>`;
 }
+
+/** 派遣目标端点图标:红色定位针 + 白色靶心,32px;派遣/路线期间重点对象图层被隐藏,
+ *  目标建筑/单位作为路线终点用此独立 marker 保留显示,与青色路线区分。 */
+export function dispatchTargetIconSvg(): string {
+  return `<svg width="32" height="32" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+  <path d="M12 1.5C7.3 1.5 3.5 5.3 3.5 10c0 5.8 8.5 12.5 8.5 12.5s8.5-6.7 8.5-12.5c0-4.7-3.8-8.5-8.5-8.5z" fill="#f43f5e" stroke="#0b1220" stroke-width="1.5"/>
+  <circle cx="12" cy="10" r="3.4" fill="none" stroke="#fff" stroke-width="1.6"/>
+  <circle cx="12" cy="10" r="0.9" fill="#fff"/>
+</svg>`;
+}

@@ -1,5 +1,5 @@
 // lib/gis/render-response.ts
-// 灾情响应图层渲染:每站染色环(ETA 颜色)+ 灾情点 5min 估算参考圈。
+// 灾情响应图层渲染:每站染色环(ETA 颜色)+ 灾情点分层驾车响应圈(核心/增援/外围)。
 // 模式同 render-water:import type L + 函数内 require('leaflet')(vitest node 约束)。
 import type L from 'leaflet';
 import { etaColor, estimateRadiusKm, formatEta, type EtaLevel } from './eta-render';
@@ -36,24 +36,39 @@ export function renderResponseEta(layer: L.LayerGroup, items: ResponseEtaItem[],
   }
 }
 
-/** 渲染灾情点 5min 驾车估算参考圈(虚线,标注估算)。 */
-export function renderReferenceCircle(layer: L.LayerGroup, center: { lat: number; lng: number }, minutes = 5): void {
+/** 分层响应圈层级定义:mult = targetMin 的倍数,与 etaColor 的绿/黄/红三档对齐。
+ * 外→内绘制(红→黄→绿),内层覆盖外层中心,形成 核心区/增援区/外围区 的分层环带。 */
+const TIER_DEFS: { mult: number; level: EtaLevel; label: string }[] = [
+  { mult: 3, level: 'red', label: '外围区' }, // >2×target
+  { mult: 2, level: 'yellow', label: '增援区' }, // target~2×target
+  { mult: 1, level: 'green', label: '核心区' }, // ≤target
+];
+
+/** 渲染灾情点分层驾车响应圈:核心(≤targetMin)/增援(≤2×)/外围(≤3×)三圈同心,
+ * 配色与 ETA 染色环一致(绿/黄/红),核心圈实线强调,外圈虚线为估算边界。 */
+export function renderTieredResponseCircles(layer: L.LayerGroup, center: { lat: number; lng: number }, targetMin = 5): void {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const L: typeof import('leaflet') = require('leaflet');
-  const radiusKm = estimateRadiusKm(minutes);
-  L.circle([center.lat, center.lng], {
-    radius: radiusKm * 1000,
-    color: '#22d3ee',
-    weight: 1,
-    opacity: 0.5,
-    dashArray: '6 6',
-    fill: false,
-  })
-    .bindTooltip(`${minutes}分钟驾车估算圈(~${radiusKm.toFixed(1)}km)`, {
-      direction: 'top',
-      className: 'gis-tip',
+  for (const tier of TIER_DEFS) {
+    const minutes = targetMin * tier.mult;
+    const radiusKm = estimateRadiusKm(minutes);
+    const color = ETA_COLOR_HEX[tier.level];
+    const isCore = tier.level === 'green';
+    L.circle([center.lat, center.lng], {
+      radius: radiusKm * 1000,
+      color,
+      weight: isCore ? 2 : 1.5,
+      opacity: 0.75,
+      fillColor: color,
+      fillOpacity: isCore ? 0.12 : 0.07,
+      dashArray: isCore ? undefined : '6 6',
     })
-    .addTo(layer);
+      .bindTooltip(`${tier.label} · ≤${minutes}分钟到场(~${radiusKm.toFixed(1)}km)`, {
+        direction: 'top',
+        className: 'gis-tip',
+      })
+      .addTo(layer);
+  }
 }
 
 /** 清除响应图层(染色环 + 参考圈)。 */

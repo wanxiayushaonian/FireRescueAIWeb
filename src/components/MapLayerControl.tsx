@@ -13,7 +13,7 @@ interface Props {
   onToggleWater: () => void;
   showBoundary: boolean;
   onToggleBoundary: () => void;
-  /** 重点单位(含重点建筑)合并开关 */
+  /** 重点对象(重点单位+重点建筑)合并开关 */
   showKeyUnits: boolean;
   onToggleKeyUnits: () => void;
   showRegions: boolean;
@@ -44,7 +44,7 @@ export default function MapLayerControl({
   const layers = [
     { label: '边界', show: showBoundary, toggle: onToggleBoundary },
     { label: '消防站', show: showStations, toggle: onToggleStations },
-    { label: '重点单位', show: showKeyUnits, toggle: onToggleKeyUnits },
+    { label: '重点对象', show: showKeyUnits, toggle: onToggleKeyUnits },
     { label: '水源', show: showWater, toggle: onToggleWater },
     { label: '警情', show: showIncidents, toggle: onToggleIncidents },
     { label: '区域', show: showRegions, toggle: onToggleRegions },

@@ -7,9 +7,10 @@ import type { Station } from '@/mock/types';
 import { fetchDrivingRoute } from '@/api/route';
 import { selectWithinKm, rankByEta, type EtaItem } from '@/lib/gis/response-query';
 import { haversineKm } from '@/lib/geo-query';
+import { estimateRadiusKm } from '@/lib/gis/eta-render';
 import {
   renderResponseEta,
-  renderReferenceCircle,
+  renderTieredResponseCircles,
   clearResponseLayer,
 } from '@/lib/gis/render-response';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
@@ -33,6 +34,9 @@ export interface ResponseState {
 const RESPONSE_RADIUS_KM = 5;
 // 只派遣常规主力(支队/救援大队/救援站);排除专职站/微型/志愿等辅助力量
 const RESPONSE_STATION_TYPES = ['支队', '救援大队', '救援站'];
+
+// 排除不参与实战出动的站点(机关/勤务/机动大队不承担常规到场任务;与派遣面板口径一致)
+const RESPONSE_EXCLUDED_NAMES = ['九江支队', '机动一大队', '应急通信与车辆勤务站'];
 const DRIVING_QPS = 3; // 高德免费 key QPS 上限(超 → CUQPS_HAS_EXCEEDED_THE_LIMIT),保守取 3
 const NEAREST_LIMIT = 8; // 5km 内取直线距离最近 N 站 driving(远的到场慢不关键 + 控 QPS)
 
@@ -90,11 +94,15 @@ export function useIncidentResponse(deps: {
       setState({ target, items: [], nearestId: null, targetMin, loading: true, anchor });
       clearResponseLayer(responseLayer);
       routeLayer?.clearLayers();
-      renderReferenceCircle(responseLayer, { lat: target.lat, lng: target.lng }, targetMin);
+      renderTieredResponseCircles(responseLayer, { lat: target.lat, lng: target.lng }, targetMin);
+      // 缩放到能完整看到最外层响应圈(外围区 = targetMin×3 的驾车半径),无论后续是否找到站都立即适窗
+      const outerRadiusM = estimateRadiusKm(targetMin * 3) * 1000;
+      map.flyToBounds(L.latLng(target.lat, target.lng).toBounds(outerRadiusM * 2), { padding: [60, 60] });
 
-      // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量
+      // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量;
+      // 再按名称排除机关/勤务/机动大队等不承担常规到场任务的站点
       const eligible = stationsRef.current.filter((s) =>
-        RESPONSE_STATION_TYPES.includes(s.type as string),
+        RESPONSE_STATION_TYPES.includes(s.type as string) && !RESPONSE_EXCLUDED_NAMES.includes(s.name),
       );
       const within = selectWithinKm(
         eligible.map((s) => ({ id: s.id, name: s.name, lng: s.lng, lat: s.lat })),
@@ -182,7 +190,6 @@ export function useIncidentResponse(deps: {
         loading: false,
         anchor,
       });
-      map.flyTo([target.lat, target.lng], Math.max(map.getZoom(), 15));
     },
     [mapRef, responseLayer, routeLayer, stationsRef, stationsVisible],
   );

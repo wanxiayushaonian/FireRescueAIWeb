@@ -23,7 +23,8 @@ export function filterActionItems(items: PaletteActionDef[], q: string): Palette
   return q ? items.filter((a) => a.title.includes(q) || a.id.includes(q)) : items;
 }
 
-export function filterUnits<T extends { name: string; unitType: string }>(units: T[], q: string, limit = 6): T[] {
+/** 按名称(及可选 unitType)过滤,供命令面板搜索单位/建筑/水源等具名点位。 */
+export function filterUnits<T extends { name: string; unitType?: string }>(units: T[], q: string, limit = 6): T[] {
   if (!q) return [];
   return units.filter((u) => u.name.includes(q) || (u.unitType ?? '').includes(q)).slice(0, limit);
 }

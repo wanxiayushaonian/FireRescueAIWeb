@@ -16,7 +16,7 @@ import 'leaflet-draw';
 import 'leaflet-draw/dist/leaflet.draw.css';
 import { fetchGeocode } from '@/api/geocode';
 import { fetchRegions, createRegion } from '@/api/regions';
-import { MARKER_CLUSTER_MAX_ZOOM, shouldShowWater, shouldShowWaterPoints } from '@/lib/map-icons';
+import { MARKER_CLUSTER_MAX_ZOOM, shouldShowWater, shouldShowWaterPoints, dispatchTargetIconSvg } from '@/lib/map-icons';
 import { decidePointRender } from '@/lib/gis/point-render';
 import { renderStations, type RenderStation } from '@/lib/gis/render-stations';
 import { renderWater } from '@/lib/gis/render-water';
@@ -24,6 +24,7 @@ import { renderKeyUnits } from '@/lib/gis/render-key-units';
 import { renderIncidents } from '@/lib/gis/render-incidents';
 import { renderKeyBuildings } from '@/lib/gis/render-key-buildings';
 import { renderRegions } from '@/lib/gis/render-regions';
+import { routeColor } from '@/lib/gis/route-render';
 import { buildDistrictIndex, hitDistrict, type DistrictIndex } from '@/lib/gis/district-hit';
 import { useDistrictStats } from '@/lib/district-stats-store';
 import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
@@ -170,6 +171,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
   });
 
   // 灾情响应分析(重点建筑圆环菜单「响应分析」入口,见 gis/hooks/use-incident-response)
+  // 提前到图层隐藏/目标 marker 之前,使派遣与响应两套路线视图共享同一套「干净视图」逻辑
   const { responseState, analyze, clearResponse } = useIncidentResponse({
     mapRef,
     responseLayer: layers.incidentResponse,
@@ -177,6 +179,62 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     stationsRef,
     stationsVisible: showStations,
   });
+
+  // 响应分析图层无独立小眼睛开关(图层控制块里没有该项),默认 false → 永远不在地图上,
+  // 导致分层响应圈/ETA 染色环画了也看不见。这里随 responseState 自动开关:激活即上地图,清除即移除。
+  useEffect(() => {
+    setShowIncidentResponse(!!responseState);
+  }, [responseState]);
+
+  // 派遣/响应分析任一激活时,临时隐藏重点对象图层(重点单位+重点建筑)与水源图层,
+  // 路线视图只保留 站点→目标 端点和路线,避免其他重点对象、水源点位遮挡;
+  // 二者都关闭后恢复用户原本的显隐设置(并发场景下只要还有一个激活就保持隐藏)
+  const prevDispatchLayersRef = useRef<{ keyUnits: boolean; buildings: boolean; water: boolean } | null>(null);
+  const layersSuppressed = !!deploy || planned.length > 0 || !!responseState;
+  useEffect(() => {
+    if (layersSuppressed) {
+      if (!prevDispatchLayersRef.current) {
+        prevDispatchLayersRef.current = { keyUnits: showKeyUnits, buildings: showBuildings, water: showWater };
+      }
+      setShowKeyUnits(false);
+      setShowBuildings(false);
+      setShowWater(false);
+    } else if (prevDispatchLayersRef.current) {
+      setShowKeyUnits(prevDispatchLayersRef.current.keyUnits);
+      setShowBuildings(prevDispatchLayersRef.current.buildings);
+      setShowWater(prevDispatchLayersRef.current.water);
+      prevDispatchLayersRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [layersSuppressed]);
+
+  // 路线目标端点(派遣 + 响应分析共用):重点对象图层被临时隐藏后,目标建筑/单位作为路线终点
+  // 需要单独保留显示。用独立 marker 直接挂到 map(不进任何会被显隐开关/路线渲染清空的图层组),
+  // 这样它只随分析开关出现/消失,规划路线时不会被 renderRoutes 的 clearLayers 清掉。
+  // 派遣优先,否则取响应分析目标;target 引用在地图平移重算 anchor 时不变(spread 保留),故仅在切换目标时重建。
+  const analysisTarget = deploy?.target ?? responseState?.target ?? null;
+  const targetMarkerRef = useRef<L.Marker | null>(null);
+  useEffect(() => {
+    const map = mapRef.current;
+    const target = analysisTarget;
+    if (!map || !target) {
+      targetMarkerRef.current?.remove();
+      targetMarkerRef.current = null;
+      return;
+    }
+    targetMarkerRef.current = L.marker([target.lat, target.lng], {
+      icon: L.divIcon({ html: dispatchTargetIconSvg(), className: 'dispatch-target-icon', iconSize: [32, 32], iconAnchor: [16, 32] }),
+      zIndexOffset: 1000,
+      keyboard: false,
+    })
+      .bindTooltip(`目标:${target.name}`, { direction: 'top', className: 'gis-tip' })
+      .addTo(map);
+    return () => {
+      targetMarkerRef.current?.remove();
+      targetMarkerRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisTarget]);
 
   // 坐标修正/点位治理(见 gis/hooks/use-coord-fix)
   const {
@@ -340,6 +398,20 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     return m;
   }, [resources]);
 
+  // 各消防站真实力量(人员/车辆/装备,从 fire_force_items 聚合);派遣面板选站汇总用,
+  // 缺失时回退到 station 字段。与 personnelCounts 同源,后者只取人员供 popup。
+  const stationForce = useMemo(() => {
+    const m = new Map<string, { personnel: number; vehicles: number; equipment: number }>();
+    for (const r of resources) {
+      const entry = m.get(r.stationId) ?? { personnel: 0, vehicles: 0, equipment: 0 };
+      if (r.category === '人员') entry.personnel++;
+      else if (r.category === '车辆') entry.vehicles++;
+      else if (r.category === '装备') entry.equipment++;
+      m.set(r.stationId, entry);
+    }
+    return m;
+  }, [resources]);
+
   const handleStationClick = useCallback((s: RenderStation) => {
     addSceneAction({
       action: 'flyTo',
@@ -478,6 +550,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
                 label: '响应分析',
                 color: '#ef4444',
                 onClick: () => {
+                  closeDeploy();
                   analyze({ name: t.name, lng: t.lng, lat: t.lat });
                   setRadial(null);
                 },
@@ -490,6 +563,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           label: '路线',
           color: '#22d3ee',
           onClick: () => {
+            clearResponse();
             openDeploy(t);
             setRadial(null);
           },
@@ -549,7 +623,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       }
       return actions;
     },
-    [openDeploy, openCoordFix, highlightNearbyWater, openEntityEdit, deleteEntity, analyze, onEnterScene],
+    [openDeploy, closeDeploy, clearResponse, openCoordFix, highlightNearbyWater, openEntityEdit, deleteEntity, analyze, onEnterScene],
   );
 
   // 地图移动/缩放时关闭圆环(像素坐标已失效)
@@ -634,7 +708,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
     const actionDefs = buildActionItems({ baseMap, hasPlanned: planned.length > 0, drawMode });
     const filteredActions: PaletteItem[] = filterActionItems(actionDefs, q).map((d) => ({ ...d, run: actionRuns[d.id] }));
 
-    // 单位跳转(本地过滤)
+    // 单位跳转(本地过滤):图层开关上「重点对象」= 单位+建筑一体,定位前两者一起开
     const unitItems: PaletteItem[] = filterUnits(keyUnits, q).map((u) => ({
       id: `unit-${u.id}`,
       title: u.name,
@@ -642,13 +716,46 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       icon: Building2,
       group: '单位',
       run: () => {
+        setShowKeyUnits(true);
+        setShowBuildings(true);
         const map = mapRef.current;
         if (map) map.flyTo([u.lat, u.lng], Math.max(map.getZoom(), 16));
         close();
       },
     }));
 
-    setPaletteItems([...filteredActions, ...unitItems]);
+    // 重点建筑跳转:同上,「重点对象」= 单位+建筑一体,两者一起开
+    const buildingItems: PaletteItem[] = filterUnits(buildings, q).map((b) => ({
+      id: `building-${b.id}`,
+      title: b.name,
+      subtitle: '重点建筑',
+      icon: Building2,
+      group: '建筑',
+      run: () => {
+        setShowKeyUnits(true);
+        setShowBuildings(true);
+        const map = mapRef.current;
+        if (map) map.flyTo([b.lat, b.lng], Math.max(map.getZoom(), 16));
+        close();
+      },
+    }));
+
+    // 水源跳转:确保水源图层打开,且缩放到 ≥15(水源逐点渲染层级,否则只显聚合气泡)
+    const waterItems: PaletteItem[] = filterUnits(water, q).map((w) => ({
+      id: `water-${w.id}`,
+      title: w.name,
+      subtitle: `水源 · ${w.type}${w.district ? ` · ${w.district}` : ''}`,
+      icon: Droplets,
+      group: '水源',
+      run: () => {
+        setShowWater(true);
+        const map = mapRef.current;
+        if (map) map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 15));
+        close();
+      },
+    }));
+
+    setPaletteItems([...filteredActions, ...unitItems, ...buildingItems, ...waterItems]);
 
     // 地址查询(高德异步,≥2 字触发;结果到达后追加)
     if (q.length >= 2) {
@@ -670,7 +777,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
               },
             };
           });
-          setPaletteItems([...filteredActions, ...unitItems, ...addrItems]);
+          setPaletteItems([...filteredActions, ...unitItems, ...buildingItems, ...waterItems, ...addrItems]);
         })
         .catch(() => {})
         .finally(() => {
@@ -681,7 +788,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       };
     }
     setPaletteLoading(false);
-  }, [paletteOpen, paletteQuery, baseMap, planned, keyUnits, clearRoutes, batchGeocode, drawMode, startDraw, cancelDraw]);
+  }, [paletteOpen, paletteQuery, baseMap, planned, keyUnits, buildings, water, clearRoutes, batchGeocode, drawMode, startDraw, cancelDraw]);
 
   // 消防站(渲染函数体在 lib/gis/render-stations)
   useEffect(() => {
@@ -856,8 +963,9 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: null } }));
         }}
       />
-      {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化) */}
-      <div className="absolute bottom-8 left-3 z-[450] flex items-center gap-3 rounded-lg border border-line bg-bg-panel/90 px-3 py-2 shadow-lg backdrop-blur">
+      {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化)。
+          居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称 */}
+      <div className="absolute bottom-3 left-1/2 z-[450] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-line bg-bg-panel/90 px-3 py-2 shadow-lg backdrop-blur">
         <div className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 text-cyan" />
           <span className="whitespace-nowrap text-[13px] font-bold text-cyan">{districtStats.districtName}</span>
@@ -872,6 +980,33 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           <span>单位 <b className="text-text-1">{districtStats.keyUnits.toLocaleString()}</b></span>
         </div>
       </div>
+      {/* 到场路线图例:planned 时显示,颜色↔站名↔距离/ETA 对应,最快路线高亮 */}
+      {planned.length > 0 && (() => {
+        const fastest = Math.min(...planned.map((x) => x.duration));
+        return (
+          <div className="absolute left-3 top-3 z-[500] w-60 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur">
+            <div className="mb-2 flex items-center gap-1.5">
+              <Route className="h-4 w-4 text-cyan" />
+              <span className="text-[13px] font-bold text-text-1">到场路线</span>
+              <span className="ml-auto text-[12px] text-cyan">{planned.length} 条</span>
+            </div>
+            <div className="space-y-1">
+              {planned.map((p, idx) => {
+                const color = routeColor(idx);
+                const isFastest = p.duration === fastest;
+                return (
+                  <div key={p.stationId} className={`flex items-center gap-2 rounded px-1.5 py-1 text-[12px] ${isFastest ? 'bg-cyan/10 ring-1 ring-cyan/30' : ''}`}>
+                    <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 0 2px ${color}55` }} />
+                    <span className="min-w-0 flex-1 truncate text-text-1">{p.stationName}</span>
+                    <span className="shrink-0 font-mono text-[11px] text-text-3">{(p.distance / 1000).toFixed(1)}km</span>
+                    <span className={`shrink-0 font-mono text-[11px] ${isFastest ? 'font-bold text-cyan' : 'text-text-2'}`}>{Math.round(p.duration / 60)}分</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
       <CommandPalette
         open={paletteOpen}
         query={paletteQuery}
@@ -918,7 +1053,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           className="absolute z-[500] w-64 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur"
           style={{
             left: Math.min(Math.max(responseState.anchor.x, 180), Math.max(responseState.anchor.maxX - 180, 180)),
-            top: Math.max(responseState.anchor.y - 14, 8),
+            top: Math.max(responseState.anchor.y - 56, 8),
             transform: 'translate(-50%, -100%)',
           }}
         >
@@ -1023,6 +1158,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           planning={planning}
           anchor={deploy.anchor}
           emptyHint={deploy.emptyHint}
+          forceCounts={stationForce}
           onPlan={(ids) => planRoutes(ids)}
           onClear={clearRoutes}
           onClose={closeDeploy}

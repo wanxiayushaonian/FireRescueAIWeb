@@ -38,7 +38,13 @@ export function routeTipHtml(r: RouteRenderItem, idx: number): string {
   const color = routeColor(idx);
   const distKm = r.distance != null ? (r.distance / 1000).toFixed(1) : '?';
   const etaMin = r.duration != null ? String(Math.round(r.duration / 60)) : '?';
-  return `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:2px 6px;color:#e6edf3;font-size:11px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${r.stationName}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${r.trafficLights ?? 0}灯</span></div>`;
+  return `<div style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:5px;padding:3px 8px;color:#e6edf3;font-size:13px;white-space:nowrap;box-shadow:0 0 8px ${color}44"><span style="color:${color};font-weight:700">${r.stationName}</span> <span style="color:#9db4c8">${distKm}km · ${etaMin}分 · ${r.trafficLights ?? 0}灯</span></div>`;
+}
+
+/** 路线起点(消防站)标注 HTML:彩色圆点(与路线同色)+ 站名徽标,放在 polyline[0]。 */
+export function routeStartHtml(r: RouteRenderItem, idx: number): string {
+  const color = routeColor(idx);
+  return `<div style="display:flex;align-items:center;gap:5px;white-space:nowrap"><span style="display:inline-block;width:13px;height:13px;border-radius:50%;background:${color};border:2px solid #0b1220;box-shadow:0 0 0 2px ${color}66,0 0 8px ${color}88"></span><span style="background:rgba(10,20,32,.94);border:1px solid ${color}66;border-radius:4px;padding:2px 7px;color:#e6edf3;font-size:12px;font-weight:600;box-shadow:0 0 6px ${color}44">${r.stationName}</span></div>`;
 }
 
 /** 渲染多条路线到 layer(先 clearLayers),返回适窗 bounds 与面板 summary。 */
@@ -58,6 +64,12 @@ export function renderRoutes(
     const seg = routeSegIndex(r.polyline.length, idx);
     L.marker(r.polyline[seg], {
       icon: L.divIcon({ html: routeTipHtml(r, idx), className: 'route-tip-icon', iconSize: undefined, iconAnchor: [0, 0] }),
+      interactive: false,
+      keyboard: false,
+    }).addTo(layer);
+    // 起点(消防站)标注:彩色圆点 + 站名徽标,锚定圆点中心到 polyline[0]
+    L.marker(r.polyline[0], {
+      icon: L.divIcon({ html: routeStartHtml(r, idx), className: 'route-start-icon', iconSize: [0, 0], iconAnchor: [0, 0] }),
       interactive: false,
       keyboard: false,
     }).addTo(layer);
