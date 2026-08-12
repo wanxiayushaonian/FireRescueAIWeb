@@ -205,6 +205,39 @@
 
 **唯一硬卡点:公网放行 8788**。放行后 agent 即可调 8 个业务工具(query_units/plan_dispatch/analyze_response...),智能派遣/响应分析闭环打通。其余环节均已通或可自主验证。
 
+---
+
+### Round 4 — 2026-08-13 夜(8787 streamable 升级,绕过 8788 放行)
+
+**目标**:8787 公网已通,升级其支持 streamable-http(平台兼容协议),让平台立即能连一个公网可达且协议兼容的 MCP,不依赖 8788 放行。
+
+#### ✅ 完成项
+
+**1. Node mcp-server(8787)加 streamable HTTP 端点(`mcp-server/src/http.ts`)**
+- 新增 `/mcp` 路由(StreamableHTTPServerTransport,session 模式),保留 `/sse`+`/messages` 向后兼容;鉴权复用 appKey(query+header X-App-Key)
+- 修复一个时序 bug:`mcpSessions.set(transport.sessionId, ...)` 必须在 `handleRequest(initialize)` **之后**(sessionId 由 handleRequest 内部 sessionIdGenerator 生成,line 530)——放前面会用 undefined key 存不进去,导致后续请求"Server not initialized"
+- 服务器 `docker compose build mcp && up -d mcp` 重建镜像替换 deploy-mcp-1
+
+**2. 公网 8787/mcp 完整验证**
+- initialize → capabilities(protocolVersion 2025-03-26)✓
+- 完整握手(initialize → notifications/initialized → tools/list)→ **公网返回 12 个场景工具**(fly_to/focus_objects/query_building_profile/query_facilities/query_key_parts/list_fire_devices/list_floors/show_route/query_scene_state/inject_event/report_decision)✓
+- **平台兼容的 streamable HTTP 协议 + 公网可达,绕过了 8788 放行依赖**
+
+**3. mcp_server 配置切回 8787/mcp**(经网关 PUT API,公网通 + 协议对)
+
+#### 🔍 发现:agent 工具执行的最后一环需 console
+
+程序化 agent-chat 验证:agent reasoning 知道工具、输出 qwen `<tool_call>` XML,但**仍无标准 tool-call SSE 事件**。尝试 API 填 `tools` 白名单(字符串数组)→ **agent-chat 直接 500**(平台 tools 字段非字符串数组格式,已回滚)。
+
+结论:平台 agent-chat → MCP 工具执行的打通,需要 **console 手动启用工具白名单**(或 tools 字段用平台专有格式,API 探测会破坏 app)。这一步 API 无法安全完成。
+
+#### 当前卡点(更新)
+- ❌ 8788 公网放行 —— **已绕过**(8787 streamable 公网通,平台能拉工具)
+- ⏸ **console 启用工具白名单** —— 让平台把 mcp_server 工具接入 agent function calling(API 不安全,需 console;或确认 tools 字段正确格式)
+
+> 现状:8787/mcp 公网完整(平台可拉 12 工具),只差 console「启用工具」一步让 agent 真正调用。代码侧全部就位并验证。
+
+
 
 #### Round 2 提交
 - `web/doc/vision-loop.md`(本文件,加 Round 2 日志)

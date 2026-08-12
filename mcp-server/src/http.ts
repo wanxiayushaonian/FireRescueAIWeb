@@ -1,5 +1,7 @@
 import http from 'node:http';
+import { randomUUID } from 'node:crypto';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './server.js';
 import { subscribeCommands } from './command-bus.js';
 import { checkAppKey } from './auth.js';
@@ -12,6 +14,13 @@ export function startHttp(opts: {
   heartbeatMs?: number;
 }): http.Server {
   const transports = new Map<string, SSEServerTransport>();
+  // Streamable HTTP(/mcp)session 管理:initialize 建 session,后续请求复用同 transport
+  const mcpSessions = new Map<string, StreamableHTTPServerTransport>();
+
+  function getMcpSessionId(req: http.IncomingMessage): string | undefined {
+    const h = req.headers['mcp-session-id'];
+    return Array.isArray(h) ? h[0] : h;
+  }
   // CORS_ORIGIN 支持逗号分隔多域名;'*' 或空表示放行所有(ACAO='*',Origin 不校验)。
   const rawList = opts.corsOrigin
     ? opts.corsOrigin.split(',').map((s) => s.trim()).filter(Boolean)
@@ -47,7 +56,51 @@ export function startHttp(opts: {
     cors(res, req);
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
-    // MCP SSE:agent 在 URL 带 ?appKey=
+    // MCP Streamable HTTP(/mcp):平台 uagent 兼容协议;initialize 建 session,后续复用
+    if (url.pathname === '/mcp') {
+      if (!appKeyAuthorized(req, url)) {
+        res.writeHead(401); res.end('unauthorized'); return;
+      }
+      if (req.method === 'POST') {
+        try {
+          const sid = getMcpSessionId(req);
+          if (sid && mcpSessions.has(sid)) {
+            // 已有 session:复用 transport
+            await mcpSessions.get(sid)!.handleRequest(req, res);
+          } else {
+            // 新 session(initialize):每 session 独立 server 实例以支持并发,与 /sse 一致
+            const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: randomUUID });
+            transport.onclose = () => {
+              if (transport.sessionId) mcpSessions.delete(transport.sessionId);
+            };
+            const server = createMcpServer();
+            await server.connect(transport);
+            await transport.handleRequest(req, res);
+            // sessionId 由 handleRequest(initialize) 内部经 sessionIdGenerator 生成(line 530),
+            // 必须在 handleRequest 后存 mcpSessions,否则用 undefined key 没存进去 →
+            // 后续请求复用查找失败,走 else 建新 transport → "Server not initialized"
+            if (transport.sessionId) mcpSessions.set(transport.sessionId, transport);
+          }
+        } catch (err) {
+          console.error('[mcp] /mcp POST failed:', err);
+          if (!res.headersSent) res.writeHead(500);
+          try { res.end('internal error'); } catch { /* response already ended */ }
+        }
+        return;
+      }
+      if (req.method === 'GET' || req.method === 'DELETE') {
+        const sid = getMcpSessionId(req);
+        const transport = sid ? mcpSessions.get(sid) : undefined;
+        if (!transport) { res.writeHead(400); res.end('no valid session'); return; }
+        await transport.handleRequest(req, res);
+        if (req.method === 'DELETE' && sid) mcpSessions.delete(sid);
+        return;
+      }
+      res.writeHead(405); res.end('method not allowed');
+      return;
+    }
+
+    // MCP SSE(老协议,保留向后兼容):agent 在 URL 带 ?appKey=
     if (url.pathname === '/sse') {
       if (!appKeyAuthorized(req, url)) {
         res.writeHead(401); res.end('unauthorized'); return;
