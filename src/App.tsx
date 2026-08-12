@@ -22,6 +22,7 @@ import type { AgentPanelId } from '@/mock/agentScripts';
 import TrainingView from '@/views/TrainingView';
 import CommandView from '@/views/CommandView';
 import DrillView from '@/views/DrillView';
+import { presets } from '@/lib/scene-recipe/presets';
 
 export default function App() {
   return (
@@ -63,7 +64,7 @@ function AppContent() {
   const [buildingPanelOpen, setBuildingPanelOpen] = useState(true);
 
   const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
-  const { sceneId, setSceneId, setEnabled, enabled } = useScene();
+  const { sceneId, setSceneId, setEnabled, enabled, recipeStore } = useScene();
 
   // 对象总览当前建筑 ID(由 GIS 信息窗「查看档案」或内部下拉切换)。
   const [objectsBuildingId, setObjectsBuildingId] = useState<string>('');
@@ -104,6 +105,13 @@ function AppContent() {
       setEnabled(true);
     }
   };
+
+  // 模块切换/场景就绪时套 Recipe 预设;态势总览不加载 3D;培训 familiarize 步进在 TrainingView
+  useEffect(() => {
+    if (!recipeStore) return;
+    if (module === 'objects') recipeStore.setStructural(presets.objectsOverview.structural);
+    else if (module === 'drill') recipeStore.setStructural(presets.drillConfront.structural);
+  }, [recipeStore, module]);
 
   // 智能体远程调起业务面板
   const handleAgentOpenPanel = (panelId: AgentPanelId) => {
