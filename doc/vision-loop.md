@@ -407,6 +407,40 @@ RAG→agent 经 8787 的**链路代码 + 数据全打通**(8787 query_knowledge 
 - `doc/vision-loop.md`(本文件 Round 9)
 - 数据:服务器 DB 导入 191 chunks(非 git,经 pg_dump)
 
+---
+
+### Round 10 — 2026-08-13 夜(embedding 服务用公网 new-api + query_knowledge 真检索)
+
+**目标**:Round 9 识别 embedding 服务(服务器 new-api:3001 未部署)是 RAG→agent 最后一环。本轮部署 embedding 让 query_knowledge 真检索。
+
+#### 🔍 纠偏(用户指正)
+- 初误:服务器无 GPU 却拉 ollama + bge-m3 模型(CPU 跑慢/占磁盘)→ 已清理(容器删除)
+- **正确方案(用户提供)**:用公网 new-api `http://fc.xwbuilders.com/new-api/v1` + key,有 bge-m3(1024 维,与本地一致)
+- new-api channels 真相:bge-m3 channel 上游本是 ollama(本地 11434);用户提供的公网 new-api 自带 bge-m3/text-embedding-v4/bge-reranker-v2-m3
+
+#### ✅ 完成项
+
+**1. ai_models bge-m3 → 公网 new-api**
+- UPDATE ai_models set endpoint=`http://fc.xwbuilders.com/new-api/v1/embeddings`, api_key=`sk-rTxvs...`, model_name=`bge-m3`
+- 测公网 new-api bge-m3:返回 1024 维向量 ✓
+
+**2. 8787 query_knowledge 真检索 191 chunks(端到端打通)**
+- 公网 8787/mcp initialize → tools/call query_knowledge「高层建筑火灾风险」
+- **返回 3 条语义精准结果**:
+  - [0.702] 乐盈广场21号楼(29F楼梯间,高空坠落/烟囱效应)
+  - [0.699] 九江市第一人民医院(6F楼梯间,结构坍塌/人员疏散困难)
+  - [0.698] 乐盈广场21号楼(29F泵房爆炸)
+- 完整链路:agent → 8787/mcp(streamable)→ query_knowledge → BFF → znya retrieve → **公网 new-api bge-m3** → pgvector 191 chunks → 返回
+
+#### 结论
+**RAG→agent 经 8787 的工具链路彻底打通**(query_knowledge 真检索服务器 191 chunks,经用户公网 new-api embedding)。agent 对话层是否调 query_knowledge 取决于平台 MCP 外部工具接入(Round 8 识别:配 kb_ids 触发平台内置 knowledge_search,mcp_server 8787 外部工具 agent 未实际调用——平台 MCP 接入/工具白名单层卡点,需 console)。
+
+#### Round 10 提交
+- `doc/vision-loop.md`(本文件 Round 10)
+- 配置:ai_models bge-m3 指向公网 new-api(服务器 DB,非 git)
+- 清理:误拉的 ollama 容器已删(残留 root 模型文件可后续 sudo rm)
+
+
 
 
 
