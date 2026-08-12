@@ -62,7 +62,7 @@ export function useLeafletMap(
   const [mapInited, setMapInited] = useState(false);
   // 当前整数 zoom(zoomend 同步):单位/建筑在 <14 时切聚合气泡
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
-  const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('vector');
+  const [baseMap, setBaseMap] = useState<'vector' | 'satellite'>('satellite');
   const [tilesFailed, setTilesFailed] = useState(false);
   const [viewportTick, setViewportTick] = useState(0);
 

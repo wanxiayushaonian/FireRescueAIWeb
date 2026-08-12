@@ -24,6 +24,7 @@ import { renderKeyUnits } from '@/lib/gis/render-key-units';
 import { renderIncidents } from '@/lib/gis/render-incidents';
 import { renderKeyBuildings } from '@/lib/gis/render-key-buildings';
 import { renderRegions } from '@/lib/gis/render-regions';
+import { buildDistrictIndex, hitDistrict, type DistrictIndex } from '@/lib/gis/district-hit';
 import { buildActionItems, filterActionItems, filterUnits, buildAddressDefs } from '@/lib/gis/palette-items';
 import { useMapLayerPrefs } from '@/lib/map-layer-store';
 import type { Region } from '@/lib/region-mapper';
@@ -57,6 +58,9 @@ const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: string) => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
+  // 区县命中索引(任意比例尺鼠标坐标反查用) + 上次命中 adcode(仅变化时派发事件)
+  const districtIndexRef = useRef<DistrictIndex[]>([]);
+  const lastHitDistrictRef = useRef<string | null>(null);
   const markersRef = useRef<Map<string, L.Marker>>(new Map());
   const incidentMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const keyUnitMarkersRef = useRef<Map<string, L.Marker>>(new Map());
@@ -66,14 +70,15 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
 
   // 图层偏好(队站类型/水源区划显隐)来自共享 store,由执勤力量/水源面板维护
   const layerPrefs = useMapLayerPrefs();
+  // 默认只启用边界、消防站;重点单位与重点建筑合并为一个开关(见 toggleKeyUnitLayers)
   const [showStations, setShowStations] = useState(true);
-  const [showWater, setShowWater] = useState(true);
+  const [showWater, setShowWater] = useState(false);
   const [showBoundary, setShowBoundary] = useState(true);
-  const [showKeyUnits, setShowKeyUnits] = useState(true);
-  const [showIncidents, setShowIncidents] = useState(true);
-  const [showBuildings, setShowBuildings] = useState(true);
-  const [showRegions, setShowRegions] = useState(true);
-  const [showIncidentResponse, setShowIncidentResponse] = useState(true);
+  const [showKeyUnits, setShowKeyUnits] = useState(false);
+  const [showIncidents, setShowIncidents] = useState(false);
+  const [showBuildings, setShowBuildings] = useState(false);
+  const [showRegions, setShowRegions] = useState(false);
+  const [showIncidentResponse, setShowIncidentResponse] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
   const [radial, setRadial] = useState<{ target: CoordFixTarget; x: number; y: number } | null>(null);
@@ -126,6 +131,12 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
   // 水源加载/空态轻量指示:加载中 > 密集聚合 > 空态
   const waterEmpty =
     !waterDense && !waterLoading && shouldShowWater(zoom) && water.length === 0 && waterClusters.length === 0;
+
+  // 重点单位(含重点建筑)合并开关:同时切换两个图层显隐
+  const toggleKeyUnitLayers = useCallback(() => {
+    setShowKeyUnits((v) => !v);
+    setShowBuildings((v) => !v);
+  }, []);
 
   // 图层显隐(boundary/stations/water/incidents/keyUnits/buildings/regions/incidentResponse,见 gis/hooks/use-layer-visibility)
   useLayerVisibility(mapRef, layers, mapInited, {
@@ -216,6 +227,8 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       .then((r) => r.json())
       .then((data: any) => {
         if (!alive) return;
+        // 构建区县命中索引:大比例尺下区划不可交互,鼠标坐标反查仍能激活
+        districtIndexRef.current = buildDistrictIndex(data);
         const geo = L.geoJSON(data, {
           style: styleFor,
           interactive: true,
@@ -227,8 +240,10 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
             const path = l as L.Polygon;
             if (level === 'district') {
               // 悬停/点击区县 → 面板联动加载该区县数据（派发 gis:select-district）
+              // 同时同步 lastHitDistrictRef,与 mousemove 反查共享去重
               const selectDistrict = () => {
                 const adcode = String(f?.properties?.adcode ?? '');
+                if (adcode) lastHitDistrictRef.current = adcode;
                 window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: adcode || null } }));
               };
               path.on('mouseover', () => {
@@ -262,10 +277,31 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       .catch(() => {});
 
     map.on('zoomend', onZoom);
+
+    // 任意比例尺鼠标坐标反查区县(大比例尺下区划不可交互,仍能激活面板联动):
+    // 命中区县且与上次不同 → 派发 gis:select-district;移出全部区县 → 不派发(保留当前过滤,点市级外框/× 清除)
+    let lastMouseTs = 0;
+    const onMouseMove = (e: L.LeafletMouseEvent) => {
+      // 节流 ~100ms,避免高频 mousemove 反复做射线判断
+      const now = Date.now();
+      if (now - lastMouseTs < 100) return;
+      lastMouseTs = now;
+      const hit = hitDistrict(e.latlng.lng, e.latlng.lat, districtIndexRef.current);
+      const code = hit?.adcode ?? null;
+      if (code && code !== lastHitDistrictRef.current) {
+        lastHitDistrictRef.current = code;
+        window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: code } }));
+      }
+    };
+    map.on('mousemove', onMouseMove);
+
     return () => {
       alive = false;
       map.off('zoomend', onZoom);
+      map.off('mousemove', onMouseMove);
       boundaryGeoRef.current = null;
+      districtIndexRef.current = [];
+      lastHitDistrictRef.current = null;
     };
   }, [mapInited]);
 
@@ -772,12 +808,10 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
         onToggleWater={() => setShowWater((v) => !v)}
         showBoundary={showBoundary}
         onToggleBoundary={() => setShowBoundary((v) => !v)}
-        showKeyUnits={showKeyUnits}
-        onToggleKeyUnits={() => setShowKeyUnits((v) => !v)}
+        showKeyUnits={showKeyUnits || showBuildings}
+        onToggleKeyUnits={toggleKeyUnitLayers}
         showIncidents={showIncidents}
         onToggleIncidents={() => setShowIncidents((v) => !v)}
-        showBuildings={showBuildings}
-        onToggleBuildings={() => setShowBuildings((v) => !v)}
         showRegions={showRegions}
         onToggleRegions={() => setShowRegions((v) => !v)}
       />
