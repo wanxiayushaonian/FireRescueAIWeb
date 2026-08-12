@@ -3,6 +3,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { SoonspaceRuntime, type CameraViewpoint } from '@/lib/soonspace-runtime';
 import type { SceneTreeNode } from '@/lib/ustudio';
+import type { LayerApplyParams } from 'ustudio-sdk';
+import { RecipeStore } from '@/lib/scene-recipe/store';
+import { applyRecipe } from '@/lib/scene-recipe/engine';
+import type { RecipeRuntime } from '@/lib/scene-recipe/types';
 
 type View = 'loading' | 'ready' | 'error' | 'no-scene';
 
@@ -24,6 +28,8 @@ interface SceneContextValue {
   setCustomInitialView: (vp: CameraViewpoint) => void;
   /** 清除自定义全局视角，恢复引擎默认 */
   resetCustomInitialView: () => void;
+  /** 场景显隐/聚焦单一真相源(runtime ready 后可用) */
+  recipeStore: RecipeStore | null;
 }
 
 const SceneContext = createContext<SceneContextValue | null>(null);
@@ -55,6 +61,8 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
   const [error, setError] = useState<string | null>(null);
   const [tree, setTree] = useState<SceneTreeNode | null>(null);
   const [initialView, setInitialView] = useState<CameraViewpoint | null>(null);
+  const [recipeStore, setRecipeStore] = useState<RecipeStore | null>(null);
+  const recipeUnsubRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<SoonspaceRuntime | null>(null);
   const treeRef = useRef<SceneTreeNode | null>(null);
@@ -164,6 +172,33 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
           /* switchFloor 无 tree 时跳过 */
         }
 
+        // 绑定 RecipeStore + engine(默认不套预设 → 零行为变化,仅通电管道)
+        const store = new RecipeStore();
+        const recipeRuntime: RecipeRuntime = {
+          setViewMode: (p, t, s, b) => rt.setViewMode(p, t, s, b),
+          setGisVisible: (v) => rt.setGisVisible(v),
+          showLabels: (t, ids, s) => rt.showLabels(t, ids, s),
+          hideLabels: () => rt.hideLabels(),
+          setScene: (p) => {
+            const sdk = rt.getSdk();
+            if (!sdk) return Promise.reject(new Error('SDK 未就绪'));
+            return sdk.setScene(p as LayerApplyParams);
+          },
+          flyToObject: (id) => rt.flyToObject(id),
+          highlightObject: (id, c) => rt.highlightObject(id, c),
+          setCameraViewpoint: (vp, tr) => rt.setCameraViewpoint(vp, tr),
+          setVirtualRouteVisible: (id, v) => rt.setVirtualRouteVisible(id, v),
+          setVirtualPolygonVisible: (id, v) => rt.setVirtualPolygonVisible(id, v),
+        };
+        recipeUnsubRef.current = store.subscribe((_next, cs) => {
+          const t = treeRef.current;
+          if (!t) return;
+          void applyRecipe(recipeRuntime, t, cs).then((r) => {
+            if (r.failed.length) store.desynced = true;
+          });
+        });
+        setRecipeStore(store);
+
         setRuntime(rt);
         if (!disposed) setView('ready');
       } catch (e) {
@@ -176,6 +211,9 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
 
     return () => {
       disposed = true;
+      recipeUnsubRef.current?.();
+      recipeUnsubRef.current = null;
+      setRecipeStore(null);
       // 注意：不在 cleanup 中 dispose runtime，因为我们要跨模块复用
       // 只有 sceneId 变化时才会 dispose 旧 runtime（在上面的 effect 中）
     };
@@ -204,6 +242,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
     enabled,
     setCustomInitialView,
     resetCustomInitialView,
+    recipeStore,
   };
 
   return (
