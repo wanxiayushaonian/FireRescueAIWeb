@@ -339,6 +339,38 @@ dev server 运行正常(HTTP 200),drill 模块编译无报错(无 module not fou
 - `znya_jjxf119/server/app/worker.py`(注册 task_generate_all + 显式模型注册)
 - `doc/vision-loop.md`(本文件 Round 7)
 
+---
+
+### Round 8 — 2026-08-13 夜(知识库接入 agent + 架构隔离发现)
+
+**目标**:把 191 chunks 知识库接入 agent 问答(配 file_search.kb_ids),绕过 agent 工具闭环 console 卡点。
+
+#### 🔍 验证 + 架构发现(诚实)
+
+**配 kb_ids 激活了平台 knowledge_search 工具调用(突破)**:
+- PUT file_search.kb_ids=[历史预案知识库 265da1fb],PUT 200
+- 程序化 agent-chat 问「21号楼火灾风险」/「医院疏散」→ **首次出现 tool-call 事件(3-7 次,工具名 `knowledge_search`)+ tool-result**
+- 对比:之前配 mcp_server 后 tool-call=0;配 kb_ids 后 tool-call 通 → **证明平台 agent tool-call 机制可用**,配 kb_ids 能触发平台内置知识库检索工具
+
+**但 knowledge_search 返空(架构隔离)**:
+- tool-result 全为 `[]`:平台 file_search 用**平台自己的 kb 空间**,不查 zyna pgvector 的 191 chunks
+- 根因:zyna 的 knowledge_bases.id(265da1fb)在平台 file_search 不被识别;平台 kb 与 znya RAG(kb_documents/kb_chunks/pgvector)是**两套独立系统**
+- 即:验证器「配 zyna kb_id 让 agent 用 191 chunks」的前提在架构上不成立——平台 knowledge_search 不通到 zyna DB
+
+**已回滚** kb_ids=[](指向 zyna 无效,返空会干扰 agent),保留 mcp_server 8787 + enable_thinking。
+
+#### 正确路径(RAG→agent 内容打通,下一轮)
+要让 agent 真用 zyna 191 chunks,需打通架构隔离:
+1. **平台 kb 上传**:把 191 chunks 预案文本上传到平台 file_search 管理的 kb(平台 console / kb 上传 API),配平台 kb_id(非 zyna)→ agent knowledge_search 查平台 kb 有内容
+2. **MCP RAG 工具**:8787(Node 公网通)或 8788(Python 同进程)加 `query_knowledge` 工具调 zyna `retrieval.retrieve`;8787 需 zyna 加 service-token RAG 端点(现 zyna RAG API 全用 user auth,8787 无用户 token);8788 同进程最简但需公网放行
+
+#### 结论
+本轮验证证明:**平台 agent tool-call 机制可用**(配 kb_ids 触发 knowledge_search,这是 agent 工具闭环的正面信号——之前 tool-call=0 是平台 MCP 外部工具接入问题,非机制问题)。但 zyna RAG 与平台 file_search 架构隔离,191 chunks 现阶段 agent 用不到。完整 RAG→agent 内容打通需上述正确路径之一,是下一轮明确工程项。
+
+#### Round 8 提交
+- `doc/vision-loop.md`(本文件 Round 8;无代码改动,本轮为平台 API 验证 + 架构发现)
+
+
 
 
 
