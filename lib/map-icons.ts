@@ -28,7 +28,7 @@ const DEFAULT_STATION_COLOR = '#22d3ee';
 const DEFAULT_WATER_COLOR = '#60a5fa';
 const WATER_ZOOM_THRESHOLD = 13;
 // zoom>=15 视口内点位数量有界(市区约百级),可逐点渲染;13-14 走聚合气泡
-const WATER_POINTS_ZOOM = 15;
+export const WATER_POINTS_ZOOM = 15;
 
 /** zoom>=13 时显示水源图层(聚合气泡或点位;远景只显消防站,避免密集)。 */
 export function shouldShowWater(zoom: number): boolean {
@@ -48,12 +48,28 @@ export function waterClusterCell(zoom: number): number {
 // zoom<14 重点单位/重点建筑合并为聚合气泡;>=14 逐点渲染
 export const MARKER_CLUSTER_MAX_ZOOM = 14;
 
-/** 通用聚合气泡:圆形计数徽标,尺寸随数量分档,color 取图层主题色。 */
+/** 聚合气泡尺寸档位(像素):按数量分三档。 */
+function clusterSize(count: number): number {
+  return count >= 100 ? 52 : count >= 20 ? 44 : 36;
+}
+
+/**
+ * 通用聚合气泡(科技感):三层同心圆 + 计数徽章。
+ * - 最外扩散光晕(透明描边圈) → 中层半透明填充 → 内层实心计数盘
+ * - SVG 内不依赖 CSS 变量,颜色参数化,供不同图层主题色复用
+ */
 export function clusterBubbleSvg(count: number, color: string): { html: string; size: number } {
-  const size = count >= 100 ? 44 : count >= 20 ? 38 : 32;
+  const size = clusterSize(count);
+  const c = size / 2;
   const html = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="${color}2e" stroke="${color}" stroke-width="1.5"/>
-  <text x="${size / 2}" y="${size / 2 + 4}" font-size="${count >= 100 ? 12 : 13}" text-anchor="middle" fill="${color}" font-weight="700" font-family="sans-serif">${count}</text>
+  <!-- 外层扩散光晕 -->
+  <circle cx="${c}" cy="${c}" r="${c - 1}" fill="none" stroke="${color}" stroke-width="1" opacity="0.25"/>
+  <circle cx="${c}" cy="${c}" r="${c - 5}" fill="${color}" opacity="0.1"/>
+  <!-- 中层填充环 -->
+  <circle cx="${c}" cy="${c}" r="${c - 7}" fill="${color}" opacity="0.18" stroke="${color}" stroke-width="1.2" stroke-opacity="0.6"/>
+  <!-- 内层计数盘 -->
+  <circle cx="${c}" cy="${c}" r="${c - 11}" fill="${color}" fill-opacity="0.9" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+  <text x="${c}" y="${c + (count >= 100 ? 5 : 4)}" font-size="${count >= 100 ? 15 : 14}" text-anchor="middle" fill="#0b1220" font-weight="800" font-family="sans-serif">${count}</text>
 </svg>`;
   return { html, size };
 }
@@ -75,12 +91,20 @@ export function waterIconSvg(waterType: string): string {
 </svg>`;
 }
 
-/** 水源聚合气泡:圆形计数徽标,尺寸随数量分档。 */
+/** 水源聚合气泡(与 clusterBubbleSvg 同构,固定水蓝色主题)。 */
 export function waterClusterSvg(count: number): { html: string; size: number } {
-  const size = count >= 100 ? 44 : count >= 20 ? 38 : 32;
+  const size = clusterSize(count);
+  const c = size / 2;
+  const color = '#38bdf8';
   const html = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" xmlns="http://www.w3.org/2000/svg">
-  <circle cx="${size / 2}" cy="${size / 2}" r="${size / 2 - 1.5}" fill="rgba(56,189,248,0.28)" stroke="#38bdf8" stroke-width="1.5"/>
-  <text x="${size / 2}" y="${size / 2 + 4}" font-size="${count >= 100 ? 12 : 13}" text-anchor="middle" fill="#bae6fd" font-weight="700" font-family="sans-serif">${count}</text>
+  <!-- 外层扩散光晕 -->
+  <circle cx="${c}" cy="${c}" r="${c - 1}" fill="none" stroke="${color}" stroke-width="1" opacity="0.25"/>
+  <circle cx="${c}" cy="${c}" r="${c - 5}" fill="${color}" opacity="0.1"/>
+  <!-- 中层填充环 -->
+  <circle cx="${c}" cy="${c}" r="${c - 7}" fill="${color}" opacity="0.18" stroke="${color}" stroke-width="1.2" stroke-opacity="0.6"/>
+  <!-- 内层计数盘 -->
+  <circle cx="${c}" cy="${c}" r="${c - 11}" fill="${color}" fill-opacity="0.9" stroke="rgba(255,255,255,0.5)" stroke-width="1"/>
+  <text x="${c}" y="${c + (count >= 100 ? 5 : 4)}" font-size="${count >= 100 ? 15 : 14}" text-anchor="middle" fill="#0b1220" font-weight="800" font-family="sans-serif">${count}</text>
 </svg>`;
   return { html, size };
 }

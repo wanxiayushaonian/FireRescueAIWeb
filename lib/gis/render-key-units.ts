@@ -83,8 +83,8 @@ export function renderKeyUnits(
           iconAnchor: [size / 2, size / 2],
         }),
       })
-        .bindTooltip(`${c.count} 个重点单位,放大地图查看`, { direction: 'top', className: 'gis-tip' })
-        .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
+        .bindTooltip(`${c.count} 个重点单位,点击直达点位`, { direction: 'top', className: 'gis-tip' })
+        .on('click', () => opts.map.flyTo([c.lat, c.lng], MARKER_CLUSTER_MAX_ZOOM))
         .addTo(layer);
     }
   };

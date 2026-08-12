@@ -3,7 +3,7 @@
 // popup 恢复:重建前从 prevMarkers 找 isPopupOpen 的 id,重建后在新 marker 实例上 openPopup(clearLayers 会销毁 popup)。
 // 与 lib/gis/route-render 同策略:import type + 函数内 require('leaflet')(vitest node 环境约束)。
 import type L from 'leaflet';
-import { waterIconSvg, waterClusterSvg, waterClusterCell, shouldShowWater, shouldShowWaterPoints } from '../map-icons';
+import { waterIconSvg, waterClusterSvg, waterClusterCell, shouldShowWater, shouldShowWaterPoints, WATER_POINTS_ZOOM } from '../map-icons';
 import { gridCluster } from '../grid-cluster';
 import { POINT_CAP, decidePointRender } from './point-render';
 import { popupForWater } from './popup-html';
@@ -63,8 +63,8 @@ export function renderWater(
           iconAnchor: [size / 2, size / 2],
         }),
       })
-        .bindTooltip(`${c.count} 个水源,放大地图查看`, { direction: 'top', className: 'gis-tip' })
-        .on('click', () => opts.map.flyTo([c.lat, c.lng], opts.map.getZoom() + 1))
+      .bindTooltip(`${c.count} 个水源,点击直达点位`, { direction: 'top', className: 'gis-tip' })
+        .on('click', () => opts.map.flyTo([c.lat, c.lng], WATER_POINTS_ZOOM))
         .addTo(layer);
     }
   };

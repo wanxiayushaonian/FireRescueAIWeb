@@ -471,7 +471,14 @@
 .map-icon-water-cluster,
 .map-icon-unit-cluster,
 .map-icon-building-cluster {
-  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.15));
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.18));
+  transition: filter 0.2s ease;
+}
+/* 聚类 hover 提亮 + 光晕增强(禁止 scale/translate:Leaflet 用 transform 定位 marker) */
+.leaflet-marker-icon.map-icon-water-cluster:hover,
+.leaflet-marker-icon.map-icon-unit-cluster:hover,
+.leaflet-marker-icon.map-icon-building-cluster:hover {
+  filter: brightness(1.3) drop-shadow(0 0 10px rgba(56, 189, 248, 0.6));
 }
 /* hover 提亮(禁止 scale/translate:Leaflet 用 transform 定位 marker) */
 .leaflet-marker-icon.map-icon-station:hover,

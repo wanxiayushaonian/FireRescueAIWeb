@@ -7,9 +7,10 @@ import type { KeyUnit } from '@/lib/key-unit-mapper';
 import { fetchStations, fetchResources } from '@/api/force';
 import { fetchWaterStats, fetchWaterSourcesPage, type WaterStats } from '@/api/water';
 import { fetchKeyUnits } from '@/api/key-units';
-import { buildForceStats, buildResourceTree, type ResourceTreeGroup } from '@/lib/force-mapper';
+import { buildResourceTree, type ResourceTreeGroup } from '@/lib/force-mapper';
 import { DISTRICT_NAME } from '@/lib/water-mapper';
 import { useMapLayerPrefs, toggleStationTypeVisible, toggleWaterDistrictHidden, toggleKeyUnitTypeHidden } from '@/lib/map-layer-store';
+import { setDistrictStats } from '@/lib/district-stats-store';
 import { addSceneAction } from '@/mock/sceneLog';
 import StatCard from '@/components/StatCard';
 import StatusBadge, { statusVariantOf } from '@/components/StatusBadge';
@@ -38,20 +39,23 @@ const KEYUNIT_STATUS_MAP: Record<string, string> = {
   alarm: '告警',
 };
 
-/** 根据 Tab 类型转换状态为中文 */
-function localizeStatus(tab: TabKey, status: string): string {
-  if (tab === 'water') return WATER_STATUS_MAP[status] ?? status;
-  if (tab === 'keyunit') return KEYUNIT_STATUS_MAP[status] ?? status;
+/** 执勤力量资源状态中文映射 */
+const RESOURCE_STATUS_MAP: Record<string, string> = {
+  在位: '在位',
+  出警: '出警',
+  维保: '维保',
+  正常: '正常',
+  告警: '告警',
+  离线: '离线',
+};
+
+/** 按行类型转换状态为中文 */
+function localizeStatus(row: Row, status: string): string {
+  if (row.kind === 'water') return WATER_STATUS_MAP[status] ?? status;
+  if (row.kind === 'keyunit') return KEYUNIT_STATUS_MAP[status] ?? status;
+  if (row.kind === 'resource') return RESOURCE_STATUS_MAP[status] ?? status;
   return status;
 }
-
-type TabKey = 'force' | 'water' | 'keyunit';
-
-const TABS: Array<{ key: TabKey; label: string; icon: typeof Flag }> = [
-  { key: 'force', label: '执勤力量', icon: Flag },
-  { key: 'water', label: '水源', icon: Droplet },
-  { key: 'keyunit', label: '重点单位', icon: Building2 },
-];
 
 type Row =
   | { kind: 'station'; station: Station }
@@ -60,12 +64,10 @@ type Row =
   | { kind: 'keyunit'; unit: KeyUnit };
 
 export default function ResourceOverviewPanel() {
-  const [tab, setTab] = useState<TabKey>('force');
   const [demoState, setDemoState] = useState<FetchState>('ok');
   const [state, setState] = useState<FetchState>('loading');
 
   // 执勤力量数据
-  const [stats, setStats] = useState<{ value: number; delta?: string }[]>([]);
   const [stations, setStations] = useState<Station[]>([]);
   const [resources, setResources] = useState<ResourceItem[]>([]);
   const [tree, setTree] = useState<ResourceTreeGroup[]>([]);
@@ -81,8 +83,9 @@ export default function ResourceOverviewPanel() {
 
   // 通用状态
   const [query, setQuery] = useState('');
-  const [treeSel, setTreeSel] = useState<{ category: string; subtype?: string } | null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({ 队站: true, 区县: true, 类型: true });
+  // 默认激活队站 → 救援站子分类（国家队救援站列表）
+  const [treeSel, setTreeSel] = useState<{ category: string; subtype?: string } | null>({ category: '队站', subtype: '救援站' });
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({ 队站: true, 人员: true, 车辆: true, 装备: true, 水源: true, 重点单位: true });
   const [visible, setVisible] = useState(20);
   const [appending, setAppending] = useState(false);
   const [dialog, setDialog] = useState<Station | null>(null);
@@ -105,7 +108,6 @@ export default function ResourceOverviewPanel() {
         })),
       );
       setResources(rs);
-      setStats(buildForceStats(st, rs));
       setTree(buildResourceTree(st, rs));
       setState(st.length === 0 && rs.length === 0 ? 'empty' : 'ok');
     } catch {
@@ -131,8 +133,8 @@ export default function ResourceOverviewPanel() {
 
   // 加载水源列表（服务端分页：每页 20 条；过滤条件变化时自动回第一页）
   const loadWaterList = useCallback(async () => {
-    // 如果选择了区县分类，使用该区县过滤
-    const selectedDistrictCode = treeSel?.category === '区县' && treeSel.subtype
+    // 如果选择了水源区县分类，使用该区县过滤
+    const selectedDistrictCode = treeSel?.category === '水源' && treeSel.subtype
       ? Object.entries(DISTRICT_NAME).find(([, name]) => name === treeSel.subtype)?.[0]
       : undefined;
     const effectiveCode = selectedDistrictCode ?? districtFilter ?? undefined;
@@ -178,12 +180,12 @@ export default function ResourceOverviewPanel() {
   useEffect(() => { loadWaterStats(demoState); }, [demoState, loadWaterStats]);
   useEffect(() => { loadKeyUnits(); }, [loadKeyUnits]);
 
-  // 水源列表加载（waterPage=1 表示首次或过滤变化，直接替换列表；>1 追加）
+  // 水源列表加载：选中水源分类（或按地图区县过滤）时拉取
   useEffect(() => {
-    if (tab === 'water' && state === 'ok') {
-      loadWaterList();
-    }
-  }, [tab, state, loadWaterList]);
+    if (state !== 'ok') return;
+    const waterActive = treeSel?.category === '水源' || !!districtFilter;
+    if (waterActive) loadWaterList();
+  }, [state, treeSel, districtFilter, loadWaterList]);
 
   // 监听 GIS 地图区县点击事件
   useEffect(() => {
@@ -212,26 +214,46 @@ export default function ResourceOverviewPanel() {
     return keyUnits.filter((u) => u.district === DISTRICT_NAME[districtFilter] || u.district === districtFilter);
   }, [keyUnits, districtFilter]);
 
-  // 构建当前 Tab 的行数据
+  // 统一左侧树：执勤力量(队站/人员/车辆/装备) + 水源(区县) + 重点单位(类型) 同级
+  const unifiedTree = useMemo<ResourceTreeGroup[]>(() => {
+    const waterGroup: ResourceTreeGroup = {
+      category: '水源',
+      children: (waterStats?.by_district ?? []).map((d) => ({
+        name: DISTRICT_NAME[d.district_code] ?? '未知',
+        count: d.count,
+      })),
+    };
+    const keyUnitGroup: ResourceTreeGroup = {
+      category: '重点单位',
+      children: (() => {
+        const typeMap = new Map<string, number>();
+        for (const u of filteredKeyUnits) {
+          typeMap.set(u.unitType, (typeMap.get(u.unitType) ?? 0) + 1);
+        }
+        return [...typeMap.entries()].map(([name, count]) => ({ name, count }));
+      })(),
+    };
+    return [...tree, waterGroup, keyUnitGroup];
+  }, [tree, waterStats, filteredKeyUnits]);
+
+  // 构建当前行数据
   const rows = useMemo<Row[]>(() => {
     let list: Row[] = [];
 
-    if (tab === 'force') {
-      if (!treeSel || treeSel.category === '队站') {
-        list = filteredStations.map((s) => ({ kind: 'station' as const, station: s }));
-        if (treeSel?.subtype) list = list.filter((r) => r.kind === 'station' && r.station.type === treeSel.subtype);
-      } else {
-        list = filteredResources
-          .filter((r) => r.category === treeSel.category && (!treeSel.subtype || r.subtype === treeSel.subtype))
-          .map((item) => ({ kind: 'resource' as const, item }));
-      }
-    } else if (tab === 'water') {
+    if (!treeSel || treeSel.category === '队站') {
+      list = filteredStations.map((s) => ({ kind: 'station' as const, station: s }));
+      if (treeSel?.subtype) list = list.filter((r) => r.kind === 'station' && r.station.type === treeSel.subtype);
+    } else if (treeSel.category === '人员' || treeSel.category === '车辆' || treeSel.category === '装备') {
+      list = filteredResources
+        .filter((r) => r.category === treeSel.category && (!treeSel.subtype || r.subtype === treeSel.subtype))
+        .map((item) => ({ kind: 'resource' as const, item }));
+    } else if (treeSel.category === '水源') {
       // 服务端已按 districtCode 过滤，直接用 waterList
       list = waterList.map((w) => ({ kind: 'water' as const, water: w }));
-    } else if (tab === 'keyunit') {
+    } else if (treeSel.category === '重点单位') {
       list = filteredKeyUnits.map((u) => ({ kind: 'keyunit' as const, unit: u }));
       // 按类型过滤
-      if (treeSel?.category === '类型' && treeSel.subtype) {
+      if (treeSel.subtype) {
         list = list.filter((r) => r.kind === 'keyunit' && r.unit.unitType === treeSel.subtype);
       }
     }
@@ -248,11 +270,12 @@ export default function ResourceOverviewPanel() {
     }
 
     return list;
-  }, [tab, treeSel, filteredStations, filteredResources, waterList, filteredKeyUnits, query]);
+  }, [treeSel, filteredStations, filteredResources, waterList, filteredKeyUnits, query]);
 
-  // 水源 Tab 走服务端分页（每页 20 条已加载到 waterList），直接展示全部；其他 Tab 走客户端虚拟滚动切片
-  const shown = tab === 'water' ? rows : rows.slice(0, visible);
-  const allLoaded = tab === 'water'
+  // 水源走服务端分页（每页 20 条已加载到 waterList），直接展示全部；其他走客户端虚拟滚动切片
+  const isWaterMode = treeSel?.category === '水源';
+  const shown = isWaterMode ? rows : rows.slice(0, visible);
+  const allLoaded = isWaterMode
     ? waterList.length >= waterTotal
     : visible >= rows.length;
 
@@ -260,12 +283,12 @@ export default function ResourceOverviewPanel() {
     const el = listRef.current;
     if (!el || appending) return;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight * 0.8) {
-      // 水源 Tab 走服务端分页：还有更多数据时加载下一页
-      if (tab === 'water' && waterList.length < waterTotal) {
+      // 水源模式走服务端分页：还有更多数据时加载下一页
+      if (isWaterMode && waterList.length < waterTotal) {
         setAppending(true);
         setWaterPage((p) => p + 1);
       } else if (visible < rows.length) {
-        // 其他 Tab 走客户端虚拟滚动
+        // 其他走客户端虚拟滚动
         setAppending(true);
         window.setTimeout(() => { setVisible((v) => v + 20); setAppending(false); }, 600);
       }
@@ -292,78 +315,55 @@ export default function ResourceOverviewPanel() {
 
   const stationName = (id: string) => stations.find((s) => s.id === id)?.name ?? id;
 
-  // 当前 Tab 的统计卡片
-  const currentStats = useMemo(() => {
-    if (tab === 'force') {
-      return [
-        { icon: Flag, label: '队站数', value: stats[0]?.value ?? 0 },
-        { icon: Users, label: '人员数', value: stats[1]?.value ?? 0 },
-        { icon: Truck, label: '车辆数', value: stats[2]?.value ?? 0 },
-        { icon: Package, label: '装备数', value: stats[3]?.value ?? 0 },
-      ];
-    }
-    if (tab === 'water') {
-      return [
-        { icon: Droplet, label: '水源总数', value: waterStats?.total ?? 0 },
-      ];
-    }
-    if (tab === 'keyunit') {
-      return [
-        { icon: Building2, label: '重点单位', value: filteredKeyUnits.length },
-      ];
-    }
-    return [];
-  }, [tab, stats, waterStats, filteredKeyUnits]);
+  // 统一统计卡片：队站/人员/车辆/装备 + 水源/重点单位 总计块
+  // 有区县过滤(districtFilter)时全部按该区县动态统计,鼠标移动跨区实时变化
+  const totalStats = useMemo(() => {
+    // 水源按区县计数优先取 stats 聚合(即时,无需等分页请求);无过滤取全局
+    const waterCount = districtFilter
+      ? (waterStats?.by_district ?? []).find((d) => d.district_code === districtFilter)?.count ?? 0
+      : waterStats?.total ?? 0;
+    return [
+      { icon: Flag, label: '队站数', value: filteredStations.length },
+      { icon: Users, label: '人员数', value: filteredResources.filter((r) => r.category === '人员').length },
+      { icon: Truck, label: '车辆数', value: filteredResources.filter((r) => r.category === '车辆').length },
+      { icon: Package, label: '装备数', value: filteredResources.filter((r) => r.category === '装备').length },
+      { icon: Droplet, label: '水源总数', value: waterCount },
+      { icon: Building2, label: '重点单位', value: filteredKeyUnits.length },
+    ];
+  }, [waterStats, districtFilter, filteredStations, filteredResources, filteredKeyUnits]);
 
-  // 当前 Tab 的左侧树
-  const currentTree = useMemo(() => {
-    if (tab === 'force') return tree;
-    if (tab === 'water') {
-      const districtStats = waterStats?.by_district ?? [];
-      return [{
-        category: '区县',
-        children: districtStats.map((d) => ({
-          name: DISTRICT_NAME[d.district_code] ?? '未知',
-          count: d.count,
-        })),
-      }];
-    }
-    if (tab === 'keyunit') {
-      const typeMap = new Map<string, number>();
-      for (const u of filteredKeyUnits) {
-        typeMap.set(u.unitType, (typeMap.get(u.unitType) ?? 0) + 1);
-      }
-      return [{
-        category: '类型',
-        children: [...typeMap.entries()].map(([name, count]) => ({ name, count })),
-      }];
-    }
-    return [];
-  }, [tab, tree, waterStats, filteredKeyUnits]);
+  // 同步区县统计快照到共享 store(RealGisMap 顶部信息条订阅显示)
+  useEffect(() => {
+    setDistrictStats({
+      districtCode: districtFilter,
+      districtName: districtFilter ? (DISTRICT_NAME[districtFilter] ?? '未知') : '九江市',
+      stations: filteredStations.length,
+      personnel: filteredResources.filter((r) => r.category === '人员').length,
+      vehicles: filteredResources.filter((r) => r.category === '车辆').length,
+      equipment: filteredResources.filter((r) => r.category === '装备').length,
+      water: districtFilter
+        ? (waterStats?.by_district ?? []).find((d) => d.district_code === districtFilter)?.count ?? 0
+        : waterStats?.total ?? 0,
+      keyUnits: filteredKeyUnits.length,
+    });
+  }, [districtFilter, filteredStations, filteredResources, waterStats, filteredKeyUnits]);
 
   return (
     <div className="flex h-full flex-col">
-      {/* Tab 切换 */}
-      <div className="flex items-center gap-1 border-b border-line px-3 py-2">
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const active = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              onClick={() => { setTab(t.key); setTreeSel(null); setVisible(20); setWaterPage(1); lastWaterKeyRef.current = ''; }}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-[13px] transition-colors ${
-                active ? 'bg-cyan/15 text-cyan' : 'text-text-2 hover:bg-white/5 hover:text-text-1'
-              }`}
-            >
-              <Icon className="h-4 w-4" />
-              {t.label}
-            </button>
-          );
-        })}
+      {/* 工具行 */}
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
+          <input
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setVisible(20); }}
+            placeholder="搜索队站 / 人员 / 车辆 / 装备 / 水源 / 重点单位…"
+            className="h-8 w-full rounded-md border border-line bg-bg-panel-2 pl-7 pr-2 text-[13px] text-text-1 placeholder:text-text-3 focus:border-line-glow focus:outline-none"
+          />
+        </div>
         {/* 区域过滤指示器 */}
         {districtFilter && (
-          <div className="ml-auto flex items-center gap-1.5 rounded-full bg-cyan/10 px-2.5 py-1 text-[11px] text-cyan">
+          <div className="flex items-center gap-1.5 rounded-full bg-cyan/10 px-2.5 py-1 text-[11px] text-cyan">
             <MapPin className="h-3 w-3" />
             {DISTRICT_NAME[districtFilter] ?? '未知区域'}
             <button
@@ -377,31 +377,18 @@ export default function ResourceOverviewPanel() {
         )}
       </div>
 
-      {/* 工具行 */}
-      <div className="flex items-center gap-2 border-b border-line px-3 py-2">
-        <div className="relative flex-1">
-          <Search className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-3" />
-          <input
-            value={query}
-            onChange={(e) => { setQuery(e.target.value); setVisible(20); }}
-            placeholder={tab === 'force' ? '搜索队站 / 人员 / 车辆 / 装备…' : tab === 'water' ? '搜索水源名称 / 地址…' : '搜索重点单位…'}
-            className="h-8 w-full rounded-md border border-line bg-bg-panel-2 pl-7 pr-2 text-[13px] text-text-1 placeholder:text-text-3 focus:border-line-glow focus:outline-none"
-          />
-        </div>
-      </div>
-
-      {state !== 'ok' && tab === 'force' ? (
+      {state !== 'ok' ? (
         <PanelStateView state={state} onRetry={() => loadForce('ok')} />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col">
-          {/* 统计卡片 */}
-          <div className={`grid gap-2 p-3 ${tab === 'force' ? 'grid-cols-4' : 'grid-cols-1'}`}>
-            {currentStats.map((c, i) => (
+          {/* 总计统计卡片(2 行 x 3 列) */}
+          <div className="grid grid-cols-3 gap-2 p-3">
+            {totalStats.map((c, i) => (
               <motion.div
                 key={c.label}
                 initial={{ y: 8, opacity: 0 }}
                 animate={{ y: 0, opacity: 1 }}
-                transition={{ delay: i * 0.08 }}
+                transition={{ delay: i * 0.06 }}
               >
                 <StatCard icon={c.icon} label={c.label} value={c.value} />
               </motion.div>
@@ -412,7 +399,7 @@ export default function ResourceOverviewPanel() {
           <div className="flex min-h-0 flex-1 border-t border-line">
             {/* 分类树 */}
             <div className="w-[140px] shrink-0 overflow-y-auto border-r border-line py-1">
-              {currentTree.map((group) => {
+              {unifiedTree.map((group) => {
                 const open = !!expanded[group.category];
                 return (
                   <div key={group.category}>
@@ -431,9 +418,9 @@ export default function ResourceOverviewPanel() {
                     >
                       {group.children.map((ch) => {
                         const sel = treeSel?.category === group.category && treeSel.subtype === ch.name;
-                        const isStationRow = tab === 'force' && group.category === '队站';
-                        const isWaterDistrictRow = tab === 'water' && group.category === '区县';
-                        const isKeyUnitTypeRow = tab === 'keyunit' && group.category === '类型';
+                        const isStationRow = group.category === '队站';
+                        const isWaterDistrictRow = group.category === '水源';
+                        const isKeyUnitTypeRow = group.category === '重点单位';
                         const hasEye = isStationRow || isWaterDistrictRow || isKeyUnitTypeRow;
                         const hiddenOnMap = isStationRow
                           ? !layerPrefs.visibleStationTypes.includes(ch.name)
@@ -495,7 +482,7 @@ export default function ResourceOverviewPanel() {
                         : r.kind === 'water' ? `${r.water.district} · ${r.water.type}`
                         : `${r.unit.unitType} · ${r.unit.address ?? ''}`;
                       const rawStatus = r.kind === 'station' ? '在位' : r.kind === 'resource' ? r.item.status : r.kind === 'water' ? r.water.status : r.unit.status;
-                      const status = localizeStatus(tab, rawStatus);
+                      const status = localizeStatus(r, rawStatus);
                       return (
                         <motion.li
                           key={key}
