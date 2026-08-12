@@ -237,6 +237,42 @@
 
 > 现状:8787/mcp 公网完整(平台可拉 12 工具),只差 console「启用工具」一步让 agent 真正调用。代码侧全部就位并验证。
 
+---
+
+### Round 5 — 2026-08-13 夜(drill 推演引擎运行时端到端验证)
+
+**目标**:lib/drill 1684 行引擎虽已实现但从未运行时验证过。本轮起集成验证,确认引擎真正能跑,发现 bug 就地修复。
+
+#### ✅ 完成项
+
+**1. 运行时集成验证脚本(`lib/drill/__tests__/runtime-integration.test.ts`,7 用例)**
+模拟 DrillView 的 tick 编排(EventBus.seed → clock 循环{getEvents→state.tick→recorder.record}),跑 21号楼完整时间线(ts 0-20),验证:
+- ✅ 状态机跑完全程不崩,火势动态变化(非恒定;初始=initialFireLevel)
+- ✅ 到场力量 ETA 推进:种子 arrival 注册后车辆最终到场(>0)
+- ✅ 特情生效:ts=9 复燃(fireLevelDelta+1)+ ts=15 坍塌(trappedDelta+3)影响状态
+- ✅ 压制(water/foam)与救援(rescue)在决策生效后激活
+- ✅ 事件树随 tick 生长(getAll() 节点数 ≥ 种子事件数)
+- ✅ AgentRunner.triggerCommander 调 postChat(注入 mock,不连网络)
+- ✅ 对抗禁用(adversaryEveryNTicks=0)onTick 不抛错
+
+**回归**:全部 drill 单测 **75/75 通过**(原 68 + 新 7 集成)。
+
+**2. 发现并修复运行时 bug:building-21 commanderAppId 失效**
+- `src/drill/scenarios/building-21.ts` 写死 `COMMANDER_APP_ID='2084563280205111297'` —— 经实测该 app_id **AppNotFound**(网关 apps 列表无此 id)。AgentRunner.triggerCommander 用它调 agent-chat 必失败
+- 修复 → `'2087535122373074946'`(总智能体,可用)。集成 test 断言验证修复后 app_id 正确且非失效值
+
+**3. 前端运行时编译验证**
+dev server 运行正常(HTTP 200),drill 模块编译无报错(无 module not found / 类型错)。
+
+#### 结论
+**lib/drill 1684 行引擎运行时验证通过**,drill 闭环角色(检验预案:状态机推演 + 事件树 + agent 决策接入)可用。本轮修复的 app_id bug 是阻塞性的(原值会让演练启动即 agent 调用失败)。
+
+#### Round 5 提交
+- `src/drill/scenarios/building-21.ts`(commanderAppId 失效修复)
+- `lib/drill/__tests__/runtime-integration.test.ts`(运行时集成验证,7 用例)
+- `doc/vision-loop.md`(本文件 Round 5)
+
+
 
 
 #### Round 2 提交

@@ -27,8 +27,8 @@ export const BUILDING_21_SCENE_ID = '465718852859613184';
 /** 21号楼 znya key_buildings id。 */
 export const BUILDING_21_ID = '1c2d4772-831d-4c77-b88a-f9565ad589c7';
 
-/** 主智能体 app_id(指挥 agent)。 */
-export const COMMANDER_APP_ID = '2084563280205111297';
+/** 主智能体 app_id(指挥 agent)。原 2084563280205111297 实测 AppNotFound,改用「总智能体」(见 lib/agent-app-ids)。 */
+export const COMMANDER_APP_ID = '2087535122373074946';
 
 /** 当前演练 id(占位;后续可生成唯一 id)。 */
 export const BUILDING_21_DRILL_ID = 'drill-building-21-001';
