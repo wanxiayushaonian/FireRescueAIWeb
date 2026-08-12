@@ -138,3 +138,61 @@
 2. 平台 app 配 mcp_servers(`http://111.75.149.221:8788/sse` + `:8787/sse`)→ agent 真正能调业务工具
 3. 启服务,端到端验证 21 号楼闭环:孪生(3D)→ 档案(数据)→ 预案生成(已接 LLM)→ 演练(drill 引擎)→ 问答(RAG 191 chunks)
 
+---
+
+### Round 2 — 2026-08-13 夜续(自主执行)
+
+**目标**:解除 agent 工具卡点(平台 tools=[])+ 闭环验证。
+
+#### ✅ 完成项
+
+**1. 平台 app 程序化配置(网关 PUT API)**
+- 探测发现 `PUT /uagent-service/api/agent/v1/apps/{appId}` 端点(需 name 参数,全量更新 config)
+- 程序化配置「态势总揽多agent」(2087571055445204993):
+  - **mcp_servers**:加 `firerescue-scene → http://111.75.149.221:8787/sse`(场景 MCP,公网通),headers 带 X-App-Key
+  - **enable_thinking**: false → **true**(前端思考展示此前形同虚设,现在 reasoning 流会输出)
+- 全程有备份(PUT 前 GET 完整 config),PUT 后验证 instructions/model 完整无损
+
+**2. enable_thinking 生效验证**
+- 程序化触发 agent-chat 问「21号楼建筑档案」,SSE 出现 **157 个 reasoning 事件**(改之前 0 个)→ 思考流已通
+
+#### 🔍 闭环验证关键发现(影响下一步重点)
+
+程序化 agent-chat 验证 mcp_servers 是否真生效,发现 **agent 知道工具但平台没执行**:
+
+| 证据 | 含义 |
+|---|---|
+| reasoning 明确提到「query_units / query_building_profile / gisListTwinsInstances」| instructions 生效,agent 知道有哪些工具 |
+| text 流里出现 qwen 原生 `<tool_call><function=query_units>...` | agent 的模型 function calling 能力正常,在尝试调用 |
+| SSE **tool-call 事件 = 0** | 平台**没有**把工具调用转成标准 MCP 执行(没真正调 8787) |
+| app `tools=[]`(白名单空) | 平台没从 mcp_server 拉到工具列表 |
+
+**根因推断(高度可能,待验证)**:8787 Node mcp-server 用的是**老 SSE 协议**(`/sse`+`/messages`),而平台(uagent)很可能用**新 streamable HTTP** 协议拉取 MCP 工具 → transport 不兼容 → 平台连不上 8787 → 没拿到工具 schema → tools 白名单空 → agent 只能"文本里写 tool_call"不能真执行。
+
+#### ⏸ 卡点(需用户/外部操作,无法纯自主推进)
+
+| 卡点 | 为什么卡 | 解法 |
+|---|---|---|
+| **8788 公网未放行** | 云安全组(我做不了) | 用户在云控制台放行 TCP 8788 |
+| **transport 兼容** | 8787 老 SSE ≠ 平台 streamable HTTP | 放行 8788 后,把 Python MCP 升级 `transport='streamable-http'`(FastMCP 3.4.6 原生支持),配 mcp_server 指向 8788 + headers 鉴权 |
+| **8788 鉴权方式** | 现 `?appKey=` query;streamable HTTP 下平台用 headers | 鉴权 middleware 同时支持 header `X-App-Key` + query appKey |
+
+#### Round 3 入口(transport 升级链)— 代码+配置侧已完成,仅差公网放行
+
+✅ 已自主完成(Round 3 前半):
+1. Python MCP 升级 `http_app(transport='streamable-http')`(env `MCP_TRANSPORT` 可切回 sse)+ 鉴权 middleware 兼容 **header X-App-Key + query appKey 双通道** → 已部署服务器
+2. 服务器 8788 streamable-http **initialize 握手验证成功**(返回 protocolVersion 2025-03-26 + capabilities)→ 平台兼容的新协议
+3. mcp_server 配置切到 `http://111.75.149.221:8788/mcp`(transport=streamable_http)+ headers X-App-Key(经网关 PUT API)
+
+⏸ 待用户(唯一卡点):**云控制台放行公网 TCP 8788**。放行后:
+4. 平台连 8788/mcp(协议已对)→ 拉到 8 个业务工具 schema → tools 白名单填充
+5. 程序化验证 agent-chat → 应出现标准 tool-call 事件 + 真实业务数据(query_units/plan_dispatch 等)
+6. agent 智能派遣/响应分析闭环真正打通
+
+> 已切到 8788(协议正确方向);8787 老 SSE 协议不兼容平台,留着也没用。8788 公网未放行期间平台 connection refused,但放行后立即生效——代码与配置均已就位。
+
+#### Round 2 提交
+- `web/doc/vision-loop.md`(本文件,加 Round 2 日志)
+- 平台 app 配置变更(mcp_servers + enable_thinking,经网关 API,非 git)
+
+
