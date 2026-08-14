@@ -62,8 +62,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # 部署:独立 job(不依赖 build-images,避免 ghcr 问题阻塞上线)。
+  # 2026-08-14 改为「服务器本地构建」(deploy/deploy-server.sh):不经 ghcr 拉大镜像,
+  # 规避服务器→ghcr blob 下载挂起;部署侧不再需要 GHCR_TOKEN。
   deploy:
-    needs: build-images
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/master'
     steps:
@@ -80,19 +82,24 @@ jobs:
           command_timeout: 30m
           script: |
             set -e
-            # 服务器部署目录:默认 /opt/firerescue,可用 SERVER_APP_DIR secret 覆盖(如 ~/jjxf/...)
-            # 支持 ~ 开头路径:引号内 ~ 不展开,这里手动替换为 $HOME
-            APP_DIR="${{ secrets.SERVER_APP_DIR || '/opt/firerescue' }}"
+            # 部署目录优先级:SERVER_APP_DIR secret → 探测 $HOME/jjxf/FireRescueAIWeb → 报错
+            # (不再静默 fallback 到 /opt/firerescue —— 那是空目录,是历史 deploy 失败的根因)
+            APP_DIR="${{ secrets.SERVER_APP_DIR }}"
+            if [ -z "$APP_DIR" ] || [ ! -d "$APP_DIR/.git" ]; then
+              if [ -d "$HOME/jjxf/FireRescueAIWeb/.git" ]; then
+                APP_DIR="$HOME/jjxf/FireRescueAIWeb"
+              else
+                echo "❌ 找不到部署目录:SERVER_APP_DIR 未配置且 $HOME/jjxf/FireRescueAIWeb 不存在"
+                exit 1
+              fi
+            fi
             APP_DIR="${APP_DIR/#\~/$HOME}"
+            echo "==> 部署目录: $APP_DIR"
             cd "$APP_DIR"
-            # 同步仓库最新 docker-compose.yml(/opt/firerescue 需是 git clone;非仓库则跳过)
-            git pull --ff-only || echo "⚠️ git pull 失败:确认 /opt/firerescue 是仓库 clone,或手动同步 deploy/docker-compose.yml"
-            export GHCR_USER="${{ github.actor }}"
-            export GHCR_TOKEN="${{ secrets.GHCR_TOKEN }}"
-            export REPO="$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')"
-            export IMAGE_BFF="ghcr.io/${REPO}-bff"
-            export IMAGE_MCP="ghcr.io/${REPO}-mcp"
-            docker login ghcr.io -u "$GHCR_USER" -p "$GHCR_TOKEN"
-            docker compose -f deploy/docker-compose.yml pull
-            docker compose -f deploy/docker-compose.yml up -d --remove-orphans
-            docker image prune -f || true
+            # 工作区有未提交修改时提示(避免用旧源码构建)
+            if ! git diff --quiet || ! git diff --cached --quiet; then
+              echo "⚠️ 工作区有未提交修改,将按当前源码构建;如需干净构建请先提交"
+            fi
+            git pull --ff-only || echo "⚠️ git pull 失败(非仓库/冲突),继续用当前源码"
+            # 本地构建 BFF(firerescue-bff:local)+ MCP(firerescue-mcp:local)+ compose up
+            bash deploy/deploy-server.sh

@@ -64,6 +64,7 @@ export IMAGE_MCP=firerescue-mcp
 export TAG=local
 cd "$APP_DIR/deploy"
 docker compose up -d --remove-orphans
+docker image prune -f || true
 
 echo "==> 部署完成!"
 echo "   curl -s -o /dev/null -w '%{http_code}' \"http://localhost:8787/sse?appKey=\$(grep MCP_APP_KEY .env | cut -d= -f2)\""
