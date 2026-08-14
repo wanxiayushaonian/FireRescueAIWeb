@@ -127,10 +127,11 @@ export class AgentRunner {
   /** 对抗 agent 串行队列。 */
   private adversaryChain: Promise<void> = Promise.resolve();
   /**
-   * 首次 conversation_id 缓存:当前仅用于首条日志(postAgentChat 无 conversation_id
-   * 显式入参,会话由 app_id + 服务端维持),预留后续会话复用透传。
+   * 按 app_id 缓存的 conversation_id(会话按 app 隔离,见 @dt-uagent/multi-agent-sdk "会话按 app_id 隔离")。
+   * 串行队列保证同一 app 依次触发:首次触发流里收到 conversation_id 后缓存,
+   * 后续触发经 postAgentChat({ conversationId }) 回传,维持推演多轮上下文。
    */
-  private conversationId: string | undefined;
+  private conversationIds = new Map<string, string>();
 
   /** 对抗 agent 互斥标记:onTick 触发时若上一个对抗未完成则跳过,防队列无界堆积(建议-3)。 */
   private adversaryInFlight = false;
@@ -210,13 +211,15 @@ export class AgentRunner {
     causeEventId?: string,
   ): Promise<void> {
     try {
+      const conversationId = this.conversationIds.get(appId);
       const stream = await this.postChat({
         content,
         app_id: appId,
         forwardedProps: this.buildForwardedProps(),
+        ...(conversationId ? { conversationId } : {}),
       });
       for await (const ev of parseAgentChatSSE(stream)) {
-        this.handleEvent(ev, role, causeEventId);
+        this.handleEvent(ev, role, causeEventId, appId);
       }
     } catch (err) {
       this.logger.warn(`[agent-runner] ${role} agent 执行失败(appId=${appId}):`, err);
@@ -234,16 +237,17 @@ export class AgentRunner {
   }
 
   /** 逐事件分派:tool-call → dispatchToolCall;text/conversation_id → 简略处理;其余 debug。 */
-  private handleEvent(ev: AgentChatEvent, role: AgentRole, causeEventId?: string): void {
+  private handleEvent(ev: AgentChatEvent, role: AgentRole, causeEventId?: string, appId?: string): void {
     const clock = this.options.state.getStatus().clock;
     switch (ev.type) {
       case 'tool-call':
         this.dispatchToolCall(ev, clock, causeEventId);
         break;
       case 'conversation_id':
-        if (!this.conversationId) {
-          this.conversationId = ev.conversation_id;
-          this.logger.info(`[agent-runner] ${role} 会话 conversation_id=${ev.conversation_id}`);
+        // 按 app 缓存首个会话 id;已缓存则忽略(会话在服务端持续,无需覆盖)
+        if (appId && !this.conversationIds.has(appId)) {
+          this.conversationIds.set(appId, ev.conversation_id);
+          this.logger.info(`[agent-runner] ${role} 会话 conversation_id=${ev.conversation_id} (app=${appId})`);
         }
         break;
       case 'text':

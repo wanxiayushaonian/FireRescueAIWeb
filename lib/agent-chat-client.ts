@@ -109,10 +109,12 @@ export async function postAgentChat(params: PostAgentChatParams): Promise<Readab
   const { content, app_id, forwardedProps, passthroughProps, conversationId, images, signal } = params;
   const appKey = process.env.NEXT_PUBLIC_X_APP_KEY || '';
 
+  // 字段名契约:网关只认 snake_case 的 forwarded_props / passthrough_props(实测:snake_case 注入 SystemMessage 成功,
+  // camelCase 的 forwardedProps 被静默忽略)。SDK(@dt-uagent/multi-agent-sdk)内部同样发 forwarded_props。
   const body: Record<string, unknown> = {
     content,
     app_id,
-    forwardedProps: forwardedProps ?? {},
+    forwarded_props: forwardedProps ?? {},
     stream: true,
   };
   if (conversationId) {

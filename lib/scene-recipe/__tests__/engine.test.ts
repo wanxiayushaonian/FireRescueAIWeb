@@ -3,18 +3,20 @@ import { applyRecipe } from '../engine';
 import type { Changeset, RecipeRuntime, StructuralRecipe } from '../types';
 import type { SceneTreeNode } from '../../ustudio';
 
-function mockRuntime(): RecipeRuntime & { calls: string[]; viewModeParams: unknown[]; hideObjectsIds: string[] | null } {
+function mockRuntime(): RecipeRuntime & { calls: string[]; viewModeParams: unknown[]; hideObjectsIds: string[] | null; sceneParams: unknown[] } {
   const calls: string[] = [];
   const viewModeParams: unknown[] = [];
+  const sceneParams: unknown[] = [];
   const rt = {
     calls,
     viewModeParams,
+    sceneParams,
     hideObjectsIds: null as string[] | null,
     setViewMode: async (params: unknown) => { calls.push('setViewMode'); viewModeParams.push(params); },
     setGisVisible: async () => { calls.push('setGisVisible'); },
     showLabels: () => { calls.push('showLabels'); },
     hideLabels: () => { calls.push('hideLabels'); },
-    setScene: async () => { calls.push('setScene'); },
+    setScene: async (params: unknown) => { calls.push('setScene'); sceneParams.push(params); },
     flyToObject: async () => { calls.push('flyToObject'); },
     highlightObject: () => { calls.push('highlightObject'); return true; },
     setCameraViewpoint: async () => { calls.push('setCameraViewpoint'); },
@@ -190,5 +192,54 @@ describe('applyRecipe', () => {
     await applyRecipe(rt, tree, cs, fullStructural({ mode: '2D', hideDevices: true }));
     const main = (rt.viewModeParams[0] as Array<{ type: string }>)[0];
     expect(main.type).toBe('2D');
+  });
+
+  it('reachable 开(缺省 enabled)→ setScene({reachable:true, nodeId})', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, reachable: { nodeId: 'N1' } },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.calls).toContain('setScene');
+    expect(rt.sceneParams[0]).toEqual({ reachable: true, nodeId: 'N1' });
+  });
+
+  it('reachable enabled:false → setScene({reachable:false})(可关闭)', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, reachable: { nodeId: 'N1', enabled: false } },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.calls).toContain('setScene');
+    expect(rt.sceneParams[0]).toEqual({ reachable: false });
+  });
+
+  it('reachable 与 connectivity 同变更 → 都调用(不吞分支)', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: {
+        __touched: true,
+        reachable: { nodeId: 'N1' },
+        connectivity: { spaceId: 'S1', enabled: false },
+      },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.sceneParams).toEqual([
+      { reachable: true, nodeId: 'N1' },
+      { connectivity: false },
+    ]);
+  });
+
+  it('connectivity 开(带 spaceId)→ setScene({connectivity:true, spaceId})', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, connectivity: { spaceId: 'S2' } },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.sceneParams[0]).toEqual({ connectivity: true, spaceId: 'S2' });
   });
 });

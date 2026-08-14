@@ -268,7 +268,7 @@ describe('postAgentChat', () => {
     vi.unstubAllGlobals();
   });
 
-  it('POST 正确 URL / headers(X-App-Key + Accept + Content-Type)/ body(含 forwardedProps + stream:true)', async () => {
+  it('POST 正确 URL / headers(X-App-Key + Accept + Content-Type)/ body(含 forwarded_props + stream:true)', async () => {
     const f = vi.fn().mockResolvedValue(okResponse(emptyStream()));
     vi.stubGlobal('fetch', f);
 
@@ -291,7 +291,7 @@ describe('postAgentChat', () => {
     expect(body).toEqual({
       content: '飞向21号楼',
       app_id: '2084563280205111297',
-      forwardedProps: { scene_id: '465718852859613184' },
+      forwarded_props: { scene_id: '465718852859613184' },
       stream: true,
     });
     expect(body.passthrough_props).toBeUndefined();
@@ -311,13 +311,13 @@ describe('postAgentChat', () => {
     expect(body.passthrough_props).toEqual({ drill_id: 'd1' });
   });
 
-  it('forwardedProps 缺省为 {}', async () => {
+  it('forwardedProps 缺省为 {}（序列化为 forwarded_props）', async () => {
     const f = vi.fn().mockResolvedValue(okResponse(emptyStream()));
     vi.stubGlobal('fetch', f);
 
     await postAgentChat({ content: 'x', app_id: 'app1' });
     const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string);
-    expect(body.forwardedProps).toEqual({});
+    expect(body.forwarded_props).toEqual({});
     expect(body.stream).toBe(true);
   });
 

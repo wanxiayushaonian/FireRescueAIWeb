@@ -4,6 +4,9 @@
 //
 // 说明：afterFiles rewrites 在文件系统路由之后匹配，所以本 route 优先于 next.config 里
 // 的 `/uagent-service/:path*` rewrite 命中 agent-chat。
+//
+// 注意：body 原样透传（含 forwarded_props / passthrough_props / conversation_id / tool_feedbacks），
+// 字段名契约见 lib/agent-chat-client.ts（网关只认 snake_case）。
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

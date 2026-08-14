@@ -675,9 +675,19 @@ export class SoonspaceRuntime {
   hideObjects(ids: string[]): void {
     const sdk = this.sdk as unknown as { hide?: (id: string) => void } | null;
     if (!sdk?.hide) return;
+    let ok = 0;
+    let fail = 0;
+    const firstErrors: string[] = [];
     for (const id of ids) {
-      try { sdk.hide!(id); } catch { /* 单个失败不阻断其余 */ }
+      try {
+        sdk.hide!(id);
+        ok += 1;
+      } catch (error) {
+        fail += 1;
+        if (firstErrors.length < 3) firstErrors.push(error instanceof Error ? error.message : String(error));
+      }
     }
+    if (fail > 0) console.warn(`[scene-recipe] hideObjects 成功 ${ok}/${ids.length}，失败 ${fail}，示例: ${firstErrors.join(' | ')}`);
     this.render();
   }
 
@@ -685,9 +695,19 @@ export class SoonspaceRuntime {
   showObjects(ids: string[]): void {
     const sdk = this.sdk as unknown as { show?: (id: string) => void } | null;
     if (!sdk?.show) return;
+    let ok = 0;
+    let fail = 0;
+    const firstErrors: string[] = [];
     for (const id of ids) {
-      try { sdk.show!(id); } catch { /* 单个失败不阻断其余 */ }
+      try {
+        sdk.show!(id);
+        ok += 1;
+      } catch (error) {
+        fail += 1;
+        if (firstErrors.length < 3) firstErrors.push(error instanceof Error ? error.message : String(error));
+      }
     }
+    if (fail > 0) console.warn(`[scene-recipe] showObjects 成功 ${ok}/${ids.length}，失败 ${fail}，示例: ${firstErrors.join(' | ')}`);
     this.render();
   }
 

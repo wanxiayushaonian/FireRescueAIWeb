@@ -80,8 +80,10 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
       return;
     }
     const tree = await getSceneTreeForView(sceneId);
-    // 隔离显示选中楼层;空数组 = 恢复全楼层。params 按引擎确认(默认 story 模式)。
-    await sdk.setViewMode({ mode: 'story' }, tree, storyIds);
+    // 隔离显示选中楼层;空数组 = 恢复全楼层。
+    // 注意:SDK setViewMode 的 mode 只接受 '2D'|'3D'|'YExtend',没有 'story' 模式;
+    // 隔离楼层 = type:'3D' + ids:storyIds(showStory 同传)。
+    await sdk.setViewMode([{ type: '3D', ids: storyIds }], tree, storyIds);
   });
 
   // 2D 态势总览:AI 派遣多站路线渲染(经注入的 addSceneAction → RealGisMap subscribeSceneLog 的 showRoute 通道)

@@ -98,8 +98,36 @@ export async function applyRecipe(
       if (s.labels.visible) await safe('labels', () => runtime.showLabels(tree, s.labels!.ids, undefined), applied, failed);
       else await safe('labels', () => runtime.hideLabels(), applied, failed);
     }
-    if (s.reachable !== undefined) await safe('reachable', () => runtime.setScene({ reachable: true, nodeId: s.reachable!.nodeId }), applied, failed);
-    else if (s.connectivity !== undefined) await safe('connectivity', () => runtime.setScene({ connectivity: true, spaceId: s.connectivity!.spaceId }), applied, failed);
+    // 可达性 / 连通性:两个独立开关(原实现 else-if 会吞掉 connectivity,且恒传 true 无法关闭)。
+    // enabled=false 关闭;缺省 enabled=true(兼容 {nodeId}/{spaceId} 旧用法)。
+    if (s.reachable !== undefined) {
+      const r = s.reachable;
+      await safe(
+        'reachable',
+        () =>
+          runtime.setScene(
+            r.enabled === false
+              ? { reachable: false }
+              : { reachable: true, ...(r.nodeId ? { nodeId: r.nodeId } : {}) },
+          ),
+        applied,
+        failed,
+      );
+    }
+    if (s.connectivity !== undefined) {
+      const c = s.connectivity;
+      await safe(
+        'connectivity',
+        () =>
+          runtime.setScene(
+            c.enabled === false
+              ? { connectivity: false }
+              : { connectivity: true, ...(c.spaceId ? { spaceId: c.spaceId } : {}) },
+          ),
+        applied,
+        failed,
+      );
+    }
   }
 
   // 阶段2:观察层(必须在结构层之后:flyToObject 要求目标在可见楼层内)

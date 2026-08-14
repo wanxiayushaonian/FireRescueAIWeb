@@ -38,7 +38,9 @@ export function RealSceneView() {
           console.warn('[real-scene] switchFloor: 场景树未就绪,跳过');
           return;
         }
-        void runtime.setViewMode({ mode: 'story' }, t, storyIds);
+        // 注意:SDK setViewMode 的 mode 只接受 '2D'|'3D'|'YExtend'(ViewModeParams.type),
+        // 没有 'story' 模式;隔离显示选中楼层 = type:'3D' + ids:storyIds(showStory 同传)。
+        void runtime.setViewMode([{ type: '3D', ids: storyIds }], t, storyIds);
       },
       resetCamera: () => {
         const vp = initialViewRef.current;

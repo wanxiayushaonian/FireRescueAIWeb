@@ -17,8 +17,10 @@ export interface StructuralRecipe {
   categoryVisibility?: Partial<Record<string, Record<string, boolean>>>;
   gisVisible: boolean;
   labels: { visible: boolean; ids?: string[] };
-  reachable?: { nodeId: string };
-  connectivity?: { spaceId: string };
+  /** 可达性(开/关 + 锚点)。`enabled:false` 关闭;缺省 `enabled=true`(兼容旧 `{nodeId}` 用法)。 */
+  reachable?: { nodeId?: string; enabled?: boolean };
+  /** 空间连通性(开/关 + 锚点)。`enabled:false` 关闭;缺省 `enabled=true`。与 reachable 独立(可同开)。 */
+  connectivity?: { spaceId?: string; enabled?: boolean };
 }
 
 /** 观察层 — 决定"看哪里/突出谁/叠加什么";临时;用户 + agent 可随时叠加 */

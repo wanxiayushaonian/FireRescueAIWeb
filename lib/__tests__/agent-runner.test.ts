@@ -630,6 +630,52 @@ describe('AgentRunner:conversation_id', () => {
     // logger.info 被调(记录 conversation_id)—— warns 为空,验证不报错
     expect(logger.warns.length).toBe(0);
   });
+
+  it('第二次触发把首次 conversation_id 回传给 postChat(多轮上下文)', async () => {
+    const deps = makeRunnerDeps();
+    const seen: string[] = [];
+    let first = true;
+    const postChat: PostChatFn = async (params: PostAgentChatParams) => {
+      seen.push(params.conversationId ?? '');
+      return streamFrom(
+        first
+          ? sse({ type: 'conversation_id', conversation_id: 'conv-001' }) + sse({ type: 'finish', finishReason: 'stop' })
+          : sse({ type: 'finish', finishReason: 'stop' }),
+      );
+    };
+
+    const runner = buildRunner(deps, { postChat });
+    await runner.triggerCommander('x');
+    first = false;
+    await runner.triggerCommander('y');
+
+    // 首次无缓存 → 空;第二次回传缓存 id
+    expect(seen[0]).toBe('');
+    expect(seen[1]).toBe('conv-001');
+  });
+
+  it('commander 与 adversary 的 conversation_id 按 app 隔离', async () => {
+    const deps = makeRunnerDeps();
+    const seen: Record<string, string> = {};
+    const postChat: PostChatFn = async (params: PostAgentChatParams) => {
+      seen[params.app_id] = params.conversationId ?? '';
+      const text =
+        params.app_id === 'cmd-app-001'
+          ? sse({ type: 'conversation_id', conversation_id: 'conv-cmd' }) + sse({ type: 'finish', finishReason: 'stop' })
+          : sse({ type: 'conversation_id', conversation_id: 'conv-adv' }) + sse({ type: 'finish', finishReason: 'stop' });
+      return streamFrom(text);
+    };
+
+    const runner = buildRunner(deps, { postChat, adversaryAppId: 'adv-app-002' });
+    await runner.triggerCommander('x');
+    await runner.triggerAdversary();
+    await runner.triggerCommander('y');
+    await runner.triggerAdversary();
+
+    // 第二次触发各自回传本 app 自己的会话 id,互不串
+    expect(seen['cmd-app-001']).toBe('conv-cmd');
+    expect(seen['adv-app-002']).toBe('conv-adv');
+  });
 });
 
 // ============================================================
