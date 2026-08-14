@@ -6,6 +6,7 @@ import type { SceneTreeNode } from '@/lib/ustudio';
 import type { LayerApplyParams } from 'ustudio-sdk';
 import { RecipeStore } from '@/lib/scene-recipe/store';
 import { applyRecipe } from '@/lib/scene-recipe/engine';
+import { detectDesync, type SdkLayerState } from '@/lib/scene-recipe/desync';
 import type { RecipeRuntime } from '@/lib/scene-recipe/types';
 
 type View = 'loading' | 'ready' | 'error' | 'no-scene';
@@ -63,6 +64,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
   const [initialView, setInitialView] = useState<CameraViewpoint | null>(null);
   const [recipeStore, setRecipeStore] = useState<RecipeStore | null>(null);
   const recipeUnsubRef = useRef<(() => void) | null>(null);
+  const sceneStateUnsubRef = useRef<(() => void) | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const runtimeRef = useRef<SoonspaceRuntime | null>(null);
   const treeRef = useRef<SceneTreeNode | null>(null);
@@ -199,6 +201,34 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
             if (r.failed.length) store.desynced = true;
           });
         });
+
+        // AGENTS.md 约定「以 SDK 场景状态为准」:订阅 SDK 图层状态,检测外部(平台 WS 脚本/其他入口)
+        // 改动导致的 Recipe 与 SDK 脱节。只检测不回写(避免 subscribe→patch→apply→setViewMode→subscribe 循环),
+        // 脱节时置 store.desynced 并告警,供 UI/调试识别。
+        const sceneStateUnsub = (() => {
+          const sdk = rt.getSdk();
+          if (typeof sdk?.subscribeSceneState !== 'function') return null;
+          try {
+            return sdk.subscribeSceneState((state: unknown) => {
+              const layer = (state as { layer?: SdkLayerState } | null)?.layer;
+              const cur = store.getCurrent();
+              const { desynced, fields } = detectDesync(layer, cur.structural);
+              if (desynced && !store.desynced) {
+                store.desynced = true;
+                console.warn('[scene-recipe] SDK 场景状态与 Recipe 不一致(可能被外部修改),desynced=true', {
+                  fields,
+                  sdkLayer: layer,
+                  recipe: cur.structural,
+                });
+              }
+            });
+          } catch (error) {
+            console.warn('[scene-recipe] subscribeSceneState 订阅失败', error);
+            return null;
+          }
+        })();
+        sceneStateUnsubRef.current = sceneStateUnsub;
+
         setRecipeStore(store);
 
         setRuntime(rt);
@@ -215,6 +245,8 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
       disposed = true;
       recipeUnsubRef.current?.();
       recipeUnsubRef.current = null;
+      sceneStateUnsubRef.current?.();
+      sceneStateUnsubRef.current = null;
       setRecipeStore(null);
       // 注意：不在 cleanup 中 dispose runtime，因为我们要跨模块复用
       // 只有 sceneId 变化时才会 dispose 旧 runtime（在上面的 effect 中）

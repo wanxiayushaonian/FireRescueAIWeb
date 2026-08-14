@@ -49,6 +49,13 @@
 
 **性质：调研任务，非 TDD。产出 = 结论 + arch_ref §10 回填。决定 Task 12（双体系并归）是否执行。**
 
+> **✅ 裁定结论（2026-08-14 静态核实 + 代码审计，已实施）**：
+> 1. **共 SDK**：SceneCommandBridge 的 `sceneSdk()`（= `window.__scene`）与 SceneProvider 的 SoonspaceRuntime 是**同一 SDK 实例**（soonspace-runtime.installWindowSceneBridge 挂载），无第二个 Viewer。
+> 2. **显隐已并归 Recipe**：scene-command-bus 的 handlers 中，唯一触碰结构层的 `focus_floors` **已走 `store.patchStructural`**（handlers.ts）；`fly_to`/`focus_objects` 属观察层即时操作（fly/高亮），保留直调 SDK——Recipe 观察层 focus 当前无其他驱动源，不冲突。
+> 3. **保留 SceneCommandBridge**：它是「平台 agent 工具 → 场景命令（/scene-events）」的唯一真实通道，**Task 12 不删除它**。
+> 4. **脱节风险已消除**：新增 `lib/scene-recipe/desync.ts`（`detectDesync` 纯函数 + 7 测试）并在 SceneProvider 订阅 `sdk.subscribeSceneState`——检测平台 WS 脚本等外部改动导致的 Recipe/SDK 脱节，置 `store.desynced` 并告警（只检测不回写，避免循环）。
+> 5. Task 12 剩余可执行项：**模板根组件树清理**（components/ 17 个死组件 + lib/scene-plugins 等，与 bridge 无关），列为低优先级清理项。
+
 **Files:**
 - Read: `components/SceneCommandBridge.tsx`、`lib/scene-command-bus/bridge.ts`、`lib/scene-plugins/PluginManager.ts`、`src/components/RealSceneView.tsx`、`src/components/SceneProvider.tsx`
 - Modify: `doc/ref/arch_ref.md` §10（回填裁定结果）
