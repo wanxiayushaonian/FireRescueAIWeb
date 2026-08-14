@@ -14,7 +14,7 @@ import {
   type ThreadMessageLike,
 } from '@assistant-ui/react';
 import { Thread } from './thread';
-import { postAgentChat, parseAgentChatSSE, uploadAgentImage, agentImageUrl } from '@/lib/agent-chat-client';
+import { postAgentChat, parseAgentChatSSE, stopAgentChat, uploadAgentImage, agentImageUrl } from '@/lib/agent-chat-client';
 import { AGENT_APP_IDS } from '@/lib/agent-app-ids';
 import { agentToolToSceneAction, toolCallLabel } from '@/lib/agent-scene-tools';
 import { addSceneAction } from '@/mock/sceneLog';
@@ -199,6 +199,23 @@ export function AgentChatThread({ module, sessionId, onSessionChange, sendRef, o
             }));
             break;
           }
+          case 'tool-approval-request': {
+            // 平台工具审批请求:当前自研通道不启用审批 UI(平台未触发),占位提示避免静默。
+            // 若未来平台启用审批,需在此渲染审批卡并经 tool_feedbacks(APPROVED/REJECTED/EDITED)回传。
+            const argsText = typeof ev.args === 'string' ? ev.args : JSON.stringify(ev.args ?? {}, null, 1);
+            patchAssistant(runId, (m) => ({
+              ...m,
+              content: [...partsOf(m.content), {
+                type: 'tool-call',
+                toolCallId: ev.toolCallId || undefined,
+                toolName: ev.toolName,
+                argsText,
+                isError: false,
+                summary: `⚠️ 工具待审批:${ev.toolName}(平台审批未启用,会话可能等待中)`,
+              }],
+            }));
+            break;
+          }
           case 'finish':
             patchAssistant(runId, (m) => ({ ...m, status: COMPLETE }));
             onStateChange?.('online');
@@ -247,8 +264,12 @@ export function AgentChatThread({ module, sessionId, onSessionChange, sendRef, o
   }, [runConversation]);
 
   const onCancel = useCallback(async () => {
+    // 1. 本地断流
     abortRef.current?.abort();
-  }, []);
+    // 2. 通知服务端停止当前 run(STOP 协议,尽力而为;无 conversation_id 时仅本地断流)
+    const convId = convIdRef.current;
+    if (convId) void stopAgentChat({ appId, conversationId: convId });
+  }, [appId]);
 
   // chips 快捷话术:直接复用同一发送路径
   useEffect(() => {

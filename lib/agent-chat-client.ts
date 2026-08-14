@@ -37,6 +37,21 @@ export interface ToolCallEvent {
   parentToolCallId?: string;
 }
 
+/**
+ * 工具调用审批请求(平台配置工具需人工审批时下发)。
+ * 客户端应展示审批卡,通过 tool_feedbacks(APPROVED/REJECTED/EDITED)在下一请求回传,
+ * 或经 stopAgentChat 中止。当前 web 自研通道不启用审批 UI(平台实测未触发),仅解析不丢弃。
+ */
+export interface ToolApprovalRequestEvent {
+  type: 'tool-approval-request';
+  toolCallId: string;
+  toolName: string;
+  /** 二次 JSON.parse 后的对象;parse 失败保留原始字符串 */
+  args: unknown;
+  description?: string;
+  agent?: string;
+}
+
 export interface ToolResultEvent {
   type: 'tool-result';
   toolCallId: string;
@@ -72,6 +87,7 @@ export type AgentChatEvent =
   | ConversationIdEvent
   | ReasoningEvent
   | ToolCallEvent
+  | ToolApprovalRequestEvent
   | ToolResultEvent
   | TextEvent
   | FinishEvent
@@ -144,6 +160,36 @@ export async function postAgentChat(params: PostAgentChatParams): Promise<Readab
   }
 
   return res.body as ReadableStream<Uint8Array>;
+}
+
+/**
+ * 停止当前 agent run(STOP 协议):POST 同端点 body `{app_id, conversation_id, tool_feedbacks:[{result:'STOP'}]}`。
+ * 网关收到 STOP 后终止服务端执行(否则 abort 只断浏览器流,服务端 run 继续消耗)。
+ * 尽力而为:失败不影响已 abort 的本地流;conversationId 缺失时仅本地断流(无法定位服务端 run)。
+ */
+export async function stopAgentChat(params: { appId: string; conversationId?: string }): Promise<void> {
+  const { appId, conversationId } = params;
+  const appKey = process.env.NEXT_PUBLIC_X_APP_KEY || '';
+  const body: Record<string, unknown> = {
+    app_id: appId,
+    tool_feedbacks: [{ result: 'STOP' }],
+  };
+  if (conversationId) body.conversation_id = conversationId;
+  try {
+    await fetch(AGENT_CHAT_PATH, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        'X-App-Key': appKey,
+      },
+      body: JSON.stringify(body),
+      // STOP 回包也是 SSE 流,我们不消费;超时兜底避免连接泄漏
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch {
+    // 尽力而为:忽略失败
+  }
 }
 
 // ===== parseAgentChatSSE =====
@@ -227,6 +273,16 @@ function normalizeEvent(raw: unknown): AgentChatEvent | null {
         args: safeJsonParse(obj.args),
         agent: optStr(obj.agent),
         parentToolCallId: optStr(obj.parentToolCallId),
+      };
+
+    case 'tool-approval-request':
+      return {
+        type: 'tool-approval-request',
+        toolCallId: String(obj.toolCallId ?? ''),
+        toolName: String(obj.toolName ?? ''),
+        args: safeJsonParse(obj.args),
+        description: optStr(obj.description),
+        agent: optStr(obj.agent),
       };
 
     case 'tool-result':

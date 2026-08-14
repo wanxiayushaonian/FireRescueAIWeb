@@ -2,8 +2,8 @@
 // 验证 agent-chat-client:postAgentChat(请求契约)+ parseAgentChatSSE(流式解析 + args 二次 parse)。
 // vitest node 环境;固定 SSE 字节流仿 SSE 格式文档 §3/§6 实例。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { postAgentChat, parseAgentChatSSE } from '../agent-chat-client';
-import type { AgentChatEvent, ToolCallEvent } from '../agent-chat-client';
+import { postAgentChat, parseAgentChatSSE, stopAgentChat } from '../agent-chat-client';
+import type { AgentChatEvent, ToolCallEvent, ToolApprovalRequestEvent } from '../agent-chat-client';
 
 // ----- 工具:构造 SSE 流 -----
 
@@ -164,6 +164,24 @@ describe('parseAgentChatSSE', () => {
       result: { message_id: 'm-1', status: 'PROCESSING' },
       agent: '空间信息查询或推理及本体功能调用',
     });
+  });
+
+  it('tool-approval-request 被解析(不丢弃,args 二次 parse + description)', async () => {
+    const fixture = makeSSE({
+      type: 'tool-approval-request',
+      toolCallId: 'call_app1',
+      toolName: 'query_facilities',
+      args: JSON.stringify({ building_id: '1c2d4772-831d-4c77-b88a-f9565ad589c7' }),
+      description: '审批查询建筑设施',
+      agent: '档案分析智能体',
+    });
+    const events = await collect(parseAgentChatSSE(streamFromChunks([fixture])));
+    const ev = events[0] as ToolApprovalRequestEvent;
+    expect(ev.type).toBe('tool-approval-request');
+    expect(ev.toolCallId).toBe('call_app1');
+    expect(ev.toolName).toBe('query_facilities');
+    expect(ev.args).toEqual({ building_id: '1c2d4772-831d-4c77-b88a-f9565ad589c7' });
+    expect(ev.description).toBe('审批查询建筑设施');
   });
 
   it('args 为畸形 JSON 字符串时保留原始字符串', async () => {
@@ -356,6 +374,36 @@ describe('postAgentChat', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(stream)));
     const result = await postAgentChat({ content: 'x', app_id: 'a' });
     expect(result).toBe(stream);
+  });
+});
+
+describe('stopAgentChat', () => {
+  it('POST STOP 协议:body 含 app_id + tool_feedbacks:[{result:STOP}] + conversation_id', async () => {
+    const f = vi.fn().mockResolvedValue(okResponse(emptyStream()));
+    vi.stubGlobal('fetch', f);
+    await stopAgentChat({ appId: 'app-001', conversationId: 'conv-9' });
+    expect(f).toHaveBeenCalledTimes(1);
+    const [url, init] = f.mock.calls[0];
+    expect(url).toBe('/uagent-service/api/agent/v1/apps/agent-chat');
+    const body = JSON.parse((init as RequestInit).body as string);
+    expect(body.app_id).toBe('app-001');
+    expect(body.conversation_id).toBe('conv-9');
+    expect(body.tool_feedbacks).toEqual([{ result: 'STOP' }]);
+    expect(body.content).toBeUndefined();
+  });
+
+  it('无 conversation_id 时不带该字段(仅本地断流)', async () => {
+    const f = vi.fn().mockResolvedValue(okResponse(emptyStream()));
+    vi.stubGlobal('fetch', f);
+    await stopAgentChat({ appId: 'app-001' });
+    const body = JSON.parse((f.mock.calls[0][1] as RequestInit).body as string);
+    expect(body.conversation_id).toBeUndefined();
+  });
+
+  it('请求失败不抛出(尽力而为)', async () => {
+    const f = vi.fn().mockRejectedValue(new Error('network down'));
+    vi.stubGlobal('fetch', f);
+    await expect(stopAgentChat({ appId: 'app-001' })).resolves.toBeUndefined();
   });
 });
 
