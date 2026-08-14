@@ -14,10 +14,10 @@ describe('gridCluster', () => {
     expect(cs.map((c) => c.count).sort()).toEqual([1, 2]);
   });
 
-  it('聚合中心为格中心', () => {
+  it('聚合中心为质心(单点=自身坐标)', () => {
     const cs = gridCluster([pts[2]], (p) => p.lng, (p) => p.lat, 0.01);
     expect(cs[0].lng).toBeCloseTo(116.015, 3);
-    expect(cs[0].lat).toBeCloseTo(29.725, 3);
+    expect(cs[0].lat).toBeCloseTo(29.72, 3);
   });
 
   it('缺坐标(0)的点不进聚合', () => {

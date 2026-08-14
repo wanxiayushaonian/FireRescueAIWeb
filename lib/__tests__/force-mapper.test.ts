@@ -35,7 +35,7 @@ describe('force-mapper', () => {
     const r = mapResource(RAW_VEHICLE);
     expect(r.category).toBe('车辆');
     expect(r.stationId).toBe('st-1');
-    expect(r.subtype).toBe('水罐车');
+    expect(r.subtype).toBe('水罐消防车'); // 新分类体系:水罐车 → 水罐消防车
     expect(r.status).toBe('在位');
   });
 
@@ -58,6 +58,6 @@ describe('force-mapper', () => {
     const stationNode = tree.find((g) => g.category === '队站');
     expect(stationNode?.children).toEqual([{ name: '特勤消防站', count: 1 }, { name: '普通消防站', count: 1 }]);
     expect(tree.find((g) => g.category === '人员')?.children).toEqual([{ name: '干部', count: 1 }]);
-    expect(tree.find((g) => g.category === '装备')?.children).toEqual([{ name: '可燃气体检测仪', count: 1 }]);
+    expect(tree.find((g) => g.category === '装备')?.children).toEqual([{ name: '其他', count: 1 }]); // 侦检 未命中关键词 → 其他
   });
 });
