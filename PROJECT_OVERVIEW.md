@@ -1,8 +1,9 @@
 # 火场救援数字孪生平台 — 项目总览
 
-> 更新时间:2026-08-11  
+> 更新时间:2026-08-14  
 > 当前分支:`feature/drill-simulation` (与 master 同步)  
-> 部署状态:✅ 已部署至 http://111.75.149.221:3000
+> 部署状态:✅ 已部署至 http://111.75.149.221:3000  
+> 权威技术蓝图(跨项目:模板/赛事后端/znya):见仓库根目录 `项目技术蓝图与实施指南.md`
 
 ---
 
@@ -25,10 +26,10 @@
 |------|------|------|
 | **分支** | ✅ 稳定 | feature/drill-simulation 与 master 同步(同一 commit ba703c3) |
 | **功能** | ✅ 90% 完成 | 12/13 模块完成,1 个进行中(GIS ETA 分析) |
-| **测试** | 🟡 部分覆盖 | 47 个测试文件(382 测试用例),覆盖 lib 层,未覆盖 React 组件 |
+| **测试** | 🟡 部分覆盖 | 48 个测试文件(412 测试用例),覆盖 lib 层,未覆盖 React 组件(`npm test` 只跑 lib;mcp-server 独立 vitest 配置另 7 个) |
 | **部署** | ✅ 就绪 | CI/CD + Docker 完整配置,push master 自动部署 |
-| **文档** | 🟡 进行中 | 7 个 plan 进行中,6 项 znya 部署待办 |
-| **技术债** | 🟡 中等 | 3 个 TODO,lib 依赖 src 类型需清理 |
+| **文档** | 🟡 进行中 | 16 个 plan 文档(见 `plan/README.md` 索引),6 项 znya 部署待办 |
+| **技术债** | 🟡 中等 | 3 个 TODO,lib 依赖 src 类型需清理,双图层体系待裁定(见蓝图 §4.4) |
 
 ---
 
@@ -38,18 +39,17 @@
 
 | 模块 | 入口文件 | 核心能力 |
 |------|----------|----------|
-| **态势总览** | `src/App.tsx` (overview) | GIS 地图 + 执勤力量面板 + 水源面板 + 重点单位 |
+| **态势总览** | `src/App.tsx` (overview) | GIS 地图 + 资源总览面板 + 水源 + 重点单位 |
 | **对象总览** | `src/App.tsx` (objects) | 建筑档案 + 消防设施清单 + 预案库 |
 | **演练对抗** | `src/views/DrillView.tsx` | AI 指挥 agent + 事件树(Ctrl+K) + 3D 推演 + 态势面板 |
 | **培训** | `src/views/TrainingView.tsx` | 培训课程 + 考核(Mock 数据) |
-| **实战指挥** | `src/views/CommandView.tsx` | 实时频道 + 战术叠加层(Mock 数据) |
+| **实战指挥** | `src/views/CommandView.tsx` | 实时频道 + 战术叠加层(Mock 数据 + 真实警情) |
 | **GIS 底座** | `src/components/RealGisMap.tsx` | 高德地图 + 路线规划 + 坐标修正 + 力量/水源/单位标注 |
-| **3D 场景** | `src/components/RealSceneView.tsx` | Soonspace 引擎 + 建筑漫游 + 设备可视化 + WASD 操控 |
-| **Agent 对话** | `src/components/AgentChat.tsx` | SSE 流式对话 + 工具调用(fly_to/show_route 等) |
-| **水源管理** | `src/components/panels/WaterSourcePanel.tsx` | 水源清单 + 地图标注 |
-| **力量资源** | `src/components/panels/ForceResourcePanel.tsx` | 消防站 + 车辆 + 人员明细 |
+| **3D 场景** | `src/components/SceneProvider.tsx` + `src/App.tsx`(SceneContainer) | Soonspace 引擎 + 建筑漫游 + 设备可视化 + WASD 操控 |
+| **Agent 对话** | `src/components/assistant-ui/AgentChatThread.tsx` + `src/components/AgentSidebar.tsx` | SSE 流式对话 + 工具调用(fly_to/show_route 等) + 历史会话 |
+| **资源总览** | `src/components/panels/ResourceOverviewPanel.tsx` | 水源/执勤力量/重点单位统计与清单(合并旧 WaterSource/ForceResource 面板) |
 | **建筑档案** | `src/components/panels/BuildingProfilePanel.tsx` | 建筑详情 + 楼层分布 + 消防设施统计 |
-| **预案库** | `src/components/panels/PlanLibraryPanel.tsx` | 预案列表 + 详情(Mock 数据) |
+| **预案库** | `src/components/panels/PlanLibraryPanel.tsx` | 预案列表 + 详情(Mock 数据,孤儿面板未挂载) |
 
 ### 3.2 进行中 🟡 (1 个)
 
@@ -78,7 +78,7 @@
 | **UI 库** | React | 19.2.7 |
 | **类型系统** | TypeScript | 6.0.3 (主) / 5.6.0 (mcp-server) |
 | **3D 引擎** | SoonspaceJS + Three.js | 2.15.17 |
-| **3D SDK** | uStudio SDK | 2.0.3 |
+| **3D SDK** | uStudio SDK | ^2.0.4 |
 | **2D 地图** | Leaflet + 高德瓦片 | 1.9.4 |
 | **事件树** | React Flow | 12.11.2 |
 | **动画** | Framer Motion | 12.43.0 |
@@ -102,8 +102,8 @@ web/
 │   ├── scene-plugins/  # 场景插件系统
 │   └── *.ts            # mapper/geo-query/scene-sdk/soonspace-runtime 等
 ├── mcp-server/         # MCP 工具桥(独立子包,SSE 传输)
-├── app/api/            # BFF API 路由(14 个)
-└── plan/               # 设计文档 + 实施计划(15 个)
+├── app/api/            # BFF API 路由(15 个:12 ustudio + business + scene-events + agent-chat)
+└── plan/               # 设计文档 + 实施计划(16 个,索引见 plan/README.md)
 ```
 
 ### 4.3 数据流
@@ -143,9 +143,9 @@ GitHub Actions (push master) → 构建 Docker 镜像 → 推 ghcr.io
 - **预期收益**:加载时间减半 + 操作流畅(30-60 FPS)
 
 **2. 丰度分级落地**
-- **现状**:前端代码已实现(`lib/scene-richness.ts` + `RichnessTierSelector`),stash 保留
+- **现状**:前端曾实现(`lib/scene-richness.ts` + `RichnessTierSelector`),**当前 checkout 不存在**(stash 保留,`git stash list` 可查);当前性能方案走 `lib/scene-recipe`(hideDevices + 像素比自适应,见蓝图 §4.4)
 - **阻塞**:需平台确认能力(精简包/SDK 过滤)
-- **下一步**:平台回复后,恢复 stash (`git stash pop`),调试 L4 分级效果
+- **下一步**:平台回复后,评估恢复 stash 或基于 scene-recipe 扩展
 
 ### 5.2 中优先级 🟡
 
@@ -174,9 +174,9 @@ GitHub Actions (push master) → 构建 Docker 镜像 → 推 ghcr.io
 - TacticalOverlay 投影不跟随地图(`src/components/command/TacticalOverlay.tsx:2`)→ 重接 Leaflet 坐标
 
 **7. 测试覆盖扩展**
-- 当前:47 个测试文件(382 用例),覆盖 lib 层
+- 当前:48 个测试文件(412 用例),覆盖 lib 层
 - 未覆盖:`src/components/` + `src/views/` + `src/api/`
-- 建议:引入 `@testing-library/react` + jsdom 环境,优先覆盖核心组件(RealSceneView/RealGisMap/AgentChat)
+- 建议:引入 `@testing-library/react` + jsdom 环境,优先覆盖核心组件(SceneProvider/RealGisMap/AgentChatThread)
 
 ---
 
@@ -188,7 +188,7 @@ GitHub Actions (push master) → 构建 Docker 镜像 → 推 ghcr.io
 |------|------|------|--------|
 | `src/views/DrillView.tsx` | 177 | runAgent 失败仅 logger.warn,UI 无感知 | 🟡 中 |
 | `src/components/command/TacticalOverlay.tsx` | 2 | 投影不跟随地图 pan/zoom | 🟡 中 |
-| `lib/soonspace-runtime.ts` | 125 | panelList/panelSetVisible 重接到原型 UI | 🟢 低 |
+| `lib/soonspace-runtime.ts` | 185 | commandBridge(panelList/panelSetVisible/showVideo)为 stub,平台面板/视频命令空转(迁壳遗留,待重接 DraggablePanel/VideoPlaybackPanel) | 🟢 低 |
 
 ### 6.2 架构问题
 
@@ -263,9 +263,9 @@ cd deploy
 | 路由配置 | `app/layout.tsx`, `app/page.tsx` |
 | 侧边栏导航 | `src/components/SideNav.tsx` |
 | GIS 底座 | `src/components/RealGisMap.tsx`, `lib/gis/*` |
-| 3D 场景 | `src/components/RealSceneView.tsx`, `lib/soonspace-runtime.ts` |
+| 3D 场景 | `src/components/SceneProvider.tsx`, `lib/soonspace-runtime.ts` |
 | 演练对抗 | `src/views/DrillView.tsx`, `src/drill/*`, `lib/drill/*` |
-| Agent 对话 | `src/components/AgentChat.tsx`, `lib/agent-chat-client.ts` |
+| Agent 对话 | `src/components/AgentSidebar.tsx`, `src/components/assistant-ui/AgentChatThread.tsx`, `lib/agent-chat-client.ts` |
 | MCP 服务 | `mcp-server/src/index.ts`, `mcp-server/src/tools.ts` |
 | 部署配置 | `deploy/docker-compose.yml`, `deploy/Dockerfile.bff`, `deploy/Dockerfile.mcp` |
 | CI/CD | `.github/workflows/deploy.yml` |
@@ -348,7 +348,7 @@ cd deploy
 - **项目仓库**:https://github.com/wanxiayushaonian/FireRescueAIWeb
 - **生产环境**:http://111.75.149.221:3000
 - **uStudio 网关**:https://fc.xwbuilders.com
-- **zny a 后端**:http://localhost:9100 (开发) / 生产环境待配
+- **znya 后端**:http://localhost:9100 (开发) / 生产环境待配(见 `plan/znya-deploy-mcp.md`)
 
 ---
 

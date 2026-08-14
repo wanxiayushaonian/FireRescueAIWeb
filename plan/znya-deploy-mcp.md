@@ -1,6 +1,27 @@
 # znya 后端 + Python MCP 部署规划(架构 B1)
 
-> 2026-08-07。znya 部署是业务 Python MCP 对外可用的前置。当前 znya 有部署资产但未实际部署。
+> 2026-08-07 创建 ｜ **2026-08-14 更新:已部署完成,生产实测可用**(见下方「部署现状(2026-08-14 实测)」)。
+
+## 部署现状(2026-08-14 实测)
+
+生产服务器 `111.75.149.221`(SSH user@2222,项目目录 `~/jjxf/`)上 znya 已完整运行:
+
+| 容器 | 端口 | 状态 |
+|---|---|---|
+| `znya-backend` | 9100(仅容器网络) | ✅ Up |
+| `znya-mcp` | **8788 对外**(`znya-backend:latest`,MCP_TRANSPORT=sse) | ✅ Up,鉴权生效(`?appKey=` 校验,实测无 key 返回 401) |
+| `znya-postgres` / `znya-redis` | 容器网络 | ✅ Up |
+
+**实测通过**:
+- BFF `/api/business/*` → `http://znya-backend:9100` 全通(如 `/api/business/fire-stations` 返回 552 条真实数据)。
+- 生产 BFF/MCP 的 `MCP_APP_KEY` 一致(4cd9...),`/api/scene-events` 代理返回 `: connected`。
+- znya MCP 的 `MCP_APP_KEY` 与 Node MCP(8787)**不同值**(两套独立服务,平台 agent 需分别配对应 key)。
+
+**生产配置来源**:`~/jjxf/FireRescueAIWeb/deploy/.env`(已同步至本仓库 `web/deploy/.env`)。znya compose 在 `~/jjxf/znya/docker-compose.yml`。
+
+**待确认(平台侧,非代码)**:平台 agent admin 里 znya MCP(8788)与 Node 场景 MCP(8787)的 `mcpServers` URL/appKey 是否都已配置正确。
+
+## 原规划(2026-08-07,保留备查)
 
 ## 现状
 

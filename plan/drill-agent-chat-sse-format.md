@@ -110,3 +110,31 @@ agent tool-call batchInvokeTwinsFunction
 - 流式收 SSE,解析 tool-call → 派发(toolName 路由)
 - agent 处理慢(单轮 30-100s),推演时间轴需考虑(agent 决策异步,不阻塞 tick)
 - conversation_id 复用:同一演练用同一会话(保持上下文)
+
+---
+
+## 8. 勘误(2026-08-14 实测)
+
+> 本节为 2026-08-14 对 `https://fc.xwbuilders.com/uagent-service/api/agent/v1/apps/agent-chat` 的**真实请求验证**结果,修正上文第 1 节的两处表述。
+
+### 8.1 ⚠️ 字段名契约:必须用 snake_case `forwarded_props`(本节最重要)
+
+- 请求体发 **camelCase `forwardedProps`** → agent **无法感知**(实测提问"你通过 forwardedProps 感知到的 scene_id 是多少",agent 答"没感知到")。
+- 请求体发 **snake_case `forwarded_props`** → agent **能复述注入值**(实测提问同一问题,agent 回答出注入的 scene_id)。
+- 与 `@dt-uagent/multi-agent-sdk` 源码一致(SDK 内部发 `forwarded_props`)。
+- **结论**:第 1 节请求示例与 `web/lib/agent-chat-client.ts`(已修复)一律改用 `forwarded_props`;`passthrough_props` 同理 snake_case。camelCase 写法请求会成功(200)但注入静默失效——这正是"请求成功但场景/态势上下文丢失"的根因。
+
+### 8.2 `stream:true` 无害冗余
+
+实测网关接受 `stream:true`(200 + SSE 流),SDK 实际不发此字段,保留无害;如需与 SDK 严格对齐可去掉。
+
+### 8.3 文档记录的"主智能体 app_id"已失效
+
+- `2084563280205111297`(第 1 节记录的 app_id)→ 实测返回 `AppNotFound`,**已失效**,勿再使用。
+- web 当前使用的活 app_id(`lib/agent-app-ids.ts`):态势总览 `2087571055445204993`、通用兜底 `2087535122373074946`(实测可对话)。
+
+### 8.4 §6.1 结论保持有效(已由 SDK 源码佐证)
+
+`batchInvokeTwinsFunction` 由平台经 **WebSocket 直接驱动在线场景前端 SDK 执行**(ustudio-sdk `createInternalWebSocket` + `function_msg` 处理,见根目录 `ustudio-sdk-tech-report.md` E 节)。web 侧 `agent-scene-tools.ts` 的映射与 WS 执行是**并行双通道**,存在同一动作双跑风险——建议保留 sceneLog 仅用于事件树/展示卡,去掉重复的 SDK 执行(蓝图 §5.2-#4)。
+
+### 8.5 本文件其他内容(事件类型 / tool-call 结构 / toolName 集合 / 多 agent 编排)经实测与 SDK 源码核对无误,保持有效。
