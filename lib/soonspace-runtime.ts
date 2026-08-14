@@ -11,10 +11,7 @@ import type {
 } from 'ustudio-sdk';
 import { X_APP_KEY } from './app-key';
 import { i18n } from './i18n';
-import { panelList, panelSetVisible, type PanelSetVisibleParams } from './generated-panel-runtime';
-import { showUStudioVideo } from './video-runtime';
 import type { SceneTreeNode } from './ustudio';
-import type { PluginHost } from './scene-plugins/types';
 
 type AnyObject = Record<string, any>;
 type SceneSdk = CustomFunctionUStudioSdk<UStudioSdk>;
@@ -96,8 +93,10 @@ export type ScriptMethods = {
   gisSetVisible: (visible: boolean) => Promise<{ visible: boolean }>;
   virtualRouteSetVisible: (routeIds: string | string[], visible: boolean) => Promise<unknown>;
   polygonSetVisible: (polygonIds: string | string[], visible: boolean) => Promise<unknown>;
-  panelList: typeof panelList;
-  panelSetVisible: (params: PanelSetVisibleParams) => ReturnType<typeof panelSetVisible>;
+  // 模板遗留 stub:迁壳后业务面板/视频改走 src 的 DraggablePanel/VideoPlaybackPanel,
+  // 平台 WS 推送的面板/视频命令暂为 stub(避免调失效函数)。
+  panelList: () => unknown[];
+  panelSetVisible: (params?: { id?: unknown; name?: unknown; visible?: unknown }) => Promise<unknown>;
   showVideo: (params?: unknown) => unknown;
 };
 
@@ -111,7 +110,10 @@ function sdkLocale(): string {
   return process.env.NEXT_PUBLIC_LOCALE === 'en' ? 'en-US' : 'zh-CN';
 }
 
-const showVideo = showUStudioVideo;
+// 模板遗留 stub:平台 WS 推送的面板/视频命令暂为空实现(迁壳后改走 src 的 DraggablePanel/VideoPlaybackPanel)。
+const stubPanelList = () => [] as unknown[];
+const stubPanelSetVisible = async () => ({}) as never;
+const stubShowVideo = () => undefined;
 
 function normalizeTree(treeData: unknown): SceneTreeNode[] {
   if (Array.isArray(treeData)) return treeData as SceneTreeNode[];
@@ -284,16 +286,6 @@ export class SoonspaceRuntime {
 
   getCps(): AnyObject | null {
     return this.cps ?? this.resolveCpsManager();
-  }
-
-  getPluginHost(): PluginHost {
-    const ssp = this.getSsp();
-    return {
-      el: (ssp?.el ?? (typeof document !== 'undefined' ? document.body : null)) as HTMLElement,
-      scene: ssp?.scene,
-      render: () => this.render(),
-      getObjectById: (id: string) => this.getObjectById(id),
-    };
   }
 
   async loadUserAddedInstances(): Promise<unknown> {
@@ -655,9 +647,9 @@ export class SoonspaceRuntime {
       gisSetVisible: (visible) => this.sdk!.gisSetVisible(visible),
       virtualRouteSetVisible: (routeIds, visible) => this.sdk!.virtualRouteSetVisible(routeIds, visible),
       polygonSetVisible: (polygonIds, visible) => this.sdk!.polygonSetVisible(polygonIds, visible),
-      panelList,
-      panelSetVisible,
-      showVideo,
+      panelList: stubPanelList,
+      panelSetVisible: stubPanelSetVisible,
+      showVideo: stubShowVideo,
     };
   }
 
