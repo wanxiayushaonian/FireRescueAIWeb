@@ -22,6 +22,9 @@ import type { AgentPanelId } from '@/mock/agentScripts';
 import TrainingView from '@/views/TrainingView';
 import CommandView from '@/views/CommandView';
 import DrillView from '@/views/DrillView';
+import ScenePerfWidget from '@/components/ScenePerfWidget';
+import SceneLayerSwitcher from '@/components/SceneLayerSwitcher';
+import SceneFloorHoverLabel from '@/components/SceneFloorHoverLabel';
 import { presets } from '@/lib/scene-recipe/presets';
 
 export default function App() {
@@ -39,6 +42,11 @@ function SceneContainer() {
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
       <div ref={containerRef} className="absolute inset-0" />
+      <SceneLayerSwitcher />
+      {/* 整体建筑视角下 hover 楼层浮层标签(仅整体视角开启 hover raycast) */}
+      <SceneFloorHoverLabel />
+      {/* 帧率监控浮窗(仅 3D 场景就绪时显示,纯展示不拦截交互) */}
+      <ScenePerfWidget />
       {view === 'loading' && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-text-2">
           场景加载中…
@@ -63,7 +71,7 @@ function AppContent() {
   const [buildingPanelOpen, setBuildingPanelOpen] = useState(true);
 
   const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
-  const { sceneId, setSceneId, setEnabled, enabled, recipeStore } = useScene();
+  const { sceneId, setSceneId, setEnabled, enabled, recipeStore, runtime, view } = useScene();
 
   // 对象总览当前建筑 ID(由 GIS 信息窗「查看档案」或内部下拉切换)。
   const [objectsBuildingId, setObjectsBuildingId] = useState<string>('');
@@ -104,6 +112,21 @@ function AppContent() {
       setEnabled(true);
     }
   };
+
+  // 服务进程注册(方案④):缓存跨域静态资产(场景包/地图瓦片),二次进入秒开。
+  // SW 只处理跨域 GET,不碰应用自身资源,dev HMR 不受影响;注册失败不影响主流程。
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      /* ignore */
+    });
+  }, []);
+
+  // 3D 模块隐藏（态势总览/GIS）时暂停渲染循环，切回 3D 模块时恢复；场景未就绪前不暂停，避免影响加载。
+  useEffect(() => {
+    if (!runtime || view !== 'ready') return;
+    runtime.setRenderPaused(module === 'overview');
+  }, [runtime, view, module]);
 
   // 模块切换/场景就绪时套 Recipe 预设;态势总览不加载 3D;培训 familiarize 步进在 TrainingView
   useEffect(() => {
@@ -181,6 +204,10 @@ function AppContent() {
           onSelect={handleSelect}
           collapsed={navCollapsed}
           onToggleCollapsed={() => setNavCollapsed((v) => !v)}
+          onWarmup={(k) => {
+            // 预热:首次 hover 3D 模块按钮才启用场景加载(零启动代价,点击仍走 handleSelect 兜底)
+            if (!enabled && (k === 'objects' || k === 'drill' || k === 'training')) setEnabled(true);
+          }}
         />
         <main className="relative min-w-0 flex-1">
           {/* 3D 场景容器：始终挂载（保持 WebGL canvas），用 CSS 控制显隐 */}

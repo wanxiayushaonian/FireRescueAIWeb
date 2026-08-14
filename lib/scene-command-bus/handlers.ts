@@ -65,7 +65,13 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
     const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
     // 经 Recipe 单一真相源(若 store 可用);空数组 = null 恢复全楼层。否则回退直调 sdk
     if (store) {
-      store.patchStructural({ visibleStories: storyIds.length ? storyIds : null });
+      // 单层聚焦→完整细节+显设备;多层/恢复全楼层→主体骨架+藏设备减压
+      const isFocusSingle = storyIds.length === 1;
+      store.patchStructural({
+        visibleStories: storyIds.length ? storyIds : null,
+        detailLevel: isFocusSingle ? 'full' : 'structure',
+        hideDevices: !isFocusSingle,
+      });
       return;
     }
     const sceneId = typeof window !== 'undefined' ? window.__sceneId : undefined;

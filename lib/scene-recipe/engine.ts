@@ -1,5 +1,7 @@
-import type { ApplyResult, Changeset, RecipeRuntime } from './types';
+import type { ApplyResult, Changeset, RecipeRuntime, StructuralRecipe } from './types';
 import type { SceneTreeNode } from '../ustudio';
+import { collectNonStructuralOutIds, collectByTypes } from '../device-tree';
+import { levelFromStoryCount } from './level-policy';
 
 // 项目暂无 lib/logger.ts;engine 用 console 后备(与现有 lib 多数模块一致)
 const logger = console;
@@ -20,37 +22,7 @@ async function safe(
   }
 }
 
-// tree 解析(与 src/components/FloorDisplayPanel 同源逻辑;后续可抽取到共用 tree-utils)
-function nodeType(n: unknown): string {
-  const node = n as { twins_identifier?: string; type?: string } | null;
-  return String(node?.twins_identifier ?? node?.type ?? '').toLowerCase();
-}
-function walk(node: SceneTreeNode | null, visit: (n: SceneTreeNode) => void): void {
-  if (!node) return;
-  visit(node);
-  const kids = Array.isArray((node as { children?: unknown }).children) ? (node as { children: SceneTreeNode[] }).children : [];
-  for (const c of kids) walk(c, visit);
-}
-function collectAllStoryIds(tree: SceneTreeNode): string[] {
-  const ids: string[] = [];
-  walk(tree, (n) => {
-    const t = nodeType(n);
-    if (t === 'story' || t.endsWith('story') || t.includes('floor')) {
-      ids.push(String((n as { out_instance_id?: string; id?: string }).out_instance_id ?? (n as { id?: string }).id ?? ''));
-    }
-  });
-  return ids.filter(Boolean);
-}
-function collectAllBuildingIds(tree: SceneTreeNode): string[] {
-  const ids: string[] = [];
-  walk(tree, (n) => {
-    const t = nodeType(n);
-    if (t === 'building' || t.endsWith('building') || t.includes('building')) {
-      ids.push(String((n as { out_instance_id?: string; id?: string }).out_instance_id ?? (n as { id?: string }).id ?? ''));
-    }
-  });
-  return ids.filter(Boolean);
-}
+// tree 解析(楼层/楼栋收集已移至 device-tree.collectNonStructuralOutIds;本文件不再自维护遍历)
 
 /**
  * 把 changeset 按顺序应用到 runtime:结构层先(降渲染量)→ 观察层后(依赖结构层已应用)。
@@ -60,6 +32,7 @@ export async function applyRecipe(
   runtime: RecipeRuntime,
   tree: SceneTreeNode,
   cs: Changeset,
+  next?: StructuralRecipe,
 ): Promise<ApplyResult> {
   const applied: string[] = [];
   const failed: ApplyResult['failed'] = [];
@@ -67,19 +40,58 @@ export async function applyRecipe(
   // 阶段1:结构层
   if (cs.structural.__touched) {
     const s = cs.structural;
-    // setViewMode:楼层/楼栋/mode/yExtend 任一变更即应用。
-    // storyIds:显式子集用子集;null/undefined(全集或仅切 mode)用 collectAllStoryIds(tree)。
+    // 完整结构层:SceneProvider 经 next 传入。setViewMode 是"全量重建"(内部 resetAll),
+    // 故其入参与 hideDevices 重放都优先取完整态 cur,而非 changeset 片段 —— 否则
+    // "只改 mode/楼层等、其余字段未变"时会 fallback 到默认值,覆盖当前实际视图或漏重放。
+    const cur = next;
+    // setViewMode:楼层/楼栋/mode/yExtend/detailLevel 任一变更即应用。
+    // storyIds:显式子集用子集;null/undefined(未选=全部)用空数组 → SDK 不过滤外部模型,保留周边环境。
     const storiesChanged = s.visibleStories !== undefined;
     const buildingsChanged = s.visibleBuildings !== undefined;
     const modeChanged = s.mode !== undefined;
     const yExtendChanged = s.yExtend !== undefined;
-    if (storiesChanged || buildingsChanged || modeChanged || yExtendChanged) {
-      const storyIds = s.visibleStories ?? collectAllStoryIds(tree);
-      const buildingIds = s.visibleBuildings ?? collectAllBuildingIds(tree);
-      const mode = s.mode ?? '3D';
-      const params: { type: string; ids: string[] }[] = [{ type: mode, ids: storyIds }];
-      if (s.yExtend ?? false) params.push({ type: 'YExtend', ids: storyIds });
+    const detailChanged = s.detailLevel !== undefined;
+    const hideDevicesChanged = s.hideDevices !== undefined;
+    if (storiesChanged || buildingsChanged || modeChanged || yExtendChanged || detailChanged || hideDevicesChanged) {
+      // null(未选=全部)= 空数组:SDK 不过滤外部模型 → 保留周边环境;子集才过滤只显选中楼层
+      const storyIds = cur?.visibleStories ?? s.visibleStories ?? [];
+      const buildingIds = cur?.visibleBuildings ?? s.visibleBuildings ?? [];
+      const mode = cur?.mode ?? s.mode ?? '3D';
+      const detailLevel = cur?.detailLevel ?? s.detailLevel ?? 'full';
+      const main: { type: string; ids: string[]; hideWindowAndDoor?: boolean } = { type: mode, ids: storyIds };
+      if (mode === '3D' && detailLevel === 'structure') {
+        main.hideWindowAndDoor = true;
+      }
+      const params = [main];
+      if (cur?.yExtend ?? s.yExtend ?? false) params.push({ type: 'YExtend', ids: storyIds });
       await safe('setViewMode', () => runtime.setViewMode(params, tree, storyIds, buildingIds), applied, failed);
+      // ⚠️ 时序关键:setViewMode 内部 resetAll 会恢复被 hide 的对象,全面隐藏须在其后重放。
+      // 判断用完整态 cur.hideDevices(而非 changeset 的 s.hideDevices):否则"只改 mode/楼层、
+      // hideDevices 未变"时 resetAll 恢复设备却漏重放 → 设备泄露、Recipe 状态与实际渲染脱节。
+      // 藏所有非主体结构节点(Space/Door/设备/管道/灯具/家具…),只留墙/楼板/楼梯/楼栋 → draw call 大降、流畅。
+      const hideDevices = cur?.hideDevices ?? s.hideDevices;
+      if (hideDevices) {
+        const ids = collectNonStructuralOutIds(tree);
+        await safe('hideDevices', () => runtime.hideObjects(ids), applied, failed);
+      } else if (hideDevicesChanged) {
+        const ids = collectNonStructuralOutIds(tree);
+        await safe('showDevices', () => runtime.showObjects(ids), applied, failed);
+      }
+    }
+    // 按类别(type)显隐覆盖:在 setViewMode/hideDevices 之后应用。
+    // categoryVisibility[type]=false 额外藏该类;=true 推翻 hideDevices 显出该类。
+    // (setViewMode 触发时 diff 已把完整 categoryVisibility 塞入 changeset,故此处能正确重放。)
+    if (s.categoryVisibility) {
+      // 按当前层级(整体/单层/多层)选对应那套配置 —— 各层级独立、互不影响
+      const storyCount = next?.visibleStories?.length ?? (Array.isArray(s.visibleStories) ? s.visibleStories.length : -1);
+      const level = levelFromStoryCount(storyCount);
+      const vis = next?.categoryVisibility?.[level] ?? {};
+      for (const [type, visible] of Object.entries(vis)) {
+        const ids = collectByTypes(tree, [type]);
+        if (ids.length === 0) continue;
+        if (visible) await safe(`show:${type}`, () => runtime.showObjects(ids), applied, failed);
+        else await safe(`hide:${type}`, () => runtime.hideObjects(ids), applied, failed);
+      }
     }
     if (s.gisVisible !== undefined) await safe('gisVisible', () => runtime.setGisVisible(s.gisVisible!), applied, failed);
     if (s.labels !== undefined) {

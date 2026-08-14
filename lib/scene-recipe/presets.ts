@@ -7,6 +7,10 @@ const baseStructural3D = (gisVisible: boolean, labels: boolean): StructuralRecip
   visibleBuildings: null,
   mode: '3D',
   yExtend: false,
+  // full 而非 structure:structure 的 hideWindowAndDoor 会触发 SDK 孤儿隐藏,把草地/马路/周边建筑等
+  // 不在实例树的环境模型藏掉。full 保留周边环境;设备由 hideDevices 藏减压。
+  detailLevel: 'full',
+  hideDevices: true, // 全局视角藏建筑内设备/设施减压,只留主体结构+环境
   gisVisible,
   labels: { visible: labels },
 });

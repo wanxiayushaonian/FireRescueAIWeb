@@ -81,7 +81,7 @@
     "three-mesh-bvh": "^0.9.9",
     "tw-shimmer": "^0.4.12",
     "umanager-animation-parser": "^0.0.6",
-    "ustudio-sdk": "^2.0.3",
+    "ustudio-sdk": "^2.0.4",
     "vaul": "^1.1.2",
     "zod": "^4.3.5",
     "zustand": "^5.0.14"

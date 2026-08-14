@@ -78,6 +78,45 @@ export function flattenAllDevices(node: SceneTreeNode): FlatDevice[] {
   return out;
 }
 
+/** 主体结构白名单:这些 type 保留(不藏)。主体 = 园区/楼栋/楼层/墙/楼梯(含楼板烘焙几何)。 */
+const STRUCTURE_KEEP_PATTERN = /site|building|story|floor|wall|stair|楼梯|楼栋|楼层/i;
+
+/**
+ * 收集所有"非主体结构"节点的 out_instance_id —— 全局视角全面隐藏减压用。
+ * 藏掉 Space/Door/设备/管道/电缆/灯具/家具/装饰… 所有非结构节点(几千~上万小几何),
+ * 只留墙/楼板/楼梯/楼栋 → draw call 大降、流畅。参考 code-ms6qsavu "类别隐藏全选"。
+ * (参考项目场景墙不在语义树天然留;本场景 Wall 在树里,靠白名单显式保留。)
+ */
+export function collectNonStructuralOutIds(node: SceneTreeNode): string[] {
+  const ids: string[] = [];
+  const walk = (n: SceneTreeNode): void => {
+    const t = n.type;
+    if (t && !STRUCTURE_KEEP_PATTERN.test(t)) {
+      const outId = String(n.out_instance_id ?? n.id ?? '');
+      if (outId) ids.push(outId);
+    }
+    for (const c of n.children ?? []) walk(c);
+  };
+  walk(node);
+  return ids;
+}
+
+/** 按 type 集合收集节点的 out_instance_id(供按类别批量 hide/show)。 */
+export function collectByTypes(node: SceneTreeNode, types: string[]): string[] {
+  if (types.length === 0) return [];
+  const set = new Set(types);
+  const ids: string[] = [];
+  const walk = (n: SceneTreeNode): void => {
+    if (n.type && set.has(n.type)) {
+      const outId = String(n.out_instance_id ?? n.id ?? '');
+      if (outId) ids.push(outId);
+    }
+    for (const c of n.children ?? []) walk(c);
+  };
+  walk(node);
+  return ids;
+}
+
 /** 楼层节点 id → 名称 映射（顶栏「当前楼层」显示用）。 */
 export function buildStoryNameMap(node: SceneTreeNode): Record<string, string> {
   const map: Record<string, string> = {};

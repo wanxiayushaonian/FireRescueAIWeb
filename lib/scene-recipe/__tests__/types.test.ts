@@ -10,6 +10,7 @@ describe('default factories', () => {
     expect(s.yExtend).toBe(false);
     expect(s.gisVisible).toBe(true);
     expect(s.labels.visible).toBe(false);
+    expect(s.detailLevel).toBe('full');
     expect(s.reachable).toBeUndefined();
     expect(s.connectivity).toBeUndefined();
   });

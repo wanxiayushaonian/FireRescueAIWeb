@@ -1,13 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { applyRecipe } from '../engine';
-import type { Changeset, RecipeRuntime } from '../types';
+import type { Changeset, RecipeRuntime, StructuralRecipe } from '../types';
 import type { SceneTreeNode } from '../../ustudio';
 
-function mockRuntime(): RecipeRuntime & { calls: string[] } {
+function mockRuntime(): RecipeRuntime & { calls: string[]; viewModeParams: unknown[]; hideObjectsIds: string[] | null } {
   const calls: string[] = [];
-  return {
+  const viewModeParams: unknown[] = [];
+  const rt = {
     calls,
-    setViewMode: async () => { calls.push('setViewMode'); },
+    viewModeParams,
+    hideObjectsIds: null as string[] | null,
+    setViewMode: async (params: unknown) => { calls.push('setViewMode'); viewModeParams.push(params); },
     setGisVisible: async () => { calls.push('setGisVisible'); },
     showLabels: () => { calls.push('showLabels'); },
     hideLabels: () => { calls.push('hideLabels'); },
@@ -17,10 +20,26 @@ function mockRuntime(): RecipeRuntime & { calls: string[] } {
     setCameraViewpoint: async () => { calls.push('setCameraViewpoint'); },
     setVirtualRouteVisible: () => { calls.push('setVirtualRouteVisible'); },
     setVirtualPolygonVisible: () => { calls.push('setVirtualPolygonVisible'); },
+    hideObjects: (ids: string[]) => { calls.push('hideObjects'); rt.hideObjectsIds = ids; },
+    showObjects: () => { calls.push('showObjects'); },
   };
+  return rt;
 }
 
 const tree = {} as unknown as SceneTreeNode;
+
+function fullStructural(over: Partial<StructuralRecipe> = {}): StructuralRecipe {
+  return {
+    visibleStories: null,
+    visibleBuildings: null,
+    mode: '3D',
+    yExtend: false,
+    detailLevel: 'full',
+    gisVisible: true,
+    labels: { visible: false },
+    ...over,
+  };
+}
 
 describe('applyRecipe', () => {
   it('两层都不 touched → 零调用', async () => {
@@ -86,5 +105,90 @@ describe('applyRecipe', () => {
     };
     await applyRecipe(rt, tree, cs);
     expect(rt.calls).toContain('setViewMode');
+  });
+
+  it('detailLevel:structure + 3D → setViewMode 主 params 只藏门窗(不藏 Wall 主体结构)', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, mode: '3D', detailLevel: 'structure' },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.calls).toContain('setViewMode');
+    const main = (rt.viewModeParams[0] as Array<{ hideWalls?: boolean; hideWindowAndDoor?: boolean }>)[0];
+    expect(main.hideWindowAndDoor).toBe(true);
+    expect(main.hideWalls).toBeUndefined(); // Wall 是主体结构,不藏
+  });
+
+  it('detailLevel:full(默认)→ 不附加 hideWalls', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, mode: '3D', visibleStories: ['1F'] },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    const main = (rt.viewModeParams[0] as Array<{ hideWalls?: boolean }>)[0];
+    expect(main.hideWalls).toBeUndefined();
+  });
+
+  it('detailLevel:structure + 2D → 不附加 hideWalls(2D 下 SDK 自动等价隐藏)', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, mode: '2D', detailLevel: 'structure' },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    const main = (rt.viewModeParams[0] as Array<{ hideWalls?: boolean }>)[0];
+    expect(main.hideWalls).toBeUndefined();
+  });
+
+  it('hideDevices:true → setViewMode 完成后调 hideObjects(时序:必须在其后重放,resetAll 才不会抹掉)', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, mode: '3D', hideDevices: true },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.calls).toContain('setViewMode');
+    expect(rt.calls).toContain('hideObjects');
+    // hide 必须在 setViewMode 之后(时序关键)
+    expect(rt.calls.indexOf('hideObjects')).toBeGreaterThan(rt.calls.indexOf('setViewMode'));
+    expect(rt.hideObjectsIds).toEqual([]); // 测试 tree 为空,真实 tree 会收到设备 outId
+  });
+
+  it('hideDevices 未设(undefined)→ 不调 hideObjects(向后兼容)', async () => {
+    const rt = mockRuntime();
+    const cs: Changeset = {
+      structural: { __touched: true, mode: '3D', visibleStories: ['1F'] },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs);
+    expect(rt.calls).not.toContain('hideObjects');
+  });
+
+  it('hideDevices 不在 changeset 但完整态 next.hideDevices=true → setViewMode 后仍重放 hideDevices(修复状态脱节)', async () => {
+    const rt = mockRuntime();
+    // 只改 mode:hideDevices 未进 changeset(旧 bug 会漏重放,设备被 resetAll 恢复却不藏回)
+    const cs: Changeset = {
+      structural: { __touched: true, mode: '2D' },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs, fullStructural({ mode: '2D', hideDevices: true }));
+    expect(rt.calls).toContain('setViewMode');
+    expect(rt.calls).toContain('hideObjects');
+    // 时序:重放必须在 setViewMode(resetAll)之后
+    expect(rt.calls.indexOf('hideObjects')).toBeGreaterThan(rt.calls.indexOf('setViewMode'));
+  });
+
+  it('setViewMode 入参用完整态 mode(不因 changeset 缺 mode 而 fallback 到 3D)', async () => {
+    const rt = mockRuntime();
+    // 只改 hideDevices:changeset 无 mode,但完整态 mode=2D,setViewMode 应保持 2D 而非回 3D
+    const cs: Changeset = {
+      structural: { __touched: true, hideDevices: true },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs, fullStructural({ mode: '2D', hideDevices: true }));
+    const main = (rt.viewModeParams[0] as Array<{ type: string }>)[0];
+    expect(main.type).toBe('2D');
   });
 });

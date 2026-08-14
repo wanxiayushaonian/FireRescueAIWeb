@@ -16,6 +16,20 @@ function diffStructural(prev: StructuralRecipe, next: StructuralRecipe): Changes
   if (!setEqual(prev.visibleBuildings, next.visibleBuildings)) partial.visibleBuildings = next.visibleBuildings;
   if (prev.mode !== next.mode) partial.mode = next.mode;
   if (prev.yExtend !== next.yExtend) partial.yExtend = next.yExtend;
+  if (prev.detailLevel !== next.detailLevel) partial.detailLevel = next.detailLevel;
+  if (prev.hideDevices !== next.hideDevices) partial.hideDevices = next.hideDevices;
+  if (JSON.stringify(prev.categoryVisibility) !== JSON.stringify(next.categoryVisibility)) {
+    partial.categoryVisibility = next.categoryVisibility;
+  }
+  // setViewMode(楼层/模式/炸开/细节/藏设备)变化时,其内部 resetAll 会恢复被 hide 的对象,
+  // 必须把完整 categoryVisibility 一并带入 changeset,供 engine 在 setViewMode 后重放。
+  const setViewTriggered =
+    partial.visibleStories !== undefined || partial.visibleBuildings !== undefined ||
+    partial.mode !== undefined || partial.yExtend !== undefined ||
+    partial.detailLevel !== undefined || partial.hideDevices !== undefined;
+  if (setViewTriggered && partial.categoryVisibility === undefined && next.categoryVisibility) {
+    partial.categoryVisibility = next.categoryVisibility;
+  }
   if (prev.gisVisible !== next.gisVisible) partial.gisVisible = next.gisVisible;
   if (prev.labels.visible !== next.labels.visible || !setEqual(prev.labels.ids, next.labels.ids)) {
     partial.labels = next.labels;

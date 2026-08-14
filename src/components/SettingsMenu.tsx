@@ -3,43 +3,65 @@
 // Popover 向上弹出(side="top"),自带 Portal → 不受 SideNav overflow-hidden 裁切。
 // 当前收纳「渲染性能」设置(从 TopBar 迁移);后续新增设置分区加在本组件 PopoverContent 内。
 import { useEffect, useState } from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, MapPin, RotateCcw, Eye } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
 import { useScene } from './SceneProvider';
+import { showToast } from './Toast';
+import { SceneDisplayModal } from './SceneDisplayModal';
 import type { PerfStats } from '@/lib/soonspace-runtime';
 
 export default function SettingsMenu({ collapsed }: { collapsed: boolean }) {
+  const [popoverOpen, setPopoverOpen] = useState(false);
+  const [displayOpen, setDisplayOpen] = useState(false);
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          className="flex h-10 items-center gap-3 rounded-md px-3 text-text-3 transition hover:bg-white/5 hover:text-text-1"
-          title="设置"
-        >
-          <Settings className="h-5 w-5 shrink-0" />
-          <span
-            className={`whitespace-nowrap text-[13px] transition-opacity duration-200 ${
-              collapsed ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
-            }`}
+    <>
+      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className="flex h-10 items-center gap-3 rounded-md px-3 text-text-3 transition hover:bg-white/5 hover:text-text-1"
+            title="设置"
           >
+            <Settings className="h-5 w-5 shrink-0" />
+            <span
+              className={`whitespace-nowrap text-[13px] transition-opacity duration-200 ${
+                collapsed ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'
+              }`}
+            >
+              设置
+            </span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="top"
+          align="start"
+          sideOffset={8}
+          className="z-[100] w-72 p-3"
+        >
+          <div className="mb-2 flex items-center gap-2 border-b border-line pb-2 text-[12px] text-text-3">
+            <Settings className="h-3.5 w-3.5" />
             设置
-          </span>
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        sideOffset={8}
-        className="z-[100] w-72 p-3"
-      >
-        <div className="mb-2 flex items-center gap-2 border-b border-line pb-2 text-[12px] text-text-3">
-          <Settings className="h-3.5 w-3.5" />
-          设置
-        </div>
-        <PerformanceSettings />
-        {/* 后续新增设置分区(如界面/数据/告警阈值等)加在这里 */}
-      </PopoverContent>
-    </Popover>
+          </div>
+          <PerformanceSettings />
+          <GlobalViewSettings />
+          {/* 内容显隐:打开模态(先关 Popover 避免 z-index 遮挡) */}
+          <div className="mt-2 border-t border-line pt-2">
+            <button
+              onClick={() => {
+                setPopoverOpen(false);
+                setDisplayOpen(true);
+              }}
+              className="flex w-full items-center gap-2 rounded border border-cyan/40 bg-cyan/5 px-2 py-1.5 text-[12px] text-cyan transition hover:bg-cyan/15"
+            >
+              <Eye className="h-3.5 w-3.5" />
+              内容显示
+              <span className="ml-auto text-[10px] text-cyan/60">按类别显隐</span>
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <SceneDisplayModal open={displayOpen} onOpenChange={setDisplayOpen} />
+    </>
   );
 }
 
@@ -154,6 +176,48 @@ function PerformanceSettings() {
           <span>网格数</span>
           <span className="font-num">{perfStats?.meshes?.toLocaleString() ?? '—'}</span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** 全局视角设置区:把当前相机角度保存为全局视角(从 FloorDisplayPanel 迁出)。 */
+function GlobalViewSettings() {
+  const { runtime, view, setCustomInitialView, resetCustomInitialView } = useScene();
+  if (!runtime || view !== 'ready') return null;
+
+  const save = () => {
+    try {
+      const vp = runtime.getCameraViewpoint();
+      if (!vp) { showToast('当前引擎不支持视角读取'); return; }
+      setCustomInitialView(vp);
+      showToast('已保存当前视角为全局视角');
+    } catch {
+      showToast('当前引擎不支持视角读取');
+    }
+  };
+
+  return (
+    <div className="space-y-2 border-t border-line pt-2">
+      <div className="text-[11px] text-text-3">全局视角</div>
+      <div className="flex gap-1">
+        <button
+          onClick={save}
+          className="flex flex-1 items-center justify-center gap-1 rounded border border-cyan/40 bg-cyan/5 px-2 py-1 text-[11px] text-cyan transition hover:bg-cyan/15"
+        >
+          <MapPin className="h-3 w-3" />
+          设当前为全局
+        </button>
+        <button
+          onClick={() => { resetCustomInitialView(); showToast('已恢复默认全局视角'); }}
+          className="flex flex-1 items-center justify-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-3 transition hover:border-line-glow hover:text-text-1"
+        >
+          <RotateCcw className="h-3 w-3" />
+          重置
+        </button>
+      </div>
+      <div className="text-[10px] leading-relaxed text-text-3">
+        取消楼层筛选 / 重新加载场景时,相机回到此视角
       </div>
     </div>
   );

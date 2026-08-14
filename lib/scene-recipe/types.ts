@@ -7,6 +7,14 @@ export interface StructuralRecipe {
   visibleBuildings: string[] | null;  // 同上
   mode: '2D' | '3D';
   yExtend: boolean;
+  /** 细节级别:'structure'=主体骨架(3D 下藏门窗);'full'=完整细节。 */
+  detailLevel: 'structure' | 'full';
+  /** 全局视角是否隐藏建筑内设备/设施(喷淋/烟感/消火栓等非结构叶子),只留主体结构减压。
+   *  实现靠 sdk.hide 循环 + 每次 setViewMode 后重放(因 resetAll 会恢复可见)。 */
+  hideDevices?: boolean;
+  /** 按层级(whole/single/multi)的类别显隐;各层级独立、互不影响。内层 key=类型标识。
+   *  engine 按当前层级选对应配置,在 hideDevices 之后应用(true 显/false 藏)。 */
+  categoryVisibility?: Partial<Record<string, Record<string, boolean>>>;
   gisVisible: boolean;
   labels: { visible: boolean; ids?: string[] };
   reachable?: { nodeId: string };
@@ -43,6 +51,8 @@ export interface RecipeRuntime {
   setCameraViewpoint(vp: CameraViewpoint, transition?: boolean): Promise<void>;
   setVirtualRouteVisible(id: string, v: boolean): unknown;
   setVirtualPolygonVisible(id: string, v: boolean): unknown;
+  hideObjects(ids: string[]): void;
+  showObjects(ids: string[]): void;
 }
 
 export interface ApplyResult {
@@ -57,6 +67,7 @@ export function defaultStructural(): StructuralRecipe {
     visibleBuildings: null,
     mode: '3D',
     yExtend: false,
+    detailLevel: 'full',
     gisVisible: true,
     labels: { visible: false },
   };

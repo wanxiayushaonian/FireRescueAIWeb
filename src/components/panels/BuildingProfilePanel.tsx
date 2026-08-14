@@ -31,7 +31,6 @@ import type {
   StructureDesign,
   BuildingSurrounding,
 } from '@/lib/building-mapper';
-import { FloorDisplayPanel } from '@/components/FloorDisplayPanel';
 
 const GROUPS = ['建筑概况', '消防系统', '关键部位', '防火设计', '联系人'] as const;
 type GroupName = (typeof GROUPS)[number];
@@ -169,7 +168,7 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
                   <option value={curBuildingId}>建筑列表加载中</option>
                 ) : (
                   buildings.map((b) => (
-                    <option key={b.id} value={b.id}>切换建筑：{b.name}</option>
+                    <option key={b.id} value={b.id}>{b.name}</option>
                   ))
                 )}
               </select>
@@ -178,6 +177,18 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
           </div>
         </div>
       </div>
+
+      {/* 建筑速览:关键指标徽章条(固定,一眼概览;档案加载后显示) */}
+      {profile && (
+        <div className="flex flex-wrap gap-1.5 border-b border-line px-4 py-2">
+          <MetricChip label="层数" value={floorsText(profile.overview)} />
+          <MetricChip label="高度" value={fmtNum(profile.overview.heightMeters, 'm')} />
+          <MetricChip label="建成" value={fmtNum(profile.overview.builtYear)} />
+          <MetricChip label="消防系统" value={`${profile.facilities.length} 项`} />
+          <MetricChip label="关键部位" value={`${profile.keyFloors.length} 处`} />
+          <MetricChip label="完整度" value={fmtNum(profile.overview.completionRate, '%')} accent />
+        </div>
+      )}
 
       {/* 内容区 */}
       {state !== 'ok' ? (
@@ -191,8 +202,6 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
       ) : (
         profile && (
           <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 [scrollbar-width:thin]">
-            {/* 楼层展示面板（3D 场景联动） */}
-            <FloorDisplayPanel />
             {GROUPS.map((g) => (
               <AccordionGroup
                 key={g}
@@ -524,6 +533,19 @@ function StructureGroup({
       )}
 
       {!d && !s2 && <div className="py-4 text-center text-[12px] text-text-3">暂无结构 / 周边数据</div>}
+    </div>
+  );
+}
+
+function MetricChip({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div
+      className={`flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] ${
+        accent ? 'border-cyan/40 bg-cyan/10 text-cyan' : 'border-line bg-bg-panel-2/50 text-text-2'
+      }`}
+    >
+      <span className="text-text-3">{label}</span>
+      <span className="font-mono font-semibold">{value}</span>
     </div>
   );
 }

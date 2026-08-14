@@ -62,7 +62,12 @@ export function mapSceneAction(action: SceneAction, runtime: SceneExecutorRuntim
         : [];
       // 经 Recipe 单一真相源(若 store 可用);否则回退原直调
       if (store) {
-        store.patchStructural({ visibleStories: storyIds });
+        const isFocusSingle = storyIds.length === 1;
+        store.patchStructural({
+          visibleStories: storyIds,
+          detailLevel: isFocusSingle ? 'full' : 'structure',
+          hideDevices: !isFocusSingle,
+        });
         return { executed: true };
       }
       runtime.switchFloor(storyIds);

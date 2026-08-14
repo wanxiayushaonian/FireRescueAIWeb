@@ -26,6 +26,14 @@ describe('diffRecipe', () => {
     expect(c.structural.mode).toBe('2D');
   });
 
+  it('detailLevel 变更 → structural touched 且含 detailLevel', () => {
+    const prev = defaultRecipe();
+    const next = { ...prev, structural: { ...prev.structural, detailLevel: 'structure' as const } };
+    const c = diffRecipe(prev, next);
+    expect(c.structural.__touched).toBe(true);
+    expect(c.structural.detailLevel).toBe('structure');
+  });
+
   it('focus 变更 → observational touched,structural 不 touched(正交)', () => {
     const prev = defaultRecipe();
     const next = { ...prev, observational: { ...prev.observational, focus: { objectId: 'X' } } };

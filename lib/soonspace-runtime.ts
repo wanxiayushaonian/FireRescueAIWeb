@@ -45,6 +45,8 @@ export type PerfStats = {
   bvhReady: boolean;
   /** BVH 是否正在计算 */
   bvhRunning: boolean;
+  /** 是否空闲(>1s 无真实渲染,由 postRender 信号判断;fps 本身由前端 rAF 测) */
+  idle: boolean;
 };
 
 /** 镜头视角：位置、目标点、缩放（与 soonspacejs CameraViewpointData 对齐）。 */
@@ -61,6 +63,19 @@ export type SoonspaceInitProgress = {
 };
 
 export type SoonspaceSemanticClickInfo = Semantic2dClickInfo & Record<string, unknown>;
+
+/**
+ * hover 拾取结果。由 mouseMove + 自管 raycast 产出(不依赖 soonspacejs 的 modelHover 信号,
+ * 因为该信号只在命中对象 stype==="Model" 时触发,CPS 的墙/Space 等不会触发)。
+ *
+ * sids:命中对象父链上的 sid 序列(最近优先)。最近的通常是构件(Model)叶子,其祖先 Group
+ * 才对应语义树里的 Wall/Story。组件按序在反向索引里找第一个命中的 → 得到楼层。
+ */
+export type HoverPickInfo = {
+  sids: string[];
+  clientX: number;
+  clientY: number;
+} | null;
 
 export type ScriptMethods = {
   fly: (id: unknown) => unknown;
@@ -128,6 +143,12 @@ export class SoonspaceRuntime {
   private sceneClick2dBound: ((info: unknown, event: unknown) => void) | null = null;
   private sceneClickModelBound: ((param: AnyObject) => void) | null = null;
   private sceneClickSceneBound: ((param: AnyObject) => void) | null = null;
+  private hoverPickHandlers = new Set<(info: HoverPickInfo) => void>();
+  private hoverPickInstalled = false;
+  private hoverPickBound: ((event: AnyObject) => void) | null = null;
+  private hoverPickRaf = 0;
+  private hoverPickLastEvent: AnyObject | null = null;
+  private hoverPickDiag = 0; // 临时诊断计数(确认 hover 拾取链路后删除)
   private pendingRenderOrigin: RenderOrigin | null = null;
   private cps: AnyObject | null = null;
   private ssp: AnyObject | null = null;
@@ -148,6 +169,9 @@ export class SoonspaceRuntime {
   private bvhReady = false;
   private bvhRunning = false;
   private perfPollCount = 0;
+  /** 最近真实渲染帧间隔窗口(ms,供 postRender 统计渲染帧率,区别于 rAF 空转) */
+  private renderIntervals: number[] = [];
+  private lastRenderAt = 0;
   private warnedNoScene = false;
 
   async init(container: HTMLElement, sceneId: string, onProgress?: (progress: SoonspaceInitProgress) => void): Promise<void> {
@@ -175,7 +199,7 @@ export class SoonspaceRuntime {
       options: {
         background: { color: '#0b1120', alpha: false },
         showGrid: false,
-        showInfo: true,
+        showInfo: false, // 关闭 canvas 性能叠加(objects/meshes/frametable),改由 ScenePerfWidget DOM 面板显示,避免位置重叠遮挡
         hoverEnabled: false,
         showViewHelper: true,
       },
@@ -371,6 +395,109 @@ export class SoonspaceRuntime {
     }
   }
 
+  /**
+   * 注册 hover 拾取监听(多订阅)。整体建筑视角下由调用方按需开启。
+   *
+   * 不走 soonspacejs 的 modelHover 信号:该信号由 _triggerSceneEventInAllObject("hover") 动态分发
+   * signals[`${stype}Hover`],只在命中对象 stype==="Model" 时触发 modelHover;CPS 的墙/Space/门等
+   * stype 不是 "Model",modelHover 永远不触发。所以这里直接订阅 signals.mouseMove(任何鼠标移动都触发),
+   * rAF 节流后用 viewport.getIntersects 做 BVH 拾取,沿父链向上找到带 sid 的 BaseObject3D
+   * (其 sid 即 out_instance_id),分发给所有订阅者。不需要 hoverEnabled,不需要知道 stype。
+   */
+  setHoverPickHandler(handler: (info: HoverPickInfo) => void): () => void {
+    this.hoverPickHandlers.add(handler);
+    if (!this.hoverPickInstalled) {
+      this.hoverPickInstalled = true;
+      const ssp = this.getSsp();
+      this.hoverPickBound = (event: AnyObject) => {
+        this.hoverPickLastEvent = event;
+        if (this.hoverPickRaf) return; // 已排程,合并到本帧
+        this.hoverPickRaf = requestAnimationFrame(() => {
+          this.hoverPickRaf = 0;
+          const ev = this.hoverPickLastEvent;
+          this.hoverPickLastEvent = null;
+          if (!ev) return;
+          this.runHoverPick(ev);
+        });
+      };
+      // 临时诊断:确认 mouseMove 信号存在(确认链路后删除)
+      console.info('[hover-diag] install', {
+        hasSignals: !!ssp?.signals,
+        hasMouseMove: !!ssp?.signals?.mouseMove,
+        hasViewport: !!ssp?.viewport,
+        hasGetIntersects: typeof ssp?.viewport?.getIntersects === 'function',
+      });
+      ssp?.signals?.mouseMove?.add?.(this.hoverPickBound);
+    }
+    return () => this.clearHoverPickHandler(handler);
+  }
+
+  /** 单帧拾取:raycast 命中 → 取首个有 sid 父链的命中,收集 sid 序列(最近优先) → 分发。 */
+  private runHoverPick(event: AnyObject): void {
+    const ssp = this.getSsp();
+    const vp = ssp?.viewport as AnyObject | undefined;
+    let info: HoverPickInfo = null;
+    let hitCount = 0;
+    try {
+      const list = vp?.scener?.intersectsList?.getAll?.();
+      const hits = vp?.getIntersects?.(event, list);
+      hitCount = Array.isArray(hits) ? hits.length : 0;
+      // 遍历命中(按距离),取首个父链含 sid 的;收集其父链全部 sid(最近优先,去重)
+      for (let i = 0; i < hitCount; i++) {
+        const collected: string[] = [];
+        let obj = (hits[i] as AnyObject)?.object as AnyObject | undefined;
+        while (obj && collected.length < 12) {
+          const sid = obj.sid;
+          if (typeof sid === 'string' && sid && !collected.includes(sid)) collected.push(sid);
+          obj = obj.parent as AnyObject | undefined;
+        }
+        if (collected.length) {
+          info = {
+            sids: collected,
+            clientX: typeof event.clientX === 'number' ? event.clientX : 0,
+            clientY: typeof event.clientY === 'number' ? event.clientY : 0,
+          };
+          break;
+        }
+      }
+    } catch (error) {
+      console.error('[soonspace-runtime] hover pick threw', error);
+    }
+    // 临时诊断:打印 sid 序列(确认组件侧按序匹配;确认后删除)
+    if (this.hoverPickDiag < 12 && hitCount > 0) {
+      this.hoverPickDiag++;
+      console.info(`[hover-diag] #${this.hoverPickDiag} hits=${hitCount} sids=${info ? info.sids.join(' > ') : 'NONE'}`);
+    }
+    for (const fn of this.hoverPickHandlers) {
+      try {
+        fn(info);
+      } catch (error) {
+        console.error('[soonspace-runtime] hover pick handler threw', error);
+      }
+    }
+  }
+
+  clearHoverPickHandler(handler?: (info: HoverPickInfo) => void): void {
+    if (handler) {
+      this.hoverPickHandlers.delete(handler);
+    } else {
+      this.hoverPickHandlers.clear();
+    }
+    if (this.hoverPickHandlers.size === 0 && this.hoverPickInstalled) {
+      this.hoverPickInstalled = false;
+      if (this.hoverPickRaf) {
+        cancelAnimationFrame(this.hoverPickRaf);
+        this.hoverPickRaf = 0;
+      }
+      this.hoverPickLastEvent = null;
+      const ssp = this.getSsp();
+      if (ssp?.signals && this.hoverPickBound) {
+        ssp.signals.mouseMove?.remove?.(this.hoverPickBound);
+        this.hoverPickBound = null;
+      }
+    }
+  }
+
   /** 相机飞向指定物体（soonspacejs flyToObj，带过渡动画）。 */
   async flyToObject(objectId: string): Promise<void> {
     const ssp = this.getSsp();
@@ -538,6 +665,30 @@ export class SoonspaceRuntime {
     const ssp = this.getSsp();
     if (typeof ssp?.requestRender === 'function') ssp.requestRender();
     else ssp?.render?.();
+  }
+
+  /**
+   * 批量隐藏对象(循环 sdk.hide,SDK 无批量 API)。
+   * 注意:setViewMode 内部 resetAll 会恢复所有被 hide 的对象,故每次视角操作后需重放(replay)。
+   * 参考实现:code-ms6qsavu/lib/scene-plugins UStudioSceneTool.replayCategoryVisibility。
+   */
+  hideObjects(ids: string[]): void {
+    const sdk = this.sdk as unknown as { hide?: (id: string) => void } | null;
+    if (!sdk?.hide) return;
+    for (const id of ids) {
+      try { sdk.hide!(id); } catch { /* 单个失败不阻断其余 */ }
+    }
+    this.render();
+  }
+
+  /** 批量恢复对象可见(循环 sdk.show)。 */
+  showObjects(ids: string[]): void {
+    const sdk = this.sdk as unknown as { show?: (id: string) => void } | null;
+    if (!sdk?.show) return;
+    for (const id of ids) {
+      try { sdk.show!(id); } catch { /* 单个失败不阻断其余 */ }
+    }
+    this.render();
   }
 
   private resolveCpsManager(): AnyObject | null {
@@ -744,7 +895,12 @@ export class SoonspaceRuntime {
     this.loadMs = this.initStartedAt > 0 ? performance.now() - this.initStartedAt : null;
     this.sceneCounts = this.countScene();
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
-    this.setPixelRatio(Math.min(dpr, 1.5));
+    // 大模型场景（>2w mesh）初始即压低像素比，避免首帧全分辨率渲染导致长时间卡顿
+    const heavyScene = this.sceneCounts.meshes > 20000;
+    this.setPixelRatio(Math.min(dpr, heavyScene ? 1 : 1.5));
+    // 默认关阴影：大场景阴影贴图渲染开销大，需时在设置里手动开
+    this.setShadows(false);
+    this.installRenderStats();
     void this.computeBvh();
     console.info('[perf] init 完成: loadMs =', this.loadMs?.toFixed(0), 'ms, ssp =', this.ssp ? 'ok' : 'MISSING',
       'counts =', this.sceneCounts, 'renderer =', !!this.getRenderer());
@@ -757,17 +913,21 @@ export class SoonspaceRuntime {
     const renderer = this.getRenderer();
     const calls = renderer?.info?.render?.calls;
     if (typeof calls !== 'number' || calls <= 0) return;
-    if (calls > 30000) {
+    // 填充率自适应：draw call 越多逐级降低像素比（大模型场景可降到 0.75，约减 44% 填充面积）
+    if (calls > 80000) {
+      console.info('[perf] 本帧 draw calls =', calls, '（> 80000），自动将像素比降至 0.75 缓解重绘压力');
+      this.setPixelRatio(0.75);
+    } else if (calls > 30000) {
       console.info('[perf] 本帧 draw calls =', calls, '（> 30000），自动将像素比降至 1 缓解重绘压力');
       this.setPixelRatio(1);
     }
   }
 
-  /** 设置渲染像素比（1/1.5/2） */
+  /** 设置渲染像素比（0.75/1/1.5/2）。大场景建议 0.75~1，减少填充率与显存压力。 */
   setPixelRatio(value: number): void {
     const renderer = this.getRenderer();
     if (!renderer || typeof renderer.setPixelRatio !== 'function') return;
-    const clamped = Math.max(1, Math.min(2, value));
+    const clamped = Math.max(0.75, Math.min(2, value));
     renderer.setPixelRatio(clamped);
     try {
       this.getViewport()?.signals?.windowResize?.dispatch?.();
@@ -783,6 +943,21 @@ export class SoonspaceRuntime {
     if (!renderer) return;
     if (renderer.shadowMap && typeof renderer.shadowMap === 'object') renderer.shadowMap.enabled = enabled;
     this.render();
+  }
+
+  /**
+   * 暂停/恢复 3D 渲染循环（soonspacejs Viewport.setPauseRender）。
+   * 3D 模块被隐藏（如切到态势总览 GIS）时暂停，节省 GPU/CPU；恢复时立即渲染一帧。
+   */
+  setRenderPaused(paused: boolean): void {
+    const viewport = this.getViewport();
+    if (!viewport || typeof viewport.setPauseRender !== 'function') return;
+    try {
+      void viewport.setPauseRender(paused);
+      if (!paused) this.render();
+    } catch (error) {
+      console.warn('[perf] setPauseRender 失败', error);
+    }
   }
 
   /** 开关 SMAA 抗锯齿 */
@@ -816,6 +991,16 @@ export class SoonspaceRuntime {
     }
   }
 
+  /** 挂钩 soonspacejs postRender,统计真实渲染帧间隔(区别于 rAF 空转的假高帧率) */
+  private installRenderStats(): void {
+    const vp = this.getViewport();
+    if (!vp || typeof vp.postRender?.set !== 'function') return;
+    vp.postRender.set('perf-stats', () => {
+      // 仅作"是否在渲染"的 idle 信号;fps 交给前端 rAF(postRender 触发频率≠真实渲染帧率,直接算会虚低)
+      this.lastRenderAt = performance.now();
+    });
+  }
+
   /** 实时性能采样 */
   getPerfStats(): PerfStats {
     const ssp = this.getSsp();
@@ -833,6 +1018,7 @@ export class SoonspaceRuntime {
     } catch {
       // ignore
     }
+    const idle = this.lastRenderAt > 0 && performance.now() - this.lastRenderAt > 1000;
     return {
       loadMs: this.loadMs,
       drawCalls: info?.calls ?? 0,
@@ -845,6 +1031,7 @@ export class SoonspaceRuntime {
       smaaOn,
       bvhReady: this.bvhReady,
       bvhRunning: this.bvhRunning,
+      idle,
     };
   }
 

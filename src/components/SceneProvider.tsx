@@ -189,11 +189,13 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
           setCameraViewpoint: (vp, tr) => rt.setCameraViewpoint(vp, tr),
           setVirtualRouteVisible: (id, v) => rt.setVirtualRouteVisible(id, v),
           setVirtualPolygonVisible: (id, v) => rt.setVirtualPolygonVisible(id, v),
+          hideObjects: (ids) => rt.hideObjects(ids),
+          showObjects: (ids) => rt.showObjects(ids),
         };
-        recipeUnsubRef.current = store.subscribe((_next, cs) => {
+        recipeUnsubRef.current = store.subscribe((next, cs) => {
           const t = treeRef.current;
           if (!t) return;
-          void applyRecipe(recipeRuntime, t, cs).then((r) => {
+          void applyRecipe(recipeRuntime, t, cs, next.structural).then((r) => {
             if (r.failed.length) store.desynced = true;
           });
         });

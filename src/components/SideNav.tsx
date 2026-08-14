@@ -25,11 +25,14 @@ export default function SideNav({
   onSelect,
   collapsed,
   onToggleCollapsed,
+  onWarmup,
 }: {
   active: ModuleKey;
   onSelect: (k: ModuleKey) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** 首次 hover 3D 模块按钮时触发场景预热加载(是否启用由调用方判断) */
+  onWarmup?: (k: ModuleKey) => void;
 }) {
   return (
     <motion.aside
@@ -50,6 +53,7 @@ export default function SideNav({
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.05 * i, duration: 0.3 }}
               onClick={() => onSelect(item.key)}
+              onPointerEnter={() => onWarmup?.(item.key)}
               className={`relative flex h-11 items-center gap-3 rounded-md px-3 text-left transition-colors ${
                 isActive ? 'bg-cyan/10 text-cyan' : 'text-text-2 hover:bg-white/5 hover:text-text-1'
               }`}
