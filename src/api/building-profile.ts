@@ -20,13 +20,21 @@ interface ZnyaFacilityPage {
 /**
  * 拉取建筑档案:并发请求详情 + 设施,组装为 RealBuildingProfile。
  * 设施按 ref_type=key_building + ref_id={buildingId} 过滤(ref_id/ref_type 是 znya crud_factory 列表过滤参数)。
+ * 设施翻页拉全:znya 非 bbox 查询 page_size 上限 100,超过 100 条必须翻页(修复静默截断)。
  */
 export async function fetchBuildingProfile(buildingId: string): Promise<RealBuildingProfile> {
-  const [detail, facilityPage] = await Promise.all([
-    getJson<ZnyaKeyBuildingDetail>(`/api/business/key-buildings/${buildingId}`),
-    getJson<ZnyaFacilityPage>(
-      `/api/business/fire-facilities?ref_type=key_building&ref_id=${encodeURIComponent(buildingId)}&page=1&page_size=100`,
-    ),
-  ]);
-  return mapBuildingProfile(detail, facilityPage.items ?? []);
+  const detailP = getJson<ZnyaKeyBuildingDetail>(`/api/business/key-buildings/${buildingId}`);
+  const facilities: ZnyaFireFacility[] = [];
+  const pageSize = 100;
+  for (let page = 1; ; page += 1) {
+    const pageData = await getJson<ZnyaFacilityPage>(
+      `/api/business/fire-facilities?ref_type=key_building&ref_id=${encodeURIComponent(buildingId)}&page=${page}&page_size=${pageSize}`,
+    );
+    facilities.push(...(pageData.items ?? []));
+    const fetched = pageData.items?.length ?? 0;
+    const total = pageData.total ?? 0;
+    if (fetched < pageSize || facilities.length >= total) break;
+  }
+  const detail = await detailP;
+  return mapBuildingProfile(detail, facilities);
 }

@@ -14,8 +14,9 @@ export interface RenderWaterSource {
   id: string;
   name: string;
   type: string;
-  lng: number;
-  lat: number;
+  /** 坐标缺失为 null,渲染跳过 */
+  lng: number | null;
+  lat: number | null;
   address: string;
   district: string;
   districtCode: string;
@@ -23,8 +24,8 @@ export interface RenderWaterSource {
 
 /** 水源聚合气泡(结构类型,与 src/api/water 的 WaterCluster 同构;lib 不得 import src)。 */
 export interface RenderWaterCluster {
-  lng: number;
-  lat: number;
+  lng: number | null;
+  lat: number | null;
   count: number;
 }
 
@@ -54,8 +55,11 @@ export function renderWater(
   // 聚合气泡渲染:13-14 级服务端 clusters / >=15 超限回落客户端聚合共用(气泡 html/tooltip/点击 flyTo 原样)
   const renderClusterBubbles = (items: RenderWaterCluster[]) => {
     for (const c of items) {
+      if (c.lng == null || c.lat == null) continue; // 坐标缺失 → 跳过
+      const lng: number = c.lng; // 显式窄化(闭包传参场景 TS 不收窄)
+      const lat: number = c.lat;
       const { html, size } = waterClusterSvg(c.count);
-      L.marker([c.lat, c.lng], {
+      L.marker([lat, lng], {
         icon: L.divIcon({
           html,
           className: 'map-icon-water-cluster',
@@ -64,7 +68,7 @@ export function renderWater(
         }),
       })
       .bindTooltip(`${c.count} 个水源,点击直达点位`, { direction: 'top', className: 'gis-tip' })
-        .on('click', () => opts.map.flyTo([c.lat, c.lng], WATER_POINTS_ZOOM))
+        .on('click', () => opts.map.flyTo([lat, lng], WATER_POINTS_ZOOM))
         .addTo(layer);
     }
   };
@@ -72,7 +76,11 @@ export function renderWater(
     const visible = water.filter((w) => !opts.hiddenDistricts.includes(w.districtCode));
     if (decidePointRender(visible.length, opts.cap ?? POINT_CAP) === 'points') {
       for (const w of visible) {
-        const m = L.marker([w.lat, w.lng], {
+        if (w.lng == null || w.lat == null) continue; // 坐标缺失 → 跳过
+        const lng: number = w.lng; // 显式窄化(闭包传参场景 TS 不收窄)
+        const lat: number = w.lat;
+        const src: RenderWaterSource & { lng: number; lat: number } = { ...w, lng, lat };
+        const m = L.marker([lat, lng], {
           icon: L.divIcon({
             html: waterIconSvg(w.type),
             className: 'map-icon-water',
@@ -81,11 +89,11 @@ export function renderWater(
             popupAnchor: [0, -18],
           }),
         })
-          .bindPopup(popupForWater(w), { className: 'gis-popup' })
-          .on('click', () => opts.onWaterClick(w))
+          .bindPopup(popupForWater(src), { className: 'gis-popup' })
+          .on('click', () => opts.onWaterClick(src))
           .on('contextmenu', (e) => {
             L.DomEvent.stopPropagation(e.originalEvent as Event);
-            opts.onRadial({ kind: 'water', id: w.id, name: w.name, lng: w.lng, lat: w.lat }, [w.lat, w.lng]);
+            opts.onRadial({ kind: 'water', id: w.id, name: w.name, lng, lat }, [lat, lng]);
           });
         m.on('popupopen', () => m.getElement()?.classList.add('gis-marker-active'));
         m.on('popupclose', () => m.getElement()?.classList.remove('gis-marker-active'));

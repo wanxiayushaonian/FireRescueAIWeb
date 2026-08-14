@@ -11,8 +11,8 @@ export interface GridCluster {
 
 export function gridCluster<T>(
   items: T[],
-  getLng: (t: T) => number,
-  getLat: (t: T) => number,
+  getLng: (t: T) => number | null,
+  getLat: (t: T) => number | null,
   cell: number,
 ): GridCluster[] {
   const cells = new Map<string, GridCluster & { sumLng: number; sumLat: number }>();

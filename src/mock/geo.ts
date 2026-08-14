@@ -89,7 +89,10 @@ const ROUTE_SUMMARY: Record<string, string> = {
 /** 计算最近 N 个队站（确定性） */
 export function computeNearbyStations(building: GisBuilding, topN = 3): NearbyStation[] {
   return STATIONS.map((s) => {
-    const distanceKm = +haversineKm(building.lng, building.lat, s.lng, s.lat).toFixed(1);
+    // mock 站坐标恒定非 null,但类型已放宽为可空;此处显式断言(mock 数据保证)
+    const lng = s.lng as number;
+    const lat = s.lat as number;
+    const distanceKm = +haversineKm(building.lng, building.lat, lng, lat).toFixed(1);
     return {
       stationId: s.id,
       name: s.name,
@@ -100,11 +103,11 @@ export function computeNearbyStations(building: GisBuilding, topN = 3): NearbySt
       routeSummary:
         ROUTE_SUMMARY[s.id] ?? `${s.address.split(' ')[0]} → 中山路 → 目的地`,
       routeMidpoint: {
-        lng: +(((s.lng + building.lng) / 2).toFixed(4)),
-        lat: +(((s.lat + building.lat) / 2).toFixed(4)),
+        lng: +(((lng + building.lng) / 2).toFixed(4)),
+        lat: +(((lat + building.lat) / 2).toFixed(4)),
       },
-      lng: s.lng,
-      lat: s.lat,
+      lng,
+      lat,
     } satisfies NearbyStation;
   })
     .sort((a, b) => a.distanceKm - b.distanceKm)

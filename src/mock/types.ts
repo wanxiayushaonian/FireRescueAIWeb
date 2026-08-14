@@ -4,12 +4,13 @@ export type FetchState = 'ok' | 'loading' | 'empty' | 'error';
 export interface Station {
   id: string;
   name: string;
-  type: '救援大队' | '救援站' | '政府专职站' | '企业专职站' | '微型消防站';
+  /** 后端 station_type 实为 13+ 种(救援大队/救援站/政府专职站/企业专职站/微型消防站/…),放宽为 string 避免强转 */
+  type: string;
   contact: string;
   dutyPhone: string;
   address: string;
-  lng: number;
-  lat: number;
+  lng: number | null;
+  lat: number | null;
   personnel: number;
   vehicles: number;
   status?: string; // normal/维修/停用(后端 fire_stations.status)
@@ -90,8 +91,8 @@ export interface WaterSource {
   id: string;
   name: string;
   type: string; // 市政消火栓 / 消防水池 / 天然水源
-  lat: number;
-  lng: number;
+  lat: number | null;
+  lng: number | null;
   address: string;
   districtCode: string;
   district: string; // 区名(DISTRICT_NAME 映射)

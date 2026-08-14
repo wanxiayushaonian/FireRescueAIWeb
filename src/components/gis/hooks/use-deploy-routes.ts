@@ -78,6 +78,7 @@ export function useDeployRoutes(deps: {
         .then((nearby) => {
           const bounds = L.latLngBounds([L.latLng(t.lat, t.lng)]);
           nearby.forEach((w) => {
+            if (w.lat == null || w.lng == null) return; // 坐标缺失 → 跳过
             L.circleMarker([w.lat, w.lng], { radius: 10, color: '#22d3ee', fillColor: '#22d3ee', fillOpacity: 0.3, weight: 2 })
               .bindTooltip(`${w.name} · ${w.type} · ${Math.round(w.distanceM)}m`, { direction: 'top', className: 'gis-tip' })
               .addTo(highlight);
@@ -115,7 +116,10 @@ export function useDeployRoutes(deps: {
         // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量;
         // 再按名称排除机关/勤务/机动大队等不承担常规到场任务的站点
         const eligible = stationsRef.current.filter(
-          (s) => DEPLOY_STATION_TYPES.includes(s.type as string) && !EXCLUDED_STATION_NAMES.includes(s.name),
+          (s): s is Station & { lng: number; lat: number } =>
+            DEPLOY_STATION_TYPES.includes(s.type as string) &&
+            !EXCLUDED_STATION_NAMES.includes(s.name) &&
+            s.lng != null && s.lat != null, // 无坐标站不参与派遣(无法画路线/算距离)
         );
         if (eligible.length === 0) {
           setDeploy({ ...base, stations: [], emptyHint: '周边无常规主力消防站(支队/救援大队/救援站)' });
@@ -147,7 +151,7 @@ export function useDeployRoutes(deps: {
         await Promise.all(
           stationIds.map(async (id) => {
             const s = stationsRef.current.find((x) => x.id === id);
-            if (!s) return null;
+            if (!s || s.lng == null || s.lat == null) return null; // 无坐标站跳过
             try {
               const route = await fetchDrivingRoute({ lng: s.lng, lat: s.lat }, { lng: deploy.target.lng, lat: deploy.target.lat });
               return { stationId: id, stationName: s.name, polyline: route.polyline, distance: route.distance, duration: route.duration, trafficLights: route.trafficLights } as RouteRenderItem;

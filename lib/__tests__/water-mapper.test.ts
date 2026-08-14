@@ -37,10 +37,10 @@ describe('water-mapper', () => {
     expect(w.status).toBe('normal');
   });
 
-  it('mapWaterSource 容忍空字段', () => {
+  it('mapWaterSource 容忍空字段(坐标缺失→null,非 (0,0))', () => {
     const w = mapWaterSource({ id: 'w2', name: 'x', water_type: '消防水池', status: 'normal' });
-    expect(w.lat).toBe(0);
-    expect(w.lng).toBe(0);
+    expect(w.lat).toBeNull();
+    expect(w.lng).toBeNull();
     expect(w.address).toBe('');
     expect(w.districtCode).toBe('');
     expect(w.district).toBe('未知');

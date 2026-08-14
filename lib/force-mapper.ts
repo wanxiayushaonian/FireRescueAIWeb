@@ -10,6 +10,8 @@ export interface ZnyaStation {
   latitude?: number | null;
   duty_phone?: string | null;
   status: string;
+  /** fire_stations 表含 district_code;API 未回传时为 undefined(区县统计靠地址推算兜底) */
+  district_code?: string | null;
   extra_attrs?: {
     commander?: string | null;
     personnel_count?: number | null;
@@ -37,15 +39,17 @@ export function mapStation(raw: ZnyaStation): Station {
   return {
     id: raw.id,
     name: raw.name,
-    type: raw.station_type as Station['type'],
+    type: raw.station_type,
     contact: raw.extra_attrs?.commander ?? '',
     dutyPhone: raw.duty_phone ?? '',
     address: raw.address ?? '',
-    lng: raw.longitude ?? 0,
-    lat: raw.latitude ?? 0,
+    // 坐标缺失 → null(与单位/建筑/警情一致;渲染侧跳过,避免画到 (0,0) 几内亚湾)
+    lng: raw.longitude ?? null,
+    lat: raw.latitude ?? null,
     personnel: raw.extra_attrs?.personnel_count ?? 0,
     vehicles: sumVehicle(raw.extra_attrs?.vehicle_summary),
     status: raw.status ?? 'normal',
+    districtCode: raw.district_code ?? '',
   };
 }
 

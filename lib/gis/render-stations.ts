@@ -13,8 +13,9 @@ export interface RenderStation {
   name: string;
   type: string;
   address: string;
-  lng: number;
-  lat: number;
+  /** 坐标缺失为 null,渲染跳过 */
+  lng: number | null;
+  lat: number | null;
   status?: string;
 }
 
@@ -37,7 +38,13 @@ export function renderStations(
   const markers = new Map<string, L.Marker>();
   for (const s of stations) {
     if (!opts.visibleTypes.includes(s.type)) continue;
-    const marker = L.marker([s.lat, s.lng], {
+    // 坐标缺失(null)→ 跳过渲染,避免画到 (0,0)(mapper 已把缺失坐标输出为 null)
+    if (s.lng == null || s.lat == null) continue;
+    // TS 对循环变量属性在闭包传参时不收窄,这里用展开副本显式窄化 lng/lat 为 number
+    const lng: number = s.lng;
+    const lat: number = s.lat;
+    const station: RenderStation & { lng: number; lat: number } = { ...s, lng, lat };
+    const marker = L.marker([lat, lng], {
       icon: L.divIcon({
         html: stationIconSvg(s.type, s.status),
         className: 'map-icon-station',
@@ -46,9 +53,9 @@ export function renderStations(
         popupAnchor: [0, -24],
       }),
     })
-      .bindPopup(popupForStation(s, opts.personnelCounts.get(s.id) ?? 0), { className: 'gis-popup' })
-      .on('click', () => opts.onStationClick(s))
-      .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng: s.lng, lat: s.lat }, [s.lat, s.lng]); });
+      .bindPopup(popupForStation(station, opts.personnelCounts.get(s.id) ?? 0), { className: 'gis-popup' })
+      .on('click', () => opts.onStationClick(station))
+      .on('contextmenu', (e) => { L.DomEvent.stopPropagation(e.originalEvent as Event); opts.onRadial({ kind: 'station', id: s.id, name: s.name, type: s.type, lng, lat }, [lat, lng]); });
     marker.on('popupopen', () => marker.getElement()?.classList.add('gis-marker-active'));
     marker.on('popupclose', () => marker.getElement()?.classList.remove('gis-marker-active'));
     layer.addLayer(marker);

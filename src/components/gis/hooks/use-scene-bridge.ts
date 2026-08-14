@@ -56,7 +56,7 @@ export function useSceneBridge(deps: {
           }
         } else {
         const hit = stationsRef.current.find((s) => latest.target?.includes(s.name));
-        if (hit) {
+        if (hit && hit.lng != null && hit.lat != null) {
           map.flyTo([hit.lat, hit.lng], Math.max(map.getZoom(), 14));
           const mk = stationMarkers.current.get(hit.id);
           if (mk) {
@@ -65,7 +65,7 @@ export function useSceneBridge(deps: {
           }
         } else {
           const w = waterRef.current.find((x) => latest.target?.includes(x.name));
-          if (w) {
+          if (w && w.lng != null && w.lat != null) {
             // 必须飞到点位级(zoom>=15):中低 zoom 是聚合气泡,没有可弹 popup 的逐点 marker
             map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 15));
             // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染

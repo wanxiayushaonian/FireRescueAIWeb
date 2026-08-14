@@ -101,8 +101,11 @@ export function useIncidentResponse(deps: {
 
       // 只派遣常规主力(支队/救援大队/救援站),排除专职站/微型等辅助力量;
       // 再按名称排除机关/勤务/机动大队等不承担常规到场任务的站点
-      const eligible = stationsRef.current.filter((s) =>
-        RESPONSE_STATION_TYPES.includes(s.type as string) && !RESPONSE_EXCLUDED_NAMES.includes(s.name),
+      const eligible = stationsRef.current.filter(
+        (s): s is Station & { lng: number; lat: number } =>
+          RESPONSE_STATION_TYPES.includes(s.type as string) &&
+          !RESPONSE_EXCLUDED_NAMES.includes(s.name) &&
+          s.lng != null && s.lat != null, // 无坐标站不参与响应分析
       );
       const within = selectWithinKm(
         eligible.map((s) => ({ id: s.id, name: s.name, lng: s.lng, lat: s.lat })),
@@ -161,7 +164,7 @@ export function useIncidentResponse(deps: {
       if (ranked.length > 0 && routeLayer) {
         const nearest = ranked[0];
         const s = stationsRef.current.find((x) => x.id === nearest.id);
-        if (s) {
+        if (s && s.lng != null && s.lat != null) {
           try {
             const r = await fetchDrivingRoute(
               { lng: s.lng, lat: s.lat },

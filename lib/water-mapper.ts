@@ -35,8 +35,9 @@ export function mapWaterSource(raw: ZnyaWaterSource): WaterSource {
     id: raw.id,
     name: raw.name,
     type: raw.water_type,
-    lat: raw.latitude ?? 0,
-    lng: raw.longitude ?? 0,
+    // 坐标缺失 → null(与单位/建筑/警情一致;渲染侧跳过,避免画到 (0,0))
+    lat: raw.latitude ?? null,
+    lng: raw.longitude ?? null,
     address: raw.location_path ?? '',
     districtCode: code,
     district: DISTRICT_NAME[code] ?? '未知',

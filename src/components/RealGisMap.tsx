@@ -751,7 +751,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
       run: () => {
         setShowWater(true);
         const map = mapRef.current;
-        if (map) map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 15));
+        if (map && w.lat != null && w.lng != null) map.flyTo([w.lat, w.lng], Math.max(map.getZoom(), 15));
         close();
       },
     }));
@@ -1209,12 +1209,12 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
             <div className="max-h-[200px] overflow-y-auto rounded-md border border-line bg-bg-panel/80 p-2 text-[11px] text-text-2">
               {stations.map((s) => (
                 <div key={s.id} className="whitespace-nowrap">
-                  {s.name} {s.lng.toFixed(4)}, {s.lat.toFixed(4)}
+                  {s.name} {s.lng == null ? '无坐标' : `${s.lng.toFixed(4)}, ${s.lat?.toFixed(4) ?? '?'}`}
                 </div>
               ))}
               {water.map((w) => (
                 <div key={w.id} className="whitespace-nowrap text-text-3">
-                  💧 {w.name} {w.lng.toFixed(4)}, {w.lat.toFixed(4)}
+                  💧 {w.name} {w.lng == null ? '无坐标' : `${w.lng.toFixed(4)}, ${w.lat?.toFixed(4) ?? '?'}`}
                 </div>
               ))}
             </div>
