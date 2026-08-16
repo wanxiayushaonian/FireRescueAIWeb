@@ -9,7 +9,7 @@ import {
   type RealBuildingProfile,
 } from '@/lib/building-mapper';
 
-/** 21号楼(乐盈广场):演练对抗 MVP 示范建筑,scene_id=465718852859613184。 */
+/** 21号楼(乐盈广场):演练对抗 MVP 示范建筑,scene_id=478488321394200576(21D 完整包演示包,入库 znya key_buildings.scene_id)。 */
 export const DRILL_DEMO_BUILDING_ID = '1c2d4772-831d-4c77-b88a-f9565ad589c7';
 
 interface ZnyaFacilityPage {

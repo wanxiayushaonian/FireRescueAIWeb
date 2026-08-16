@@ -24,7 +24,7 @@ const DETAIL: ZnyaKeyBuildingDetail = {
   management_unit: '九江乐盈物业',
   contact_name: '张伟',
   contact_phone: '13800138001',
-  scene_id: '465718852859613184',
+  scene_id: '478488321394200576',
   status: 'pending_review',
   completion_rate: 100,
   longitude: 115.947,
@@ -88,7 +88,7 @@ describe('building-mapper', () => {
     expect(p.id).toBe('b-1');
     expect(p.overview.name).toBe('乐盈广场21号楼');
     expect(p.overview.heightMeters).toBe(258.0);
-    expect(p.overview.sceneId).toBe('465718852859613184');
+    expect(p.overview.sceneId).toBe('478488321394200576');
     expect(p.overview.completionRate).toBe(100);
     expect(p.structureDesigns).toHaveLength(1);
     expect(p.structureDesigns[0].fireCompartmentCount).toBe(12);

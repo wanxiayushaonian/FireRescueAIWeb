@@ -21,8 +21,8 @@ import { registerScenario } from './registry';
 // 常量 ID(实测,从 SSE 格式文档)
 // ============================================================
 
-/** 21号楼场景 ID(Soonspace 场景)。 */
-export const BUILDING_21_SCENE_ID = '465718852859613184';
+/** 21号楼场景 ID(Soonspace 场景):21D(完整包演示包),平台 2026-08-14 提供。 */
+export const BUILDING_21_SCENE_ID = '478488321394200576';
 
 /** 21号楼 znya key_buildings id。 */
 export const BUILDING_21_ID = '1c2d4772-831d-4c77-b88a-f9565ad589c7';
