@@ -117,7 +117,7 @@ export default function PointDetailPanel({
                 <Row label="名称" value={node.name} />
                 <Row label="所在楼层" value={node.floor ?? '—'} />
                 <Row label="数量" value={node.count != null ? `${node.count}` : '—'} />
-                <Row label="责任队站" value="金茂大厦微型站 / 城东救援站" />
+                <Row label="责任队站" value="乐盈广场21号楼微型站 / 城东救援站" />
                 {node.lastExamAt && <Row label="最近考核" value={`${node.lastExamAt} · 演示数据`} />}
                 <div className="flex gap-2 py-0.5">
                   <span className="w-16 shrink-0 text-text-3">坐标</span>

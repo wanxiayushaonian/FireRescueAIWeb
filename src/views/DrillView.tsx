@@ -114,7 +114,8 @@ export default function DrillView() {
     buildingId: activeScenario.buildingId,
     sceneId: activeScenario.sceneId,
     drillId: activeScenario.drillId,
-    adversaryEveryNTicks: activeScenario.adversaryEveryNTicks, // 剧本配置;MVP=0
+    adversaryEveryNTicks: activeScenario.adversaryEveryNTicks, // 未配置对抗 appId 时为 0(no-op)
+    adversaryAppId: activeScenario.adversaryAppId,
     scenarioKey: activeScenario.id, // 切换剧本时重建 runner,确保新 appId/sceneId 生效
   });
 

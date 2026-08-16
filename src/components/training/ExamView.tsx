@@ -685,7 +685,7 @@ function ResultReview({
                   pointName: qu.relatedNodeId ? findNode(qu.relatedNodeId)?.name : undefined,
                 })),
                 finishedAt: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
-                buildingName: '金茂大厦',
+                buildingName: '乐盈广场21号楼',
               },
               { correctPointIds },
             ),

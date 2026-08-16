@@ -35,6 +35,8 @@ export interface DrillScenarioDef {
    * MVP 默认 0,联调后按剧本配置。
    */
   readonly adversaryEveryNTicks: number;
+  /** 对抗 agent app_id(未配置时 triggerAdversary no-op;由 ADVERSARY_APP_ID 环境变量注入)。 */
+  readonly adversaryAppId?: string;
   /** 灾情态势初始状态(DisasterState.init 入参)。 */
   readonly scenario: DisasterScenario;
   /**

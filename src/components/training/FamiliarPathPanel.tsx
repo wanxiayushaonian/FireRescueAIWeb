@@ -176,7 +176,7 @@ export default function FamiliarPathPanel({
         </div>
         <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-text-3">
           当前熟悉对象
-          <span className="rounded border border-line bg-bg-panel-2 px-1.5 py-px text-text-2">金茂大厦 · 演示数据</span>
+          <span className="rounded border border-line bg-bg-panel-2 px-1.5 py-px text-text-2">乐盈广场21号楼 · 演示数据</span>
         </div>
       </div>
 

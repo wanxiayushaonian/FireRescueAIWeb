@@ -16,6 +16,7 @@
 import type { DrillEvent } from '@/lib/drill/event-bus';
 import type { DrillScenarioDef } from './types';
 import { registerScenario } from './registry';
+import { ADVERSARY_APP_ID } from '@/lib/agent-app-ids';
 
 // ============================================================
 // 常量 ID(实测,从 SSE 格式文档)
@@ -221,7 +222,10 @@ export const BUILDING_21_SCENARIO_DEF: DrillScenarioDef = {
   buildingId: BUILDING_21_ID,
   drillId: BUILDING_21_DRILL_ID,
   commanderAppId: COMMANDER_APP_ID,
-  adversaryEveryNTicks: 0, // MVP 禁用对抗 agent,6.6 联调后开启
+  // 对抗 agent:ADVERSARY_APP_ID(NEXT_PUBLIC_ADVERSARY_APP_ID)注入即启用(每 5 tick 注入一次特情);
+  // 未配置时保持 0 禁用(triggerAdversary 对空 appId 也是 no-op,双保险)
+  adversaryEveryNTicks: ADVERSARY_APP_ID ? 5 : 0,
+  adversaryAppId: ADVERSARY_APP_ID || undefined,
   scenario: {
     firePoint: { x: 0, y: 0 },
     material: '电气',

@@ -12,6 +12,13 @@ export const OVERVIEW_APP_ID = '2087571055445204993';
 /** 通用主智能体 app_id(其余模块兜底)。 */
 export const COMMANDER_APP_ID = '2087535122373074946';
 
+/**
+ * 对抗 agent app_id(演练推演特情注入)。在 uagent 平台创建对抗 agent 应用后,
+ * 以构建环境变量 NEXT_PUBLIC_ADVERSARY_APP_ID 注入即可启用——剧本侧按此值
+ * 自动把 adversaryEveryNTicks 从 0 解禁,无需改代码。
+ */
+export const ADVERSARY_APP_ID = (process.env.NEXT_PUBLIC_ADVERSARY_APP_ID ?? '').trim();
+
 export const AGENT_APP_IDS: Record<ModuleKey, string> = {
   overview: OVERVIEW_APP_ID,
   objects: COMMANDER_APP_ID,

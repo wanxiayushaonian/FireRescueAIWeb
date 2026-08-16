@@ -20,11 +20,11 @@ export function parseFloorToken(token: string): number | null {
 
 /**
  * 解析楼层段 → 升序楼层号列表。
- * 支持:"1F"、"2-5F"、"10-25F"、"B2-B1F"、逗号/顿号混合列表;无法解析返回 null。
+ * 支持:"1F"、"2-5F"、"10-25F"、"B2-B1F"、逗号/顿号/斜杠混合列表("16F/30F");无法解析返回 null。
  */
 export function parseFloorSpec(spec: string): number[] | null {
   const items = spec
-    .split(/[,，、;；]+/)
+    .split(/[,，、;；/]+/)
     .map((x) => x.trim())
     .filter(Boolean);
   if (items.length === 0) return null;

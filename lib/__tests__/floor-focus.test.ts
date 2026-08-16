@@ -40,6 +40,11 @@ describe('parseFloorSpec', () => {
     expect(parseFloorSpec('1F,1F')).toEqual([1]); // 去重
   });
 
+  it('斜杠列表(培训点位"16F/30F"形态)', () => {
+    expect(parseFloorSpec('16F/30F')).toEqual([16, 30]);
+    expect(parseFloorSpec('B1/1F')).toEqual([-1, 1]);
+  });
+
   it('非法输入 → null(含超长段防呆)', () => {
     expect(parseFloorSpec('顶层')).toBeNull();
     expect(parseFloorSpec('')).toBeNull();
