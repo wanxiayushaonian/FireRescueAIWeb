@@ -152,8 +152,16 @@ export default function SceneObjectInfoCard() {
       showToast('无法规划路线(场景中未找到该对象)');
       return;
     }
-    void drawAttackRoute(runtime, plan).then((err) => {
-      showToast(err ?? `进攻路线已绘制:大门 → 楼梯 → ${card.node.name}`);
+    void drawAttackRoute(runtime, plan).then((r) => {
+      if (r.error) {
+        showToast(r.error);
+        return;
+      }
+      showToast(
+        r.real
+          ? `真实路径已绘制(空间图):大门 → ${card.node.name}`
+          : `示意路线已绘制(场景未建空间连通图):大门 → 楼梯 → ${card.node.name}`,
+      );
     });
   };
 

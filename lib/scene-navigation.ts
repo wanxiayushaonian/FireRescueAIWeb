@@ -105,28 +105,96 @@ export function clearSceneRoutes(runtime: SoonspaceRuntime | null): void {
 }
 
 /**
- * 绘制进攻路线:解析各点世界坐标(读 three 不改状态),楼梯段最近邻选同一楼梯间,
- * 经 SDK drawVirtualRoute 画线;重复调用同 id 重绘(先清后画)。
- * 返回错误信息(null=成功)。
+ * 容错解析 kgraph 路径点:path/path_nodes 数组,元素可为 {x,y,z} |
+ * {position:{x,y,z}} | "x&y&z" | {coordinate:"x&y&z"}(平台返回结构未文档化)。
+ * 至少 2 个有效点才算路径。
+ */
+export function extractPathPoints(value: unknown): Array<{ x: number; y: number; z: number }> | null {
+  const parseOne = (item: unknown): { x: number; y: number; z: number } | null => {
+    if (typeof item === 'string') {
+      const parts = item.split('&').map(Number);
+      return parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)
+        ? { x: parts[0], y: parts[1], z: parts[2] }
+        : null;
+    }
+    if (!item || typeof item !== 'object') return null;
+    const obj = item as Record<string, unknown>;
+    const raw = typeof obj.position === 'object' && obj.position !== null
+      ? (obj.position as Record<string, unknown>)
+      : typeof obj.coordinate === 'string' ? obj.coordinate
+        : obj;
+    if (typeof raw === 'string') return parseOne(raw);
+    const x = Number(raw.x);
+    const y = Number(raw.y);
+    const z = Number(raw.z);
+    return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
+  };
+  if (!Array.isArray(value)) return null;
+  const pts: Array<{ x: number; y: number; z: number }> = [];
+  for (const item of value) {
+    const p = parseOne(item);
+    if (p) pts.push(p);
+  }
+  return pts.length >= 2 ? pts : null;
+}
+
+/** 调 kgraph 最短路(BFF);不可达/未建图/请求失败 → null */
+async function fetchShortestPath(
+  sceneId: string,
+  source: { x: number; y: number; z: number },
+  target: { x: number; y: number; z: number },
+): Promise<Array<{ x: number; y: number; z: number }> | null> {
+  try {
+    const res = await fetch('/api/ustudio/shortest-path', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ sceneId, source, target }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { reachable?: boolean; path?: unknown; path_nodes?: unknown };
+    if (data?.reachable === false) return null;
+    return extractPathPoints(data?.path ?? data?.path_nodes);
+  } catch {
+    return null;
+  }
+}
+
+export interface DrawRouteResult {
+  /** 失败原因(null 表示成功) */
+  error?: string;
+  /** true=kgraph 真实路径;false=启发式示意折线(场景未建连通图) */
+  real?: boolean;
+}
+
+/**
+ * 绘制进攻路线(双路径策略):
+ * 1. 优先 kgraph 最短路(平台空间图,含门/楼梯连通)——场景包建图后自动生效;
+ * 2. 图不可达时回退启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用)。
+ * 大门均取"1F 门群质心最远门",起点沿外向延伸 6m 呈现"从场外进入"。
  */
 export async function drawAttackRoute(
   runtime: SoonspaceRuntime,
   plan: AttackRoutePlan,
-): Promise<string | null> {
+): Promise<DrawRouteResult> {
   const pos = (outId: string | null): { x: number; y: number; z: number } | null =>
     outId ? runtime.getObjectWorldPosition(outId) : null;
 
   const targetPos = pos(plan.targetOutId);
-  if (!targetPos) return '无法定位目标对象';
+  if (!targetPos) return { error: '无法定位目标对象' };
 
   const path: Array<{ position: { x: number; y: number; z: number } }> = [];
+  // 近重去重(0.4m):同点重复会让拓扑线在原点打结
+  const pushPoint = (p: { x: number; y: number; z: number }): void => {
+    const last = path[path.length - 1]?.position;
+    if (last && Math.hypot(p.x - last.x, p.y - last.y, p.z - last.z) < 0.4) return;
+    path.push({ position: p });
+  };
 
-  // 大门 = 离 1F 门群质心最远的门(周边出入口;树序首个往往是内门);起点再沿
-  // 外向延伸 6m,让路线呈现"从场外进入大门"而不是从墙体里冒出来
+  // 大门 = 离 1F 门群质心最远的门(周边出入口;树序首个往往是内门)
   const gatePts = plan.gateOutIds
     .map((outId) => ({ outId, p: pos(outId) }))
     .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
-  let prev: { x: number; y: number; z: number } | null = null;
+  let gatePos: { x: number; y: number; z: number } | null = null;
   if (gatePts.length > 0) {
     const centroid = gatePts.reduce(
       (acc, g) => ({ x: acc.x + g.p.x / gatePts.length, y: acc.y + g.p.y / gatePts.length, z: acc.z + g.p.z / gatePts.length }),
@@ -136,42 +204,51 @@ export async function drawAttackRoute(
       const d = (q: { x: number; z: number }): number => Math.hypot(q.x - centroid.x, q.z - centroid.z);
       return !best || d(g.p) > d(best.p) ? g : best;
     }, gatePts[0]);
+    gatePos = gate.p;
+    // 场外起点:沿"质心→门"外向延伸 6m
     const dx = gate.p.x - centroid.x;
     const dz = gate.p.z - centroid.z;
     const len = Math.hypot(dx, dz);
     const ENTRY_EXTEND_M = 6;
     if (len > 0.01) {
-      path.push({
-        position: {
-          x: gate.p.x + (dx / len) * ENTRY_EXTEND_M,
-          y: gate.p.y,
-          z: gate.p.z + (dz / len) * ENTRY_EXTEND_M,
-        },
-      });
+      pushPoint({ x: gate.p.x + (dx / len) * ENTRY_EXTEND_M, y: gate.p.y, z: gate.p.z + (dz / len) * ENTRY_EXTEND_M });
     }
-    path.push({ position: gate.p });
-    prev = gate.p;
+    pushPoint(gate.p);
   }
 
-  for (const { outIds } of plan.stairCandidates) {
-    let best: { outId: string; p: { x: number; y: number; z: number } } | null = null;
-    let bestD = Number.POSITIVE_INFINITY;
-    for (const outId of outIds) {
-      const p = pos(outId);
-      if (!p) continue;
-      // 距上一点(水平距离优先,楼梯层间 y 差大但不作选择依据)
-      const d = prev ? Math.hypot(p.x - prev.x, p.z - prev.z) : Number.POSITIVE_INFINITY;
-      if (!best || d < bestD) {
-        best = { outId, p };
-        bestD = d;
-      }
-    }
-    if (best) {
-      path.push({ position: best.p });
-      prev = best.p;
+  // 策略 1:kgraph 真实路径(大门→目标整体寻路,图内含门/楼梯连通)
+  let real = false;
+  if (gatePos) {
+    const pts = await fetchShortestPath(runtime.getSceneId(), gatePos, targetPos);
+    if (pts) {
+      real = true;
+      for (const p of pts) pushPoint(p);
     }
   }
-  path.push({ position: targetPos });
+
+  // 策略 2:启发式折线(逐层最近邻楼梯链;水平距离选同一楼梯间)
+  if (!real) {
+    let prev = gatePos;
+    for (const { outIds } of plan.stairCandidates) {
+      let best: { outId: string; p: { x: number; y: number; z: number } } | null = null;
+      let bestD = Number.POSITIVE_INFINITY;
+      for (const outId of outIds) {
+        const p = pos(outId);
+        if (!p) continue;
+        const d = prev ? Math.hypot(p.x - prev.x, p.z - prev.z) : Number.POSITIVE_INFINITY;
+        if (!best || d < bestD) {
+          best = { outId, p };
+          bestD = d;
+        }
+      }
+      if (best) {
+        pushPoint(best.p);
+        prev = best.p;
+      }
+    }
+  }
+  pushPoint(targetPos);
+  if (path.length < 2) return { error: '路径点不足,无法绘制' };
 
   clearSceneRoutes(runtime);
   try {
@@ -187,8 +264,8 @@ export async function drawAttackRoute(
       { id: ATTACK_ROUTE_ID },
     );
   } catch {
-    return '路线绘制失败(SDK 不支持)';
+    return { error: '路线绘制失败(SDK 不支持)' };
   }
   drawnRoutes.add(ATTACK_ROUTE_ID);
-  return null;
+  return { real };
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planAttackRoute } from '../scene-navigation';
+import { planAttackRoute, extractPathPoints } from '../scene-navigation';
 import type { SceneTreeNode } from '../ustudio';
 
 /** 模拟场景树:Site → Building → Story(B1F/1F/2F/3F),1F 有门,各层有楼梯,3F/B1F 有目标设备 */
@@ -65,5 +65,36 @@ describe('planAttackRoute', () => {
     expect(planAttackRoute(fakeTree(), 'nope')).toBeNull();
     expect(planAttackRoute(null, 'dev-3')).toBeNull();
     expect(planAttackRoute(fakeTree(), '')).toBeNull();
+  });
+});
+
+describe('extractPathPoints(kgraph 返回容错解析)', () => {
+  it('多形态点位:{x,y,z} / {position:{}} / "x&y&z" 串 / {coordinate:"x&y&z"}', () => {
+    expect(extractPathPoints([{ x: 1, y: 2, z: 3 }, { x: 4, y: 5, z: 6 }])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 4, y: 5, z: 6 },
+    ]);
+    expect(extractPathPoints([{ position: { x: 1, y: 2, z: 3 } }, { position: { x: 2, y: 3, z: 4 } }])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 2, y: 3, z: 4 },
+    ]);
+    expect(extractPathPoints(['1&2&3', '4&5&6'])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 4, y: 5, z: 6 },
+    ]);
+    expect(extractPathPoints([{ coordinate: '1&2&3' }, { coordinate: '2&3&4' }])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 2, y: 3, z: 4 },
+    ]);
+  });
+
+  it('混入无效元素跳过;少于 2 个有效点/非数组 → null', () => {
+    expect(extractPathPoints([{ x: 1, y: 2, z: 3 }, null, 'x&y', { x: 4, y: 5, z: 6 }])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 4, y: 5, z: 6 },
+    ]);
+    expect(extractPathPoints([{ x: 1, y: 2, z: 3 }])).toBeNull();
+    expect(extractPathPoints('not-array')).toBeNull();
+    expect(extractPathPoints(null)).toBeNull();
   });
 });
