@@ -71,3 +71,17 @@ export const FIRE_DEVICE_TYPES = new Set(
 export function defaultCategoryVisibility(): Record<string, boolean> {
   return Object.fromEntries([...HIDABLE_TYPES].map((t) => [t, true]));
 }
+
+/**
+ * 各层级"未配置时"的默认可见性 —— 与 level-policy 推导的渲染实际对齐,
+ * 供模态框 UI 兜底(开关显示值 = 实际渲染值,避免 UI 全 ON 而实际全藏的错觉):
+ *  - single:完整细节 + 显设备 → 全显
+ *  - whole/multi:hideDevices 基线藏非主体 → 消防设施/门/空间默认 OFF,楼梯/建筑结构保留 ON
+ */
+export function defaultVisibleByLevel(level: 'whole' | 'single' | 'multi'): Record<string, boolean> {
+  const base = defaultCategoryVisibility();
+  if (level === 'single') return base;
+  const hidden = new Set<string>([...FIRE_DEVICE_TYPES, 'Door', 'Space']);
+  for (const t of hidden) base[t] = false;
+  return base;
+}

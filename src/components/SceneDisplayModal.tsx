@@ -24,7 +24,8 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import { useScene } from './SceneProvider';
 import type { StructuralRecipe } from '@/lib/scene-recipe/types';
-import { HIDABLE_CATEGORY_GROUPS } from '@/lib/scene-categories';
+import { HIDABLE_CATEGORY_GROUPS, defaultVisibleByLevel } from '@/lib/scene-categories';
+import { saveSceneDisplayPrefs } from '@/lib/scene-display-prefs';
 
 type Level = 'whole' | 'single' | 'multi';
 
@@ -59,7 +60,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 }
 
 export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { recipeStore } = useScene();
+  const { recipeStore, sceneId } = useScene();
   const [structural, setStructural] = useState<StructuralRecipe | null>(
     recipeStore?.getCurrent().structural ?? null,
   );
@@ -87,12 +88,16 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
 
   const visAll = structural.categoryVisibility ?? {};
   const vis = visAll[activeLevel] ?? {};
-  const isVisible = (type: string): boolean => vis[type] ?? true;
+  // 兜底 = 层级默认(与 level-policy 渲染实际对齐):whole/multi 设备/门/空间默认藏,single 全显。
+  // 未配置时开关显示的就是实际渲染状态,避免"UI 全 ON、实际全藏"的错觉。
+  const defaults = defaultVisibleByLevel(activeLevel);
+  const isVisible = (type: string): boolean => vis[type] ?? defaults[type] ?? true;
 
   const writeLevel = (levelVis: Record<string, boolean>): void => {
-    recipeStore.patchStructural({
-      categoryVisibility: { ...visAll, [activeLevel]: levelVis },
-    });
+    const next = { ...visAll, [activeLevel]: levelVis };
+    recipeStore.patchStructural({ categoryVisibility: next });
+    // 模态框是唯一写入方:与场景 id 绑定持久化,场景(重)加载后由 App 回放
+    saveSceneDisplayPrefs(sceneId, next);
   };
   const setCategory = (type: string, visible: boolean): void => writeLevel({ ...vis, [type]: visible });
   const setGroup = (types: string[], visible: boolean): void => {
