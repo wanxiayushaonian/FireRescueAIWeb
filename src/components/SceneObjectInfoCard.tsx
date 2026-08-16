@@ -14,7 +14,7 @@ import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scen
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween } from '@/lib/scene-navigation';
 import { showToast } from '@/components/Toast';
 
 interface CardState {
@@ -40,6 +40,9 @@ export default function SceneObjectInfoCard() {
   const indexRef = useRef(pickIndex);
   const storyIndexRef = useRef(storyIndex);
   const bridgeRef = useRef(bridge);
+  // onUp 事件闭包deps为[],经 ref 取最新场景句柄(两点导航拾取要用)
+  const sceneRef = useRef<{ tree: typeof tree; runtime: typeof runtime }>({ tree, runtime });
+  sceneRef.current = { tree, runtime };
   const lastPickRef = useRef<{ sids: string[]; hitChains?: string[][]; clientX: number; clientY: number } | null>(null);
   const downRef = useRef<{ x: number; y: number } | null>(null);
   indexRef.current = pickIndex;
@@ -99,6 +102,43 @@ export default function SceneObjectInfoCard() {
       // 多命中链按距离解析:首链(墙/楼板等结构)无可展示节点时,继续找后链里被遮挡的设备
       const chains = pick.hitChains ?? [pick.sids];
       const node = resolvePickAcross(chains, indexRef.current);
+
+      // 两点导航拾取模式:点击作为起点/终点,不弹信息卡
+      const navMode = getNavPickMode();
+      if (navMode !== 'off') {
+        const scene = sceneRef.current;
+        if (!node || !scene.tree || !scene.runtime) {
+          showToast('该处无可导航对象,请点击设备/空间');
+          return;
+        }
+        const pt = navNodeForOutId(scene.tree, node.outId);
+        if (!pt) {
+          showToast('该对象未挂空间/楼层节点,换个点位试试');
+          return;
+        }
+        scene.runtime.highlightObject(node.outId, '#f97316');
+        if (navMode === 'start') {
+          setNavStart(pt);
+          setNavPickMode('end');
+          showToast(`起点:${pt.name} · 请点击终点`);
+        } else {
+          const start = getNavStart();
+          if (!start) {
+            setNavPickMode('start');
+            showToast('请先点击起点');
+            return;
+          }
+          setNavPickMode('start'); // 连续规划:生成后回到起点拾取
+          void navigateBetween(scene.runtime, start, pt).then((r) => {
+            showToast(
+              r.error
+                ?? `路径已生成:${start.name} → ${pt.name}${typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : ''}`,
+            );
+          });
+        }
+        return;
+      }
+
       if (!node) {
         setCard(null); // 全部链均为结构骨架 → 收卡(hover 浮标已在提示楼层)
         return;
@@ -116,7 +156,10 @@ export default function SceneObjectInfoCard() {
       setCard({ node, story, x: pick.clientX, y: pick.clientY });
     };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') setCard(null);
+      if (e.key === 'Escape') {
+        setCard(null);
+        if (getNavPickMode() !== 'off') setNavPickMode('off');
+      }
     };
     window.addEventListener('pointerdown', onDown);
     window.addEventListener('pointerup', onUp);

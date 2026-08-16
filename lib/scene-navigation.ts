@@ -129,6 +129,60 @@ export function clearSceneRoutes(runtime: SoonspaceRuntime | null): void {
   }
 }
 
+// ---- 两点导航拾取模式(SceneViewBar 按钮 / 信息卡点击拾取共用;模块态 + 订阅) ----
+export type NavPickMode = 'off' | 'start' | 'end';
+let navPickMode: NavPickMode = 'off';
+const navPickListeners = new Set<() => void>();
+/** 起点(拾取起点后暂存,点终点时消费;退出模式清空) */
+let navStart: { name: string; nodeId: string } | null = null;
+
+export function getNavPickMode(): NavPickMode {
+  return navPickMode;
+}
+
+export function getNavStart(): { name: string; nodeId: string } | null {
+  return navStart;
+}
+
+export function setNavPickMode(mode: NavPickMode): void {
+  navPickMode = mode;
+  if (mode === 'off') navStart = null;
+  navPickListeners.forEach((fn) => fn());
+}
+
+export function setNavStart(point: { name: string; nodeId: string }): void {
+  navStart = point;
+}
+
+export function subscribeNavPick(fn: () => void): () => void {
+  navPickListeners.add(fn);
+  fn();
+  return () => navPickListeners.delete(fn);
+}
+
+/** 拾取对象 → kgraph 图节点端点(Space 优先、Story 兜底;解析不到返回 null) */
+export function navNodeForOutId(tree: SceneTreeNode, outId: string): { name: string; nodeId: string } | null {
+  const plan = planAttackRoute(tree, outId);
+  if (!plan) return null;
+  const nodeId = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
+  return nodeId ? { name: plan.targetName, nodeId } : null;
+}
+
+/** 两点导航:起点/终点图节点 → SDK 场内导航(SDK 自动绘制步行路线)。 */
+export async function navigateBetween(
+  runtime: SoonspaceRuntime,
+  start: { name: string; nodeId: string },
+  end: { name: string; nodeId: string },
+): Promise<DrawRouteResult> {
+  clearSceneRoutes(runtime);
+  const nav = await runtime.navigateWithinScene(start.nodeId, end.nodeId);
+  if (nav.reachable) {
+    navPathDrawn = true;
+    return { real: true, mode: 'full', distanceM: nav.totalDistance };
+  }
+  return { error: '两点间不可达(连通图目前覆盖 3F-38F 的室内点)' };
+}
+
 /**
  * 容错解析路径点:kgraph path/path_nodes 与场景路线 detail.path 共用。
  * 支持形态:扁平数字数组([x,y,z,x,y,z…]——平台实测 detail.path 即此形态) |

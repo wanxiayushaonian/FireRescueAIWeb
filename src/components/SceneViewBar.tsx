@@ -6,7 +6,7 @@
  * - 一键截图(SDK screenShot 优先)下载 PNG。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Bookmark, Camera, Check, Eraser, Plus, Route as RouteIcon, Truck, X } from 'lucide-react';
+import { Bookmark, Camera, Check, Eraser, Navigation, Plus, Route as RouteIcon, Truck, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import {
   loadSceneViewBookmarks,
@@ -19,6 +19,9 @@ import {
   fetchSceneRoutes,
   drawSceneRoute,
   animateTruckAlongRoute,
+  getNavPickMode,
+  setNavPickMode,
+  subscribeNavPick,
   type SceneRouteSummary,
 } from '@/lib/scene-navigation';
 import { buildDeviceSearchIndex } from '@/lib/scene-pick';
@@ -33,6 +36,9 @@ export default function SceneViewBar() {
   // 场景包自带路线(平台编辑器规划保存) + 下拉开合
   const [sceneRoutes, setSceneRoutes] = useState<SceneRouteSummary[]>([]);
   const [routesOpen, setRoutesOpen] = useState(false);
+  // 两点导航拾取模式(off/start/end;信息卡点击拦截拾取)
+  const [navMode, setNavMode] = useState(getNavPickMode());
+  useEffect(() => subscribeNavPick(() => setNavMode(getNavPickMode())), []);
 
   useEffect(() => {
     setMarks(loadSceneViewBookmarks(sceneId));
@@ -203,6 +209,16 @@ export default function SceneViewBar() {
             )}
           </div>
         )}
+        <button
+          onClick={() => setNavPickMode(navMode === 'off' ? 'start' : 'off')}
+          className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition ${
+            navMode !== 'off' ? 'bg-orange/15 text-orange' : 'text-text-2 hover:text-cyan'
+          }`}
+          title="两点导航:开启后先点起点再点终点,按空间连通生成路径(Esc 退出)"
+        >
+          <Navigation className="h-3 w-3" />
+          {navMode === 'off' ? '两点导航' : navMode === 'start' ? '两点导航 · 点起点' : '两点导航 · 点终点'}
+        </button>
         {truckOutId && (
           <button
             onClick={() => {

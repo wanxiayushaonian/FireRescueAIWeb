@@ -43,6 +43,14 @@ export const HIDABLE_CATEGORY_GROUPS: CategoryGroup[] = [
   { key: 'stairs', label: '楼梯', types: [{ type: 'Stairs', label: '楼梯' }] },
   { key: 'spaces', label: '空间', types: [{ type: 'Space', label: '空间' }] },
   {
+    key: 'vehicles',
+    label: '消防车辆',
+    types: [
+      { type: 'SmokeExhaustFireTruck', label: '排烟消防车' },
+      { type: 'RemoteWaterSupplyFireTruck', label: '远程供水消防车' },
+    ],
+  },
+  {
     key: 'buildingStructure',
     label: '建筑结构',
     types: [
