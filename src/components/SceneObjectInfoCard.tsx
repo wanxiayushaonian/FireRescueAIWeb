@@ -12,6 +12,8 @@ import { Crosshair, Eye, Layers, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scene-pick';
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
+import { getJson } from '@/lib/http';
+import type { TwinProperty } from '@/lib/twins-props';
 
 interface CardState {
   node: PickNodeInfo;
@@ -20,9 +22,12 @@ interface CardState {
   y: number;
 }
 
+type PropsState = { status: 'loading' } | { status: 'ready'; items: TwinProperty[] } | { status: 'none' };
+
 export default function SceneObjectInfoCard() {
   const { runtime, tree, view, recipeStore } = useScene();
   const [card, setCard] = useState<CardState | null>(null);
+  const [props, setProps] = useState<PropsState>({ status: 'none' });
   const pickIndex = useMemo(() => buildPickIndex(tree), [tree]);
   const storyIndex = useMemo(() => buildOutIdToStoryIndex(tree), [tree]);
   // 桥仅用于楼层归属(子树树 id → 楼层);设备解析只用直接 id,避免合并网格误报
@@ -49,6 +54,28 @@ export default function SceneObjectInfoCard() {
         : null;
     });
   }, [runtime, view]);
+
+  // 属性区:有 twins 实例 id 才拉详情(BFF → getTwinsInstanceDetail 扁平化);换目标/收卡时中断
+  useEffect(() => {
+    setProps({ status: 'none' });
+    const twinsId = card?.node.twinsId;
+    if (!twinsId) return;
+    setProps({ status: 'loading' });
+    const abort = new AbortController();
+    getJson<{ name: string; properties: TwinProperty[] }>(`/api/ustudio/twins-detail?id=${encodeURIComponent(twinsId)}`, abort.signal)
+      .then((data) => {
+        if (abort.signal.aborted) return;
+        setProps(
+          data.properties?.length
+            ? { status: 'ready', items: data.properties }
+            : { status: 'none' },
+        );
+      })
+      .catch(() => {
+        if (!abort.signal.aborted) setProps({ status: 'none' });
+      });
+    return () => abort.abort();
+  }, [card?.node.twinsId]);
 
   // 点击(非拖拽)→ 解析拾取 → 弹卡/收卡
   useEffect(() => {
@@ -117,9 +144,9 @@ export default function SceneObjectInfoCard() {
     });
   };
 
-  // 卡片定位:光标右下,越界回拉
+  // 卡片定位:光标右下,越界回拉(高度按属性区展开后的上界估计)
   const W = 260;
-  const H = 170;
+  const H = 340;
   const x = Math.min(card.x + 14, Math.max(8, window.innerWidth - W - 8));
   const y = Math.min(card.y + 14, Math.max(8, window.innerHeight - H - 8));
 
@@ -149,6 +176,26 @@ export default function SceneObjectInfoCard() {
       )}
       {card.node.twinsId && (
         <div className="mt-1 truncate font-mono text-[10px] text-text-3/70">{card.node.twinsId}</div>
+      )}
+      {card.node.twinsId && (
+        <div className="mt-2 border-t border-line/60 pt-1.5">
+          {props.status === 'loading' && <div className="py-1 text-[10px] text-text-3/70">属性加载中…</div>}
+          {props.status === 'ready' && (
+            <div className="max-h-[128px] overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {props.items.map((p) => (
+                <div key={p.key} className="flex items-baseline gap-2 py-[3px] leading-tight">
+                  <span className="w-[96px] shrink-0 truncate font-mono text-[10px] text-text-3/80" title={p.key}>
+                    {p.key}
+                  </span>
+                  <span className="min-w-0 flex-1 break-words text-[11px] text-text-2" title={p.value}>
+                    {p.value}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {props.status === 'none' && <div className="py-1 text-[10px] text-text-3/60">暂无孪生属性</div>}
+        </div>
       )}
       <div className="mt-2 flex gap-1.5 border-t border-line/60 pt-2">
         <button

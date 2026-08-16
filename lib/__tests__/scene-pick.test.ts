@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   buildDeviceSearchIndex,
   buildPickIndex,
+  groupDevicesByStory,
   resolvePick,
   resolvePickAcross,
   searchDevices,
@@ -88,6 +89,29 @@ describe('buildDeviceSearchIndex / searchDevices', () => {
     const r3 = searchDevices(items, '2F');
     expect(r3.map((x) => x.outId)).toContain('hyd-2'); // 楼层命中
     expect(searchDevices(items, '  ')).toEqual([]);
+  });
+});
+
+describe('groupDevicesByStory', () => {
+  it('按楼层分组:组顺序=首现顺序(相关度),组内保持原序;无楼层归「未归属楼层」', () => {
+    const items = buildDeviceSearchIndex(fakeTree());
+    const groups = groupDevicesByStory(searchDevices(items, '消火栓'));
+    // 室外消火栓(Site 级,无楼层)与 2F 室内消火栓都命中;首现者所在组在前
+    expect(groups.map((g) => g.story)).toContain('2F');
+    expect(groups.map((g) => g.story)).toContain('未归属楼层');
+    for (const g of groups) {
+      for (const it of g.items) {
+        expect(it.storyLabel?.trim() || '未归属楼层').toBe(g.story);
+      }
+    }
+  });
+
+  it('空结果 → 空分组;全有楼层时不出现未归属组', () => {
+    expect(groupDevicesByStory([])).toEqual([]);
+    const items = buildDeviceSearchIndex(fakeTree());
+    const groups = groupDevicesByStory(searchDevices(items, '灭火器'));
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.story).toBe('1F');
   });
 });
 

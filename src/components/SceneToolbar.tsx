@@ -14,7 +14,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { extractBuildings } from '@/lib/scene-buildings';
 import { levelFromStoryCount, deriveLayerPolicy, type LayerLevel } from '@/lib/scene-recipe/level-policy';
-import { buildDeviceSearchIndex, searchDevices, type DeviceSearchItem } from '@/lib/scene-pick';
+import { buildDeviceSearchIndex, searchDevices, groupDevicesByStory, type DeviceSearchItem } from '@/lib/scene-pick';
 
 const LEVEL_BUTTONS: { lvl: LayerLevel; icon: LucideIcon; label: string }[] = [
   { lvl: 'whole', icon: Layers, label: '整体' },
@@ -40,6 +40,7 @@ export default function SceneToolbar() {
     return m;
   }, [buildings]);
   const results = useMemo(() => searchDevices(searchItems, query), [searchItems, query]);
+  const resultGroups = useMemo(() => groupDevicesByStory(results), [results]);
 
   // 从 Recipe 单一真相源派生选中集(外部聚焦 → 工具栏同步)
   const prevSelectedRef = useRef<Set<string>>(new Set());
@@ -262,16 +263,23 @@ export default function SceneToolbar() {
               results.length === 0 ? (
                 <div className="py-3 text-center text-[11px] text-text-3">无匹配设备</div>
               ) : (
-                results.map((it) => (
-                  <button
-                    key={it.outId}
-                    onClick={() => locate(it)}
-                    className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left transition hover:bg-bg-panel-2"
-                  >
-                    <span className="truncate text-[12px] text-text-1">{it.name}</span>
-                    <span className="ml-auto shrink-0 text-[10px] text-cyan">{it.typeLabel}</span>
-                    {it.storyLabel && <span className="shrink-0 text-[10px] text-text-3">{it.storyLabel}</span>}
-                  </button>
+                resultGroups.map((g) => (
+                  <div key={g.story} className="mb-1.5 last:mb-0">
+                    <div className="sticky top-0 z-[1] flex items-baseline gap-1.5 rounded bg-bg-panel/95 px-2 py-1 backdrop-blur-[2px]">
+                      <span className="text-[10px] font-semibold text-text-2">{g.story}</span>
+                      <span className="text-[9px] text-text-3/70">{g.items.length}</span>
+                    </div>
+                    {g.items.map((it) => (
+                      <button
+                        key={it.outId}
+                        onClick={() => locate(it)}
+                        className="flex w-full items-baseline gap-2 rounded px-2 py-1 text-left transition hover:bg-bg-panel-2"
+                      >
+                        <span className="truncate text-[12px] text-text-1">{it.name}</span>
+                        <span className="ml-auto shrink-0 text-[10px] text-cyan">{it.typeLabel}</span>
+                      </button>
+                    ))}
+                  </div>
                 ))
               )
             ) : (

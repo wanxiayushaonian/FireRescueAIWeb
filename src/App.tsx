@@ -24,6 +24,7 @@ import CommandView from '@/views/CommandView';
 import DrillView from '@/views/DrillView';
 import ScenePerfWidget from '@/components/ScenePerfWidget';
 import SceneFloorHoverLabel from '@/components/SceneFloorHoverLabel';
+import SceneDeviceHoverTip from '@/components/SceneDeviceHoverTip';
 import SceneObjectInfoCard from '@/components/SceneObjectInfoCard';
 import SceneToolbar from '@/components/SceneToolbar';
 import SceneViewBar from '@/components/SceneViewBar';
@@ -52,6 +53,8 @@ function SceneContainer() {
       <SceneToolbar />
       {/* 整体建筑视角下 hover 楼层浮层标签(仅整体视角开启 hover raycast;双击直达单层) */}
       <SceneFloorHoverLabel />
+      {/* 单/多层视角下 hover 设备轻提示(名称+类型+楼层;与楼层浮标经多订阅通道并存) */}
+      <SceneDeviceHoverTip />
       {/* 点击对象信息卡 / 视角书签+截图+清除高亮(底部居中) / 首次提示 */}
       <SceneObjectInfoCard />
       <SceneViewBar />

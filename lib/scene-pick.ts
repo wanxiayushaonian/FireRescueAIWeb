@@ -133,3 +133,26 @@ export function searchDevices(items: DeviceSearchItem[], query: string, limit = 
   scored.sort((a, b) => a.score - b.score || a.item.name.localeCompare(b.item.name, 'zh-Hans-CN'));
   return scored.slice(0, limit).map((s) => s.item);
 }
+
+export interface DeviceStoryGroup {
+  story: string;
+  items: DeviceSearchItem[];
+}
+
+/** 搜索结果按楼层分组:组顺序 = 首次出现顺序(即该层最佳命中的相关度),组内保持相关度排序;
+ *  无楼层归属的归「未归属楼层」。 */
+export function groupDevicesByStory(items: DeviceSearchItem[]): DeviceStoryGroup[] {
+  const groups: DeviceStoryGroup[] = [];
+  const byStory = new Map<string, DeviceStoryGroup>();
+  for (const it of items) {
+    const story = it.storyLabel?.trim() || '未归属楼层';
+    let g = byStory.get(story);
+    if (!g) {
+      g = { story, items: [] };
+      byStory.set(story, g);
+      groups.push(g);
+    }
+    g.items.push(it);
+  }
+  return groups;
+}
