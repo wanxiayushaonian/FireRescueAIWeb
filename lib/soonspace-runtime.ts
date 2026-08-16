@@ -72,6 +72,9 @@ export type HoverPickInfo = {
   sids: string[];
   clientX: number;
   clientY: number;
+  /** 按距离排序的前几个命中各自的父链 sid(最近优先)。点击信息卡用它跨过纯结构遮挡
+   *  (墙/楼板挡在设备前时,靠后的链才是被点的设备);兼容旧消费方,sids = hitChains[0]。 */
+  hitChains?: string[][];
 } | null;
 
 export type ScriptMethods = {
@@ -147,10 +150,12 @@ export class SoonspaceRuntime {
   private sceneClickSceneBound: ((param: AnyObject) => void) | null = null;
   private hoverPickHandlers = new Set<(info: HoverPickInfo) => void>();
   private hoverPickInstalled = false;
+  /** 拾取门控:上次已处理坐标(NaN=无)。微动(<6px)跳过全场景 raycast。 */
+  private hoverPickLastX = Number.NaN;
+  private hoverPickLastY = Number.NaN;
   private hoverPickBound: ((event: AnyObject) => void) | null = null;
   private hoverPickRaf = 0;
   private hoverPickLastEvent: AnyObject | null = null;
-  private hoverPickDiag = 0; // 临时诊断计数(确认 hover 拾取链路后删除)
   private pendingRenderOrigin: RenderOrigin | null = null;
   private cps: AnyObject | null = null;
   private ssp: AnyObject | null = null;
@@ -412,53 +417,119 @@ export class SoonspaceRuntime {
           this.runHoverPick(ev);
         });
       };
-      // 临时诊断:确认 mouseMove 信号存在(确认链路后删除)
-      console.info('[hover-diag] install', {
-        hasSignals: !!ssp?.signals,
-        hasMouseMove: !!ssp?.signals?.mouseMove,
-        hasViewport: !!ssp?.viewport,
-        hasGetIntersects: typeof ssp?.viewport?.getIntersects === 'function',
-      });
       ssp?.signals?.mouseMove?.add?.(this.hoverPickBound);
     }
     return () => this.clearHoverPickHandler(handler);
   }
 
-  /** 单帧拾取:raycast 命中 → 取首个有 sid 父链的命中,收集 sid 序列(最近优先) → 分发。 */
-  private runHoverPick(event: AnyObject): void {
+  /**
+   * 构建「场景图内部 id → 树语义 id」桥(每场景一次,场景加载后调用)。
+   * 机制(演示包实测):可见几何是合并网格(自身无 id),所在楼层 Model 组的 sid/userData.id
+   * 是 CPS 内部 id(不在平台实例树);树语义 id 由楼层内语义对象(Canvas3D 等)携带。
+   * 本方法遍历场景图,发现携带树 id 的对象时,把它祖先链上的内部 id 都映射到该树 id,
+   * 拾取合并网格 → 祖先内部 id 过桥 → 树节点(楼层/设备)。
+   */
+  buildIdBridge(aliasKeys: Set<string>): Map<string, string> {
+    const bridge = new Map<string, string>();
     const ssp = this.getSsp();
-    const vp = ssp?.viewport as AnyObject | undefined;
-    let info: HoverPickInfo = null;
-    let hitCount = 0;
-    try {
-      const list = vp?.scener?.intersectsList?.getAll?.();
-      const hits = vp?.getIntersects?.(event, list);
-      hitCount = Array.isArray(hits) ? hits.length : 0;
-      // 遍历命中(按距离),取首个父链含 sid 的;收集其父链全部 sid(最近优先,去重)
-      for (let i = 0; i < hitCount; i++) {
-        const collected: string[] = [];
-        let obj = (hits[i] as AnyObject)?.object as AnyObject | undefined;
-        while (obj && collected.length < 12) {
-          const sid = obj.sid;
-          if (typeof sid === 'string' && sid && !collected.includes(sid)) collected.push(sid);
-          obj = obj.parent as AnyObject | undefined;
-        }
-        if (collected.length) {
-          info = {
-            sids: collected,
-            clientX: typeof event.clientX === 'number' ? event.clientX : 0,
-            clientY: typeof event.clientY === 'number' ? event.clientY : 0,
-          };
+    const root = ((ssp as AnyObject | undefined)?.viewport as AnyObject | undefined)?.scene
+      ?? (ssp as AnyObject | undefined)?.scene;
+    if (!root || aliasKeys.size === 0) return bridge;
+    const stack: string[] = [];
+    const visit = (obj: AnyObject): void => {
+      const own: string[] = [];
+      const sid = obj.sid;
+      if (typeof sid === 'string' && sid) own.push(sid);
+      const udId = (obj.userData as AnyObject | undefined)?.id;
+      if (typeof udId === 'string' && udId) own.push(udId);
+      let matched: string | null = null;
+      for (const k of own) {
+        if (aliasKeys.has(k)) {
+          matched = k;
           break;
         }
       }
+      if (matched) {
+        // 就近优先:已存在的桥映射不覆盖(首遇的树 id 通常是最具体层级的语义体)
+        for (const anc of stack) {
+          if (!aliasKeys.has(anc) && !bridge.has(anc)) bridge.set(anc, matched);
+        }
+      }
+      stack.push(...own);
+      const children = obj.children as AnyObject[] | undefined;
+      if (children) for (const c of children) visit(c);
+      stack.length -= own.length;
+    };
+    try {
+      visit(root as AnyObject);
+    } catch (error) {
+      console.warn('[soonspace-runtime] buildIdBridge threw', error);
+    }
+    return bridge;
+  }
+
+  /** 单帧拾取:raycast 命中(按距离) → 收集前几个含 sid 命中的父链(最近优先) → 分发。 */
+  private runHoverPick(event: AnyObject): void {
+    // 门控 1:拖拽相机(任一指针键按下)不做拾取 —— 通知消费者清浮标即可,省掉全场景 raycast
+    if (typeof event.buttons === 'number' && event.buttons > 0) {
+      for (const fn of this.hoverPickHandlers) {
+        try {
+          fn(null);
+        } catch {
+          /* 单个消费者异常不阻断 */
+        }
+      }
+      return;
+    }
+    // 门控 2:微动跳过(<6px):鼠标静止/手抖不触发 raycast
+    const cx = typeof event.clientX === 'number' ? event.clientX : Number.NaN;
+    const cy = typeof event.clientY === 'number' ? event.clientY : Number.NaN;
+    if (Number.isFinite(this.hoverPickLastX) && Number.isFinite(cx)
+      && Math.abs(cx - this.hoverPickLastX) + Math.abs(cy - this.hoverPickLastY) < 6) {
+      return;
+    }
+    this.hoverPickLastX = cx;
+    this.hoverPickLastY = cy;
+
+    const ssp = this.getSsp();
+    const vp = ssp?.viewport as AnyObject | undefined;
+    let info: HoverPickInfo = null;
+    try {
+      // 注意:SDK 默认的 scener.intersectsList 只登记经 addObject 注册的对象
+      // (用户模型/POI 等),CPS 场景插件加载的墙/楼层/设备不在其中 —— 只用它会
+      // "整栋楼只有两个面可 hover"。这里改对整个渲染场景做 raycast(只读不改引擎状态,
+      // 与 intersectsList 同一入口),getIntersects 默认按父链 visible 过滤隐藏对象。
+      const fullScene = (ssp as AnyObject | undefined)?.scene ?? vp?.scener?.scene;
+      const fallbackList = vp?.scener?.intersectsList?.getAll?.();
+      const target: unknown = fullScene ?? fallbackList;
+      if (!target) return;
+      const hits = vp?.getIntersects?.(event, target, { isFilterHideObject: true });
+      const hitCount = Array.isArray(hits) ? hits.length : 0;
+      const clientX = typeof event.clientX === 'number' ? event.clientX : 0;
+      const clientY = typeof event.clientY === 'number' ? event.clientY : 0;
+      const chains: string[][] = [];
+      // 遍历命中(按距离),最多取 4 条命中;每条收集祖先链候选 id(sid + userData.id):
+      // 演示包实测:合并网格自身无 id,楼层 Model 的 sid 是 CPS 内部 id(CWBZBF…),
+      // 树语义 id 在 userData.id(楼层语义 Canvas3D)或部分对象的 sid 上 —— 两者都收。
+      for (let i = 0; i < hitCount && chains.length < 4; i++) {
+        const collected: string[] = [];
+        let obj = (hits[i] as AnyObject)?.object as AnyObject | undefined;
+        let depth = 0;
+        while (obj && depth < 14) {
+          const sid = obj.sid;
+          if (typeof sid === 'string' && sid && !collected.includes(sid)) collected.push(sid);
+          const udId = (obj.userData as AnyObject | undefined)?.id;
+          if (typeof udId === 'string' && udId && !collected.includes(udId)) collected.push(udId);
+          obj = obj.parent as AnyObject | undefined;
+          depth += 1;
+        }
+        if (collected.length) chains.push(collected);
+      }
+      if (chains.length) {
+        info = { sids: chains[0], hitChains: chains, clientX, clientY };
+      }
     } catch (error) {
       console.error('[soonspace-runtime] hover pick threw', error);
-    }
-    // 临时诊断:打印 sid 序列(确认组件侧按序匹配;确认后删除)
-    if (this.hoverPickDiag < 12 && hitCount > 0) {
-      this.hoverPickDiag++;
-      console.info(`[hover-diag] #${this.hoverPickDiag} hits=${hitCount} sids=${info ? info.sids.join(' > ') : 'NONE'}`);
     }
     for (const fn of this.hoverPickHandlers) {
       try {
@@ -593,6 +664,11 @@ export class SoonspaceRuntime {
 
   clearObjectHighlight(id: string): void {
     this.sdk?.cancelHeighLight?.(id);
+  }
+
+  /** 清除全部高亮(不传 id = 全局取消描边)。 */
+  clearAllHighlight(): void {
+    (this.sdk as unknown as { cancelHeighLight?: (id?: unknown) => unknown } | null)?.cancelHeighLight?.();
   }
 
   drawVirtualRoute(detail: AnyObject, options?: AnyObject): Promise<unknown> | undefined {
@@ -872,6 +948,23 @@ export class SoonspaceRuntime {
     } catch {
       return null;
     }
+  }
+
+  /** 场景截图(渲染 canvas toDataURL);失败返回 null。
+   *  不走 sdk.screenShot():它会自行触发一次下载且返回 Blob(与本封装的 href 语义不兼容)。 */
+  async screenShot(): Promise<string | null> {
+    try {
+      const ssp = this.getSsp();
+      const canvas = ((ssp as AnyObject | undefined)?.viewport as AnyObject | undefined)?.renderer?.domElement
+        ?? (ssp as AnyObject | undefined)?.renderer?.domElement as HTMLCanvasElement | undefined;
+      if (canvas) {
+        this.render();
+        return canvas.toDataURL('image/png');
+      }
+    } catch {
+      /* 引擎无 canvas */
+    }
+    return null;
   }
 
   /** 设置镜头视角（带平滑过渡动画）。 */

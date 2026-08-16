@@ -119,6 +119,14 @@ export function buildOutIdToStoryIndex(tree: SceneTreeNode | null): Map<string, 
   const map = new Map<string, StoryLookupEntry>();
   if (!tree) return map;
 
+  // 节点多别名注册:运行时对象经 sid/userData.id 可能携带 id/out_instance_id/twins
+  // 任一字段值(实测演示包楼层语义体的 userData.id = 树节点 id),全部登记按序匹配。
+  const register = (n: SceneTreeNode, entry: StoryLookupEntry): void => {
+    for (const k of [nodeOutId(n), String(n.id ?? ''), String(n.twins_instance_id ?? '')]) {
+      if (k && !map.has(k)) map.set(k, entry);
+    }
+  };
+
   let hasBuilding = false;
   walk(tree, (n) => {
     if (isBuilding(n)) hasBuilding = true;
@@ -140,11 +148,9 @@ export function buildOutIdToStoryIndex(tree: SceneTreeNode | null): Map<string, 
         storyLabel: nodeLabel(node, '楼层'),
         buildingLabel: nextBuildingLabel,
       };
-      const selfOut = nodeOutId(node);
-      if (selfOut) map.set(selfOut, nextStory);
+      register(node, nextStory);
     } else if (storyCtx) {
-      const outId = nodeOutId(node);
-      if (outId) map.set(outId, storyCtx);
+      register(node, storyCtx);
     }
     for (const child of childrenOf(node)) {
       visit(child, nextStory, nextBuildingLabel);
