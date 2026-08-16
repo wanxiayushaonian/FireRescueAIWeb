@@ -58,7 +58,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: string) => void }) {
+export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: string, buildingId?: string) => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
@@ -617,7 +617,7 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
           label: '进入3D',
           color: '#22d3ee',
           onClick: () => {
-            onEnterScene(t.sceneId!);
+            onEnterScene(t.sceneId!, t.id);
             setRadial(null);
           },
         });

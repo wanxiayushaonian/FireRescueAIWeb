@@ -76,7 +76,7 @@ export default function ScenePerfWidget() {
   const padded = [...Array(HISTORY - history.length).fill(0), ...history];
 
   return (
-    <div className="pointer-events-none absolute bottom-4 left-4 z-20 w-[176px] select-none rounded-lg border border-line bg-bg-panel/85 p-2.5 shadow-lg shadow-black/30 backdrop-blur-[8px]">
+    <div className="pointer-events-none absolute right-4 top-4 z-20 w-[176px] select-none rounded-lg border border-line bg-bg-panel/85 p-2.5 shadow-lg shadow-black/30 backdrop-blur-[8px]">
       {/* 顶行:状态点 + 标题 + 分档 */}
       <div className="flex items-center gap-1.5">
         <span className={`h-1.5 w-1.5 rounded-full ${tone.dot} ${idle ? '' : 'animate-pulse'}`} />

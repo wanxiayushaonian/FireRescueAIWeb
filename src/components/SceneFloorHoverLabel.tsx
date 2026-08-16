@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useScene } from '@/components/SceneProvider';
+import { showToast } from '@/components/Toast';
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
+import { presets } from '@/lib/scene-recipe/presets';
+import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
 
 /**
  * 整体建筑视角下,鼠标 hover 到任意位置 → 浮层显示"所在楼层 + 楼栋"。
@@ -15,73 +18,116 @@ import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-build
  * - 直改 DOM ref 样式/文案,不走 React state,避免高频 hover 触发 re-render。
  */
 export default function SceneFloorHoverLabel() {
-  const { runtime, tree, view, recipeStore } = useScene();
+  const { runtime, tree, view, recipeStore, sceneId } = useScene();
   const labelRef = useRef<HTMLDivElement | null>(null);
-  const indexRef = useRef<Map<string, StoryLookupEntry>>(new Map());
   const lastStoryRef = useRef<string>('');
-  const diagRef = useRef(0); // 临时诊断计数(确认后删除)
+  const lastEntryRef = useRef<StoryLookupEntry | null>(null); // 双击直达用:最近一次 hover 命中的楼层
   const [isWhole, setIsWhole] = useState(true);
+  const isWholeRef = useRef(true);
 
-  // 反向索引随场景树重建;存入 ref 供 hover 回调读取(回调不随索引变化重订阅)
+  // 反向索引随场景树重建;存入 ref 供 hover 回调读取(回调不随索引变化重订阅)。
+  // 桥:合并网格祖先的 CPS 内部 id → 子树树 id → 楼层(见 runtime.buildIdBridge)。
   const index = useMemo(() => buildOutIdToStoryIndex(tree), [tree]);
+  const bridge = useMemo(
+    () => (runtime ? runtime.buildIdBridge(new Set(index.keys())) : new Map<string, string>()),
+    [runtime, index],
+  );
+  const indexRef = useRef(index);
+  const bridgeRef = useRef(bridge);
   useEffect(() => {
     indexRef.current = index;
-  }, [index]);
+    bridgeRef.current = bridge;
+  }, [index, bridge]);
 
   // 观察整体态。recipeStore 初始为 null,用内联订阅避开条件 hook。
   useEffect(() => {
     if (!recipeStore) {
       setIsWhole(true);
+      isWholeRef.current = true;
       return;
     }
     const sync = (): void => {
       const vs = recipeStore.getCurrent().structural.visibleStories;
-      setIsWhole(!vs || vs.length === 0);
+      const whole = !vs || vs.length === 0;
+      setIsWhole(whole);
+      isWholeRef.current = whole;
     };
     sync();
     return recipeStore.subscribe(sync);
   }, [recipeStore]);
 
+  // 快捷键 F:飞向最近 hover 命中的楼层(输入框聚焦时跳过;不占用 WASD 相机键)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== 'f' && e.key !== 'F') return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      const entry = lastEntryRef.current;
+      if (entry && runtime) void runtime.flyToObject(entry.storyOutId).catch(() => {});
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [runtime]);
+
+  // 双击直达/退出:整体视角双击 → 聚焦最近 hover 命中的楼层;单/多层视角双击 → 恢复全楼
+  useEffect(() => {
+    const onDblClick = (): void => {
+      if (!recipeStore) return;
+      if (isWholeRef.current) {
+        const entry = lastEntryRef.current;
+        if (!entry) return;
+        recipeStore.patchStructural({
+          visibleStories: [entry.storyOutId],
+          yExtend: false,
+          hideDevices: false,
+        });
+        void runtime?.flyToObject(entry.storyOutId).catch(() => {});
+        showToast(`已聚焦 ${entry.storyLabel ?? '该层'},双击可恢复全楼`);
+      } else {
+        recipeStore.setStructural({
+          ...presets.objectsOverview.structural,
+          categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+        });
+        showToast('已恢复全楼视图');
+      }
+    };
+    window.addEventListener('dblclick', onDblClick);
+    return () => {
+      window.removeEventListener('dblclick', onDblClick);
+    };
+  }, [recipeStore, runtime, sceneId]);
+
   // hover 启用:仅整体视角 + 引擎就绪。
   useEffect(() => {
     if (!runtime || view !== 'ready' || !isWhole) return;
-    console.info('[SceneFloorHover] effect active', {
-      hasRuntime: !!runtime,
-      view,
-      isWhole,
-      indexSize: indexRef.current.size,
-      sampleKeys: Array.from(indexRef.current.keys()).slice(0, 3),
-    });
     const unsub = runtime.setHoverPickHandler((info) => {
       const el = labelRef.current;
       if (!el) return;
       if (!info) {
         el.style.display = 'none';
         lastStoryRef.current = '';
+        lastEntryRef.current = null;
         return;
       }
       // sids 最近优先(构件→墙→楼层→楼栋);取索引里第一个命中的 → 楼层
       let entry: StoryLookupEntry | undefined;
-      let matchedSid = '';
+      // 候选 id(祖先 sid/userData.id)按序:直接命中 → 经内部 id 桥转树 id 再命中
       for (const sid of info.sids) {
-        const e = indexRef.current.get(sid);
+        const e =
+          indexRef.current.get(sid)
+          ?? indexRef.current.get(bridgeRef.current.get(sid) ?? '');
         if (e) {
           entry = e;
-          matchedSid = sid;
           break;
         }
       }
-      // 临时诊断:记录 sid 序列里哪个命中索引(确认后删除)
-      if (diagRef.current < 12) {
-        diagRef.current++;
-        console.info(
-          `[SceneFloorHover] lookup [${info.sids.join(', ')}] → ${matchedSid ? `${matchedSid}=${entry!.buildingLabel}/${entry!.storyLabel}` : 'ALL MISS'}`,
-        );
-      }
       if (!entry) {
         el.style.display = 'none';
+        lastEntryRef.current = null;
         return;
       }
+      lastEntryRef.current = entry;
       el.style.display = 'block';
       el.style.transform = `translate(${info.clientX + 14}px, ${info.clientY + 14}px)`;
       // 楼层变化才更新文案(同一层内移动只改定位)

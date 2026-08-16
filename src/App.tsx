@@ -23,9 +23,15 @@ import TrainingView from '@/views/TrainingView';
 import CommandView from '@/views/CommandView';
 import DrillView from '@/views/DrillView';
 import ScenePerfWidget from '@/components/ScenePerfWidget';
-import SceneLayerSwitcher from '@/components/SceneLayerSwitcher';
 import SceneFloorHoverLabel from '@/components/SceneFloorHoverLabel';
+import SceneObjectInfoCard from '@/components/SceneObjectInfoCard';
+import SceneToolbar from '@/components/SceneToolbar';
+import SceneViewBar from '@/components/SceneViewBar';
+import SceneHintBar from '@/components/SceneHintBar';
+import { storyIdsForFloorSpec } from '@/lib/floor-focus';
+import { showToast } from '@/components/Toast';
 import { presets } from '@/lib/scene-recipe/presets';
+import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
 
 export default function App() {
   return (
@@ -37,19 +43,35 @@ export default function App() {
 
 /** 3D 场景容器：始终存在，跨模块复用 */
 function SceneContainer() {
-  const { containerRef, view } = useScene();
+  const { containerRef, view, progress } = useScene();
 
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
       <div ref={containerRef} className="absolute inset-0" />
-      <SceneLayerSwitcher />
-      {/* 整体建筑视角下 hover 楼层浮层标签(仅整体视角开启 hover raycast) */}
+      {/* 顶部居中工具栏:层级切换+当前楼层徽章+楼层chip云+设备搜索(与场景深度联动) */}
+      <SceneToolbar />
+      {/* 整体建筑视角下 hover 楼层浮层标签(仅整体视角开启 hover raycast;双击直达单层) */}
       <SceneFloorHoverLabel />
+      {/* 点击对象信息卡 / 视角书签+截图+清除高亮(底部居中) / 首次提示 */}
+      <SceneObjectInfoCard />
+      <SceneViewBar />
+      <SceneHintBar />
       {/* 帧率监控浮窗(仅 3D 场景就绪时显示,纯展示不拦截交互) */}
       <ScenePerfWidget />
       {view === 'loading' && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-text-2">
-          场景加载中…
+        <div className="absolute inset-0 z-30 grid place-items-center bg-bg-deep/50 backdrop-blur-[2px]">
+          <div className="w-72 rounded-xl border border-line bg-bg-panel/85 px-6 py-5 text-center shadow-xl">
+            <div className="mb-2.5 text-sm text-text-1">{progress?.message ?? '场景加载中…'}</div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-bg-panel-2">
+              <div
+                className={`h-full rounded-full bg-gradient-to-r from-cyan to-blue transition-[width] duration-300 ${progress?.percent == null ? 'w-1/3 animate-pulse' : ''}`}
+                style={progress?.percent != null ? { width: `${Math.min(100, Math.max(0, progress.percent))}%` } : undefined}
+              />
+            </div>
+            <div className="mt-1.5 font-mono text-[11px] text-text-3">
+              {progress?.percent != null ? `${Math.round(progress.percent)}%` : '准备中…'}
+            </div>
+          </div>
         </div>
       )}
       {view === 'no-scene' && (
@@ -71,7 +93,7 @@ function AppContent() {
   const [buildingPanelOpen, setBuildingPanelOpen] = useState(true);
 
   const [scenes, setScenes] = useState<{ scene_id: string; scene_name: string }[]>([]);
-  const { sceneId, setSceneId, setEnabled, enabled, recipeStore, runtime, view } = useScene();
+  const { sceneId, setSceneId, setEnabled, enabled, recipeStore, runtime, view, tree } = useScene();
 
   // 对象总览当前建筑 ID(由 GIS 信息窗「查看档案」或内部下拉切换)。
   const [objectsBuildingId, setObjectsBuildingId] = useState<string>('');
@@ -122,18 +144,28 @@ function AppContent() {
     });
   }, []);
 
-  // 3D 模块隐藏（态势总览/GIS）时暂停渲染循环，切回 3D 模块时恢复；场景未就绪前不暂停，避免影响加载。
+  // 3D 模块隐藏（态势总览/GIS）或页面失焦（切标签页/最小化）时暂停渲染循环；
+  // 切回即恢复。场景未就绪前不暂停，避免影响加载。
   useEffect(() => {
     if (!runtime || view !== 'ready') return;
-    runtime.setRenderPaused(module === 'overview');
+    const apply = (): void => runtime.setRenderPaused(module === 'overview' || document.hidden);
+    apply();
+    document.addEventListener('visibilitychange', apply);
+    return () => document.removeEventListener('visibilitychange', apply);
   }, [runtime, view, module]);
 
-  // 模块切换/场景就绪时套 Recipe 预设;态势总览不加载 3D;培训 familiarize 步进在 TrainingView
+  // 模块切换/场景就绪时套 Recipe 预设;态势总览不加载 3D;培训 familiarize 步进在 TrainingView。
+  // 显隐细节统一由模态框控制:预设只定基线(楼层全集/mode/GIS),categoryVisibility 按场景 id
+  // 回放存档的模态开关配置(替代旧"加载完无条件 hideDevices 全藏"与模态配置互相覆盖的冲突)。
   useEffect(() => {
     if (!recipeStore) return;
-    if (module === 'objects') recipeStore.setStructural(presets.objectsOverview.structural);
-    else if (module === 'drill') recipeStore.setStructural(presets.drillConfront.structural);
-  }, [recipeStore, module]);
+    const display = loadSceneDisplayPrefs(sceneId) ?? {};
+    if (module === 'objects') {
+      recipeStore.setStructural({ ...presets.objectsOverview.structural, categoryVisibility: display });
+    } else if (module === 'drill') {
+      recipeStore.setStructural({ ...presets.drillConfront.structural, categoryVisibility: display });
+    }
+  }, [recipeStore, module, sceneId]);
 
   // 智能体远程调起业务面板
   const handleAgentOpenPanel = (panelId: AgentPanelId) => {
@@ -162,21 +194,39 @@ function AppContent() {
     }
   };
 
-  // GIS 信息窗业务跳转（linkage 分支通过 CustomEvent 上报）
+  // GIS 信息窗业务跳转（linkage 分支通过 CustomEvent 上报）。
+  // enabled 走无条件 setEnabled(true)(幂等);告警联动需 tree/recipeStore/runtime,
+  // 故依赖三者(变化时重注册监听,取新鲜引用)。
   useEffect(() => {
     const onOpenProfile = (e: Event) => {
       const d = (e as CustomEvent<{ buildingId?: string }>).detail;
       if (d?.buildingId) setObjectsBuildingId(d.buildingId);
       setModule('objects');
       setBuildingPanelOpen(true);
+      setEnabled(true);
     };
     const onIgnite = () => {
       setModule('drill');
+      setEnabled(true);
     };
-    // TopBar 告警点击 → 跳转对象总览定位告警楼层
-    const onOpenAlert = () => {
+    // TopBar 告警点击 → 跳转对象总览 + 3D 联动:聚焦告警楼层 + 飞向 + toast
+    const onOpenAlert = (e: Event) => {
+      const d = (e as CustomEvent<{ buildingId?: string; floor?: string }>).detail;
       setModule('objects');
       setBuildingPanelOpen(true);
+      setEnabled(true);
+      if (d?.floor && tree && recipeStore) {
+        const storyIds = storyIdsForFloorSpec(tree, d.floor);
+        if (storyIds.length === 1) {
+          recipeStore.patchStructural({
+            visibleStories: storyIds,
+            yExtend: false,
+            hideDevices: false,
+          });
+          void runtime?.flyToObject(storyIds[0]).catch(() => {});
+          showToast(`告警联动:已聚焦 ${d.floor}`);
+        }
+      }
     };
     // 全局演示剧本：demoScript 派发模块切换（一键串联汇报演示）
     const onDemoSwitch = (e: Event) => {
@@ -193,7 +243,7 @@ function AppContent() {
       window.removeEventListener('topbar:open-alert', onOpenAlert);
       window.removeEventListener('demo:switch-module', onDemoSwitch);
     };
-  }, []);
+  }, [tree, recipeStore, runtime]);
 
   return (
     <div className="flex h-[100dvh] min-h-[100dvh] flex-col overflow-hidden bg-bg-deep text-text-1">
@@ -234,9 +284,14 @@ function AppContent() {
                   <DrillView />
                 ) : module === 'overview' ? (
                   <RealGisMap
-                    onEnterScene={(id) => {
+                    onEnterScene={(id, buildingId) => {
                       handleSelectScene(id);
+                      // 携带建筑 id 进入:自动选中右侧单建筑档案面板(与「查看档案」路径一致)
+                      if (buildingId) setObjectsBuildingId(buildingId);
                       setModule('objects');
+                      // 与 handleSelect 一致:绕过侧边栏进入 3D 模块时也要解除懒加载守卫,
+                      // 否则 SceneProvider 因 enabled=false 永不加载场景
+                      if (!enabled) setEnabled(true);
                     }}
                   />
                 ) : null}
@@ -264,8 +319,8 @@ function AppContent() {
               title="单建筑档案"
               icon={Building2}
               width={440}
-              dock="right"
-              defaultPos={{ x: 16, y: 16 }}
+              dock="left"
+              defaultPos={{ x: 16, y: 64 }}
               height="calc(100% - 280px)"
               open={buildingPanelOpen}
               onOpenChange={setBuildingPanelOpen}

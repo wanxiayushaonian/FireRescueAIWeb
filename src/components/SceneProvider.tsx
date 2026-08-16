@@ -19,6 +19,8 @@ interface SceneContextValue {
   tree: SceneTreeNode | null;
   initialView: CameraViewpoint | null;
   containerRef: React.RefObject<HTMLDivElement | null>;
+  /** 加载进度(initScene onProgress;view==='loading' 期间有值) */
+  progress: { stage: string; message: string; percent?: number } | null;
   /** 切换场景（仅当 sceneId 真正变化时才重新加载） */
   setSceneId: (id: string) => void;
   /** 启用场景加载（首次进入 3D 模块时调用，之后保持 true） */
@@ -60,6 +62,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
   const [runtime, setRuntime] = useState<SoonspaceRuntime | null>(null);
   const [view, setView] = useState<View>('no-scene'); // 初始 no-scene，enabled 后才 loading
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<SceneContextValue['progress']>(null);
   const [tree, setTree] = useState<SceneTreeNode | null>(null);
   const [initialView, setInitialView] = useState<CameraViewpoint | null>(null);
   const [recipeStore, setRecipeStore] = useState<RecipeStore | null>(null);
@@ -115,6 +118,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
     let disposed = false;
     setView('loading');
     setError(null);
+    setProgress(null);
 
     void (async () => {
       try {
@@ -138,7 +142,9 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
         // 创建新 runtime
         const rt = new SoonspaceRuntime();
         runtimeRef.current = rt;
-        await rt.init(containerRef.current!, sceneId);
+        await rt.init(containerRef.current!, sceneId, (p) => {
+          if (!disposed) setProgress(p);
+        });
         if (disposed) {
           await rt.dispose();
           return;
@@ -271,6 +277,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
     tree,
     initialView,
     containerRef,
+    progress,
     setSceneId,
     setEnabled,
     enabled,
