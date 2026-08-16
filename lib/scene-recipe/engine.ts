@@ -1,6 +1,6 @@
 import type { ApplyResult, Changeset, RecipeRuntime, StructuralRecipe } from './types';
 import type { SceneTreeNode } from '../ustudio';
-import { collectNonStructuralOutIds, collectByTypes } from '../device-tree';
+import { collectNonStructuralOutIds, collectByTypes, collectNonStructuralOutIdsWithinStories } from '../device-tree';
 import { levelFromStoryCount } from './level-policy';
 
 // 项目暂无 lib/logger.ts;engine 用 console 后备(与现有 lib 多数模块一致)
@@ -70,11 +70,20 @@ export async function applyRecipe(
       // hideDevices 未变"时 resetAll 恢复设备却漏重放 → 设备泄露、Recipe 状态与实际渲染脱节。
       // 藏所有非主体结构节点(Space/Door/设备/管道/灯具/家具…),只留墙/楼板/楼梯/楼栋 → draw call 大降、流畅。
       const hideDevices = cur?.hideDevices ?? s.hideDevices;
+      // 设备显示是 SDK 登记表状态:整体视角全量藏过后,未重放过的楼层设备一直是"藏"。
+      // 故 hideDevices=false 时,楼层切换(storiesChanged)也要重放所选楼层设备 —— 否则
+      // 单层内换层看到的是空楼层(仅 hideDevicesChanged 时重放会漏掉这个场景)。
+      const needDeviceReplay = hideDevicesChanged
+        || (hideDevices === false && storiesChanged);
       if (hideDevices) {
         const ids = collectNonStructuralOutIds(tree);
         await safe('hideDevices', () => runtime.hideObjects(ids), applied, failed);
-      } else if (hideDevicesChanged) {
-        const ids = collectNonStructuralOutIds(tree);
+      } else if (needDeviceReplay) {
+        // 选中楼层时只重放所选楼层子树的设备:setViewMode(resetAll+按层裁剪)后可见层设备
+        // 已显示,全量 show 是 9k+ 次纯浪费调用,且对隐藏层设备无视觉意义。
+        const ids = cur?.visibleStories?.length
+          ? collectNonStructuralOutIdsWithinStories(tree, cur.visibleStories)
+          : collectNonStructuralOutIds(tree);
         await safe('showDevices', () => runtime.showObjects(ids), applied, failed);
       }
     }

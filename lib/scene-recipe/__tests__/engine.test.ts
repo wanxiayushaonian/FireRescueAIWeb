@@ -158,7 +158,7 @@ describe('applyRecipe', () => {
     expect(rt.hideObjectsIds).toEqual([]); // 测试 tree 为空,真实 tree 会收到设备 outId
   });
 
-  it('hideDevices 未设(undefined)→ 不调 hideObjects(向后兼容)', async () => {
+  it('hideDevices 未设(undefined)→ 不调 hideObjects/showObjects(向后兼容)', async () => {
     const rt = mockRuntime();
     const cs: Changeset = {
       structural: { __touched: true, mode: '3D', visibleStories: ['1F'] },
@@ -166,6 +166,21 @@ describe('applyRecipe', () => {
     };
     await applyRecipe(rt, tree, cs);
     expect(rt.calls).not.toContain('hideObjects');
+    expect(rt.calls).not.toContain('showObjects');
+  });
+
+  it('hideDevices=false + 楼层变更 → setViewMode 后重放所选楼层设备(单层内换层设备可见)', async () => {
+    const rt = mockRuntime();
+    // 场景:单层模式从 3F 切 5F —— hideDevices 不变(false),仅 visibleStories 变
+    const cs: Changeset = {
+      structural: { __touched: true, visibleStories: ['st-5f'] },
+      observational: { __touched: false },
+    };
+    await applyRecipe(rt, tree, cs, fullStructural({ visibleStories: ['st-5f'], hideDevices: false }));
+    expect(rt.calls).toContain('setViewMode');
+    expect(rt.calls).toContain('showObjects');
+    // 时序:重放必须在 setViewMode(resetAll)之后
+    expect(rt.calls.indexOf('showObjects')).toBeGreaterThan(rt.calls.indexOf('setViewMode'));
   });
 
   it('hideDevices 不在 changeset 但完整态 next.hideDevices=true → setViewMode 后仍重放 hideDevices(修复状态脱节)', async () => {

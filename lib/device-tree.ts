@@ -101,6 +101,39 @@ export function collectNonStructuralOutIds(node: SceneTreeNode): string[] {
   return ids;
 }
 
+/**
+ * 只收集指定楼层(story out_instance_id 集合)子树内的非主体结构 out id。
+ * 单/多层聚焦时设备重放用:setViewMode 已按楼层裁剪,全量重放 9k+ 设备是
+ * 纯浪费(可见楼层设备已显示、隐藏楼层被容器剪枝),只重放所选楼层即可。
+ */
+export function collectNonStructuralOutIdsWithinStories(
+  node: SceneTreeNode,
+  storyIds: string[],
+): string[] {
+  if (storyIds.length === 0) return [];
+  const wanted = new Set(storyIds);
+  const ids: string[] = [];
+  const isStory = (n: SceneTreeNode): boolean => {
+    const t = String(n.type ?? '').toLowerCase();
+    return t === 'story' || t.endsWith('story') || t.includes('floor');
+  };
+  const storyKey = (n: SceneTreeNode): string =>
+    String(n.out_instance_id ?? n.id ?? n.twins_instance_id ?? '');
+  const walk = (n: SceneTreeNode, inWantedStory: boolean): void => {
+    const next = isStory(n) ? wanted.has(storyKey(n)) : inWantedStory;
+    if (next) {
+      const t = n.type;
+      if (t && !STRUCTURE_KEEP_PATTERN.test(t)) {
+        const outId = String(n.out_instance_id ?? n.id ?? '');
+        if (outId) ids.push(outId);
+      }
+    }
+    for (const c of n.children ?? []) walk(c, next);
+  };
+  walk(node, false);
+  return ids;
+}
+
 /** 按 type 集合收集节点的 out_instance_id(供按类别批量 hide/show)。 */
 export function collectByTypes(node: SceneTreeNode, types: string[]): string[] {
   if (types.length === 0) return [];
