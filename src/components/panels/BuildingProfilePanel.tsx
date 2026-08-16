@@ -22,6 +22,10 @@ import PanelStateView from '@/components/PanelStateView';
 import { showToast } from '@/components/Toast';
 import { fetchKeyBuildings } from '@/api/key-buildings';
 import { fetchBuildingProfile, DRILL_DEMO_BUILDING_ID } from '@/api/building-profile';
+import { useScene } from '@/components/SceneProvider';
+import { storyIdsForFloorSpec } from '@/lib/floor-focus';
+import { presets } from '@/lib/scene-recipe/presets';
+import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type {
   RealBuildingProfile,
@@ -95,6 +99,14 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
     if (id === curBuildingId) return;
     if (onBuildingChange) onBuildingChange(id);
     else setInnerBuildingId(id);
+    // 切建筑时退出楼层聚焦(当前聚焦的楼层属于上一栋楼);恢复时同样回放模态显隐存档
+    if (activeFloor) {
+      recipeStore?.setStructural({
+        ...presets.objectsOverview.structural,
+        categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+      });
+      setActiveFloor(null);
+    }
     const b = buildings.find((x) => x.id === id);
     if (b && b.lng && b.lat) {
       addSceneAction({ action: 'resetView', target: '恢复园区俯瞰视角', source: '面板' });
@@ -123,10 +135,47 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
     showToast('已写入场景动作日志');
   };
 
+  // 楼层聚焦(经 Recipe 单一真相源):单层 → 只显该层+设备;多层段 → 只显这些层+炸开+藏设备。
+  // detailLevel 保持 full(preset 基线):structure 的 hideWindowAndDoor 会把草地/马路/周边底模藏掉。
+  const { tree, recipeStore, sceneId } = useScene();
+  const [activeFloor, setActiveFloor] = useState<string | null>(null);
+  useEffect(() => {
+    setActiveFloor(null);
+  }, [curBuildingId]);
+
+  // 恢复全楼 = objectsOverview 预设基线 + 回放本场景的模态显隐存档(模态框是显隐唯一写入方)
+  const restoreFullView = () => {
+    recipeStore?.setStructural({
+      ...presets.objectsOverview.structural,
+      categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+    });
+    setActiveFloor(null);
+    showToast('已恢复全楼视图');
+  };
+
   const focusKeyFloor = (kf: BuildingKeyFloor) => {
-    addSceneAction({ action: 'switchFloor', target: `切换至 ${kf.floor}`, params: { floor: kf.floor }, source: '面板' });
-    addSceneAction({ action: 'highlight', target: `${kf.id} ${kf.name}`, params: { id: kf.id, floor: kf.floor }, source: '面板' });
-    showToast('已写入场景动作日志');
+    if (!recipeStore || !tree) {
+      showToast('3D 场景未就绪,无法聚焦楼层');
+      return;
+    }
+    if (activeFloor === kf.floor) {
+      restoreFullView();
+      return;
+    }
+    const storyIds = storyIdsForFloorSpec(tree, kf.floor);
+    if (storyIds.length === 0) {
+      showToast(`场景中未找到楼层 ${kf.floor}`);
+      return;
+    }
+    const multi = storyIds.length > 1;
+    recipeStore.patchStructural({
+      visibleStories: storyIds,
+      yExtend: multi,
+      // 单层聚焦看细节 → 显设备;多层段炸开看分布 → 藏设备减压(与 focus_floors 策略一致)
+      hideDevices: multi,
+    });
+    setActiveFloor(kf.floor);
+    showToast(multi ? `已聚焦 ${kf.floor}(炸开展示)` : `已聚焦 ${kf.floor}`);
   };
 
   const focusRefuge = (refuge: string) => {
@@ -212,7 +261,7 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
               >
                 {g === '建筑概况' && <OverviewGroup overview={profile.overview} />}
                 {g === '消防系统' && <FireSystemsGroup facilities={profile.facilities} onRow={focusFacility} />}
-                {g === '关键部位' && <KeyFloorsGroup keyFloors={profile.keyFloors} onRow={focusKeyFloor} />}
+                {g === '关键部位' && <KeyFloorsGroup keyFloors={profile.keyFloors} onRow={focusKeyFloor} activeFloor={activeFloor} />}
                 {g === '防火设计' && (
                   <StructureGroup
                     designs={profile.structureDesigns}
@@ -391,9 +440,12 @@ function FireSystemsGroup({
 function KeyFloorsGroup({
   keyFloors,
   onRow,
+  activeFloor,
 }: {
   keyFloors: BuildingKeyFloor[];
   onRow: (kf: BuildingKeyFloor) => void;
+  /** 当前聚焦中的楼层段(再次点击该卡片恢复全楼) */
+  activeFloor: string | null;
 }) {
   if (keyFloors.length === 0) {
     return <div className="py-4 text-center text-[12px] text-text-3">暂无重点楼层登记</div>;
@@ -403,7 +455,9 @@ function KeyFloorsGroup({
       <div className="mb-1.5 px-2 py-1 text-[12px] font-bold text-text-2">
         重点楼层 / 功能区 <span className="ml-1 font-mono text-[11px] text-text-3">{keyFloors.length} 项</span>
       </div>
-      {keyFloors.map((kf, i) => (
+      {keyFloors.map((kf, i) => {
+        const active = kf.floor === activeFloor;
+        return (
         <motion.button
           key={kf.id}
           custom={i}
@@ -411,15 +465,19 @@ function KeyFloorsGroup({
           initial="hidden"
           animate="show"
           onClick={() => onRow(kf)}
-          className="group flex w-full cursor-pointer items-start gap-2 rounded px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee]"
+          title={active ? '再次点击恢复全楼视图' : '点击在 3D 中聚焦该楼层(多层段炸开展示,保留周边环境)'}
+          className={`group flex w-full cursor-pointer items-start gap-2 rounded border px-2 py-1.5 text-left transition hover:bg-bg-panel-2 hover:shadow-[inset_2px_0_0_#22d3ee] ${
+            active ? 'border-cyan/60 bg-bg-panel-2 shadow-[inset_2px_0_0_#22d3ee]' : 'border-transparent'
+          }`}
         >
-          <span className="mt-0.5 shrink-0 rounded border border-line bg-bg-panel-2 px-1.5 py-px font-mono text-[11px] text-cyan">
+          <span className={`mt-0.5 shrink-0 rounded border px-1.5 py-px font-mono text-[11px] ${active ? 'border-cyan/70 bg-cyan/10 text-cyan' : 'border-line bg-bg-panel-2 text-cyan'}`}>
             {kf.floor}
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-[13px] text-text-1">{kf.name}</span>
               <span className="shrink-0 text-[11px] text-text-3">{kf.func}</span>
+              {active && <span className="ml-auto shrink-0 text-[10px] text-cyan">再点还原</span>}
             </div>
             <div className="mt-0.5 line-clamp-2 text-[11px] text-text-3">
               {kf.fireHazard}{kf.hazardSource ? ` · ${kf.hazardSource}` : ''}
@@ -430,7 +488,8 @@ function KeyFloorsGroup({
             </div>
           </div>
         </motion.button>
-      ))}
+        );
+      })}
     </div>
   );
 }
