@@ -675,6 +675,16 @@ export class SoonspaceRuntime {
     return this.sdk?.drawVirtualRoute?.(detail as any, options as any);
   }
 
+  /** 对象沿路径移动动画(SDK pathMove);返回动画句柄(含 play/pause 可选)。 */
+  pathMove(id: string, path: Array<{ x: number; y: number; z: number }>): unknown {
+    return (this.sdk as unknown as { pathMove?: (id: string, path: unknown) => unknown } | null)?.pathMove?.(id, path);
+  }
+
+  /** 复位 pathMove 的对象(回初始位姿)。 */
+  pathRestore(id: string): void {
+    (this.sdk as unknown as { pathRestore?: (id: string) => unknown } | null)?.pathRestore?.(id);
+  }
+
   setVirtualRouteVisible(routeId: string, visible: boolean): unknown {
     return this.sdk?.setVirtualRouteVisible?.(routeId, visible);
   }

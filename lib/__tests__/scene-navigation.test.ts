@@ -97,4 +97,14 @@ describe('extractPathPoints(kgraph 返回容错解析)', () => {
     expect(extractPathPoints('not-array')).toBeNull();
     expect(extractPathPoints(null)).toBeNull();
   });
+
+  it('扁平数字数组([x,y,z,…])按三元组解析——平台场景路线 detail.path 实测形态', () => {
+    expect(extractPathPoints([1, 2, 3, 4, 5, 6, 7, 8, 9])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 4, y: 5, z: 6 },
+      { x: 7, y: 8, z: 9 },
+    ]);
+    expect(extractPathPoints([1, 2, 3])).toBeNull(); // 单点不算路径
+    expect(extractPathPoints([1, 2])).toBeNull();
+  });
 });

@@ -5,33 +5,63 @@
  * - 保存当前机位为命名书签(按场景 id 持久化),点击书签一键平滑切回;
  * - 一键截图(SDK screenShot 优先)下载 PNG。
  */
-import { useEffect, useRef, useState } from 'react';
-import { Bookmark, Camera, Check, Eraser, Plus, Route, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Bookmark, Camera, Check, Eraser, Plus, Route as RouteIcon, Truck, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import {
   loadSceneViewBookmarks,
   saveSceneViewBookmarks,
   type ViewBookmark,
 } from '@/lib/scene-view-bookmarks';
-import { clearSceneRoutes, hasDrawnRoute } from '@/lib/scene-navigation';
+import {
+  clearSceneRoutes,
+  hasDrawnRoute,
+  fetchSceneRoutes,
+  drawSceneRoute,
+  animateTruckAlongRoute,
+  type SceneRouteSummary,
+} from '@/lib/scene-navigation';
+import { buildDeviceSearchIndex } from '@/lib/scene-pick';
 import { showToast } from '@/components/Toast';
 
 export default function SceneViewBar() {
-  const { runtime, sceneId, view } = useScene();
+  const { runtime, sceneId, view, tree } = useScene();
   const [marks, setMarks] = useState<ViewBookmark[]>([]);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // 场景包自带路线(平台编辑器规划保存) + 下拉开合
+  const [sceneRoutes, setSceneRoutes] = useState<SceneRouteSummary[]>([]);
+  const [routesOpen, setRoutesOpen] = useState(false);
 
   useEffect(() => {
     setMarks(loadSceneViewBookmarks(sceneId));
   }, [sceneId]);
 
   useEffect(() => {
+    if (!sceneId || view !== 'ready') return;
+    void fetchSceneRoutes(sceneId).then(setSceneRoutes);
+  }, [sceneId, view]);
+
+  useEffect(() => {
     if (naming) inputRef.current?.focus();
   }, [naming]);
 
+  // 场景内消防车(平台补的排烟/远程供水车;type 含 FireTruck)
+  const truckOutId = useMemo(() => {
+    const truck = buildDeviceSearchIndex(tree).find((d) => /FireTruck/i.test(d.type));
+    return truck?.outId ?? null;
+  }, [tree]);
+
   if (!runtime || view !== 'ready') return null;
+
+  const toggleSceneRoute = (r: SceneRouteSummary): void => {
+    void drawSceneRoute(runtime, sceneId, r.route_id, r.route_name ?? r.route_id).then((msg) => {
+      if (msg === 'cleared') showToast(`已隐藏路线「${r.route_name ?? r.route_id}」`);
+      else if (msg) showToast(msg);
+      else showToast(`已显示路线「${r.route_name ?? r.route_id}」`);
+    });
+  };
 
   const saveMark = (): void => {
     const vp = runtime.getCameraViewpoint();
@@ -144,9 +174,48 @@ export default function SceneViewBar() {
           className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-text-2 transition hover:text-cyan"
           title="清除进攻路线等场内导航路线"
         >
-          <Route className="h-3 w-3" />
+          <RouteIcon className="h-3 w-3" />
           清除路线
         </button>
+        {sceneRoutes.length > 0 && (
+          <div className="relative shrink-0">
+            <button
+              onClick={() => setRoutesOpen((v) => !v)}
+              className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition ${routesOpen ? 'text-cyan' : 'text-text-2 hover:text-cyan'}`}
+              title="场景包自带路线(平台规划保存);点击显示/隐藏"
+            >
+              <RouteIcon className="h-3 w-3" />
+              场景路线 {sceneRoutes.length}
+            </button>
+            {routesOpen && (
+              <div className="absolute bottom-full right-0 z-50 mb-2 w-44 rounded-lg border border-line bg-bg-panel/95 p-1 shadow-xl backdrop-blur-[8px]">
+                {sceneRoutes.map((r) => (
+                  <button
+                    key={r.route_id}
+                    onClick={() => toggleSceneRoute(r)}
+                    className="block w-full truncate rounded px-2 py-1.5 text-left text-[11px] text-text-2 transition hover:bg-bg-panel-2 hover:text-cyan"
+                  >
+                    {r.route_name || r.route_id}
+                  </button>
+                ))}
+                <div className="px-2 pb-1 pt-0.5 text-[9px] text-text-3/60">点击显示 / 再点隐藏</div>
+              </div>
+            )}
+          </div>
+        )}
+        {truckOutId && (
+          <button
+            onClick={() => {
+              const err = animateTruckAlongRoute(runtime, truckOutId);
+              showToast(err ?? '消防车开始沿最近显示的路线行进');
+            }}
+            className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-text-2 transition hover:text-cyan"
+            title="消防车沿最近显示的场景路线移动(可重复播放)"
+          >
+            <Truck className="h-3 w-3" />
+            车辆巡线
+          </button>
+        )}
         <button
           onClick={() => void shoot()}
           className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-text-2 transition hover:text-cyan"
