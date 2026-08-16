@@ -8,12 +8,14 @@
  * 读 three 拾取结果但不改引擎状态(AGENTS.md 灰色区许可);动作全部走 SDK/runtime。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Eye, Layers, X } from 'lucide-react';
+import { Crosshair, Eye, Layers, Navigation, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scene-pick';
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
+import { planAttackRoute, drawAttackRoute } from '@/lib/scene-navigation';
+import { showToast } from '@/components/Toast';
 
 interface CardState {
   node: PickNodeInfo;
@@ -143,6 +145,17 @@ export default function SceneObjectInfoCard() {
       hideDevices: false,
     });
   };
+  const navigateTo = (): void => {
+    if (!runtime || !tree) return;
+    const plan = planAttackRoute(tree, card.node.outId);
+    if (!plan) {
+      showToast('无法规划路线(场景中未找到该对象)');
+      return;
+    }
+    void drawAttackRoute(runtime, plan).then((err) => {
+      showToast(err ?? `进攻路线已绘制:大门 → 楼梯 → ${card.node.name}`);
+    });
+  };
 
   // 卡片定位:光标右下,越界回拉(高度按属性区展开后的上界估计)
   const W = 260;
@@ -211,6 +224,14 @@ export default function SceneObjectInfoCard() {
         >
           <Eye className="h-3 w-3" />
           高亮
+        </button>
+        <button
+          onClick={navigateTo}
+          className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+          title="绘制进攻路线:大门 → 楼梯 → 该设备"
+        >
+          <Navigation className="h-3 w-3" />
+          导航至此
         </button>
         {card.story && (
           <button

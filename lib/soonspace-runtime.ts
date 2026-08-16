@@ -699,6 +699,24 @@ export class SoonspaceRuntime {
     return this.sdk?.getObjectById?.(id) ?? this.getSsp()?.getObjectById?.(id) ?? null;
   }
 
+  /** 对象世界坐标(包围盒中心,与 flyToObject 同基准);读 three 不改状态(AGENTS.md 灰色区许可)。 */
+  getObjectWorldPosition(id: string): { x: number; y: number; z: number } | null {
+    const obj = this.getSsp()?.getObjectById?.(id) as AnyObject | null | undefined;
+    if (!obj) return null;
+    try {
+      const box = (obj.box3 ?? obj.geometry?.boundingBox) as { center?: { x: number; y: number; z: number } } | undefined;
+      const c = box?.center;
+      if (c && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.z)) {
+        return { x: c.x, y: c.y, z: c.z };
+      }
+      const p = obj.position as { x: number; y: number; z: number } | undefined;
+      if (p && Number.isFinite(p.x)) return { x: p.x, y: p.y, z: p.z };
+    } catch {
+      /* 位置不可得 */
+    }
+    return null;
+  }
+
   createScriptMethods(): ScriptMethods {
     const call = (name: keyof ScriptMethods) => (...args: unknown[]) => {
       const sdk = this.sdk as unknown as Record<string, (...values: unknown[]) => unknown> | null;

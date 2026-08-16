@@ -6,13 +6,15 @@
  * - 一键截图(SDK screenShot 优先)下载 PNG。
  */
 import { useEffect, useRef, useState } from 'react';
-import { Bookmark, Camera, Check, Eraser, Plus, X } from 'lucide-react';
+import { Bookmark, Camera, Check, Eraser, Plus, Route, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import {
   loadSceneViewBookmarks,
   saveSceneViewBookmarks,
   type ViewBookmark,
 } from '@/lib/scene-view-bookmarks';
+import { clearSceneRoutes, hasDrawnRoute } from '@/lib/scene-navigation';
+import { showToast } from '@/components/Toast';
 
 export default function SceneViewBar() {
   const { runtime, sceneId, view } = useScene();
@@ -132,6 +134,18 @@ export default function SceneViewBar() {
         >
           <Eraser className="h-3 w-3" />
           清除高亮
+        </button>
+        <button
+          onClick={() => {
+            const had = hasDrawnRoute();
+            clearSceneRoutes(runtime);
+            showToast(had ? '已清除导航路线' : '当前没有导航路线');
+          }}
+          className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-text-2 transition hover:text-cyan"
+          title="清除进攻路线等场内导航路线"
+        >
+          <Route className="h-3 w-3" />
+          清除路线
         </button>
         <button
           onClick={() => void shoot()}
