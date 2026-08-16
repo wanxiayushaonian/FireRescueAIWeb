@@ -58,7 +58,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: string, buildingId?: string) => void }) {
+export default function RealGisMap({ onEnterScene, onMapReady }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
@@ -115,6 +115,12 @@ export default function RealGisMap({ onEnterScene }: { onEnterScene?: (sceneId: 
 
   // 地图初始化/底图切换/tileerror 降级/zoom 同步(见 gis/hooks/use-leaflet-map)
   const { mapRef, layers, mapInited, zoom, baseMap, setBaseMap, tilesFailed, viewportTick } = useLeafletMap(rootRef, onDrawCreated);
+
+  // 地图就绪回调(实战指挥等模块把 Leaflet 实例交给叠加层做容器坐标投影)
+  useEffect(() => {
+    if (!mapInited || !mapRef.current) return;
+    onMapReady?.(mapRef.current);
+  }, [mapInited, onMapReady, mapRef]);
 
   // 数据加载(站/资源/水源视口/重点单位/警情/重点建筑/重点区域,见 gis/hooks/use-gis-data)
   const {
