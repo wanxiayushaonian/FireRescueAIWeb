@@ -12,6 +12,8 @@ export interface DraggablePanelProps {
   /** 默认停靠位置 */
   dock: 'left' | 'right';
   defaultPos: { x: number; y: number };
+  /** 底部锚定(优先于 defaultPos.y):距视口底部像素;靠下停靠的面板用它,不随屏高漂移 */
+  bottomOffset?: number;
   height?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -26,6 +28,7 @@ export default function DraggablePanel({
   width,
   dock,
   defaultPos,
+  bottomOffset,
   height = 'calc(100dvh - 96px)',
   open,
   onOpenChange,
@@ -55,8 +58,8 @@ export default function DraggablePanel({
             transition={{ duration: 0.3 }}
             style={
               dock === 'right'
-                ? { right: defaultPos.x, top: defaultPos.y, width, height }
-                : { left: defaultPos.x, top: defaultPos.y, width, height }
+                ? { right: defaultPos.x, ...(bottomOffset !== undefined ? { bottom: bottomOffset } : { top: defaultPos.y }), width, height }
+                : { left: defaultPos.x, ...(bottomOffset !== undefined ? { bottom: bottomOffset } : { top: defaultPos.y }), width, height }
             }
             className={`pointer-events-auto absolute z-40 flex flex-col overflow-hidden rounded-lg border bg-bg-panel/90 backdrop-blur-[8px] ${
               dragging ? 'panel-glow border-line-glow shadow-2xl' : 'border-line shadow-xl'

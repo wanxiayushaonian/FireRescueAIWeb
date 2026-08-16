@@ -15,8 +15,9 @@ export default function SceneSwitcher({ scenes, selectedSceneId, onSelectScene }
   if (!scenes || scenes.length === 0) return null;
   const current = scenes.find((s) => s.scene_id === selectedSceneId);
 
+  // z-40:弹层须浮在 DraggablePanel(z-30)之上,展开的场景列表不被左侧面板遮挡
   return (
-    <div className="absolute left-3 top-3 z-20">
+    <div className="absolute left-3 top-3 z-40">
       <Popover>
         <PopoverTrigger asChild>
           <button
