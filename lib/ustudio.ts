@@ -422,6 +422,28 @@ export async function findShortestPath(input: { sceneId?: string; source: GeoLoc
   );
 }
 
+/** 场内导航(SDK navigateWithinScene 同端点,平台编辑器规划即此):source/target 可为场景坐标 {x,y,z} 或 {node_id},waypointNodeIds 可选途经点。 */
+export async function navigateWithinSceneApi(input: {
+  sceneId?: string;
+  source: Record<string, unknown>;
+  target: Record<string, unknown>;
+  waypointNodeIds?: string[];
+}) {
+  const sceneId = await resolveSceneId(input.sceneId);
+  return postUStudio<
+    { scene_id: string; source: Record<string, unknown>; target: Record<string, unknown>; waypoint_node_ids?: string[] },
+    Record<string, unknown>
+  >(
+    '/api/kgraph/v1/shortest-path-with-waypoints',
+    {
+      scene_id: sceneId,
+      source: input.source,
+      target: input.target,
+      ...(input.waypointNodeIds?.length ? { waypoint_node_ids: input.waypointNodeIds } : {}),
+    },
+  );
+}
+
 /** 可达图（从若干楼层 / 空间节点出发的可达关系）。sceneId 不传自动用当前场景。 */
 export async function getReachableGraph(input: { sceneId?: string; storyNodeIds: string[]; nodeId?: string }) {
   const sceneId = await resolveSceneId(input.sceneId);

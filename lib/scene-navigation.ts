@@ -18,6 +18,12 @@ export interface AttackRoutePlan {
   gateFloor: number | null;
   /** 途经楼层(含两端,升序或降序)各自的楼梯候选 */
   stairCandidates: Array<{ floor: number; outIds: string[] }>;
+  /** 大门层 Story 的 twins id(kgraph 图节点:SDK 场内导航起点) */
+  gateStoryNodeId: string | null;
+  /** 目标最近 Space 祖先的 twins id(kgraph 端点;设备多挂在 Space/Story 下) */
+  targetSpaceNodeId: string | null;
+  /** 目标所在 Story 的 twins id(kgraph 端点兜底) */
+  targetStoryNodeId: string | null;
 }
 
 interface WalkCtx {
@@ -41,28 +47,38 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
   if (!tree || !targetOutId) return null;
   const doorsByFloor = new Map<number, string[]>();
   const stairsByFloor = new Map<number, string[]>();
+  const storiesByFloor = new Map<number, string>();
   // 对象持有者规避 TS 闭包赋值收窄(walk 内赋值后外部读取)
-  const found: { target: { name: string; floor: number | null } | null } = { target: null };
+  const found: {
+    target: { name: string; floor: number | null; storyNodeId: string | null; spaceNodeId: string | null } | null;
+  } = { target: null };
 
-  const walk = (n: SceneTreeNode, ctx: WalkCtx): void => {
+  const walk = (n: SceneTreeNode, ctx: WalkCtx & { storyNodeId: string | null; spaceNodeId: string | null }): void => {
     const type = String(n.type ?? '');
     const outId = nodeOutId(n);
     const label = nodeLabel(n);
+    const twinsId = String(n.twins_instance_id ?? '');
     let floor = ctx.floor;
+    let storyNodeId = ctx.storyNodeId;
     if (type === 'Story') {
       floor = parseFloorToken(String(n.twins_instance_name ?? n.name ?? '')) ?? ctx.floor;
+      storyNodeId = twinsId || null;
+      if (floor !== null && twinsId) storiesByFloor.set(floor, twinsId);
     }
-    if (outId && outId === targetOutId) found.target = { name: label, floor };
+    const spaceNodeId = type === 'Space' ? (twinsId || null) : ctx.spaceNodeId;
+    if (outId && outId === targetOutId) {
+      found.target = { name: label, floor, storyNodeId, spaceNodeId };
+    }
     if (outId && type === 'Door' && floor !== null) {
       doorsByFloor.set(floor, [...(doorsByFloor.get(floor) ?? []), outId]);
     }
     if (outId && type === 'Stairs' && floor !== null) {
       stairsByFloor.set(floor, [...(stairsByFloor.get(floor) ?? []), outId]);
     }
-    const next: WalkCtx = { floor, building: ctx.building };
+    const next = { floor, building: ctx.building, storyNodeId, spaceNodeId };
     for (const c of n.children ?? []) walk(c, next);
   };
-  walk(tree, { floor: null, building: '' });
+  walk(tree, { floor: null, building: '', storyNodeId: null, spaceNodeId: null });
   const target = found.target;
   if (!target) return null;
 
@@ -88,20 +104,29 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
     gateOutIds,
     gateFloor,
     stairCandidates,
+    gateStoryNodeId: gateFloor !== null ? storiesByFloor.get(gateFloor) ?? null : null,
+    targetSpaceNodeId: target.spaceNodeId,
+    targetStoryNodeId: target.storyNodeId,
   };
 }
 
 /** 已绘制导航路线 id 集(模块态;SceneViewBar「清除路线」用) */
 const drawnRoutes = new Set<string>();
+/** SDK 场内导航自动绘制的路线是否在场(clearSceneRoutes 统一清除) */
+let navPathDrawn = false;
 
 export function hasDrawnRoute(): boolean {
   return drawnRoutes.size > 0;
 }
 
-/** 清除全部导航路线 */
+/** 清除全部导航路线(含 SDK 场内导航自动绘制的步行路线) */
 export function clearSceneRoutes(runtime: SoonspaceRuntime | null): void {
   for (const id of drawnRoutes) runtime?.clearVirtualRoute(id);
   drawnRoutes.clear();
+  if (navPathDrawn) {
+    runtime?.deleteNavigationRoutes();
+    navPathDrawn = false;
+  }
 }
 
 /**
@@ -148,32 +173,15 @@ export function extractPathPoints(value: unknown): Array<{ x: number; y: number;
   return pts.length >= 2 ? pts : null;
 }
 
-/** 调 kgraph 最短路(BFF);不可达/未建图/请求失败 → null */
-async function fetchShortestPath(
-  sceneId: string,
-  source: { x: number; y: number; z: number },
-  target: { x: number; y: number; z: number },
-): Promise<Array<{ x: number; y: number; z: number }> | null> {
-  try {
-    const res = await fetch('/api/ustudio/shortest-path', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ sceneId, source, target }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { reachable?: boolean; path?: unknown; path_nodes?: unknown };
-    if (data?.reachable === false) return null;
-    return extractPathPoints(data?.path ?? data?.path_nodes);
-  } catch {
-    return null;
-  }
-}
-
 export interface DrawRouteResult {
   /** 失败原因(null 表示成功) */
   error?: string;
-  /** true=kgraph 真实路径;false=启发式示意折线(场景未建连通图) */
+  /** real=连通图真实路径(全路径或同层);false=启发式示意折线 */
   real?: boolean;
+  /** full=大门→目标全程;floor=目标层内(低区未建图);heuristic=示意 */
+  mode?: 'full' | 'floor' | 'heuristic';
+  /** 真实路径总距离(米) */
+  distanceM?: number;
 }
 
 /** 场景路线摘要(listSceneRoutes 条目) */
@@ -267,15 +275,40 @@ export function animateTruckAlongRoute(
 }
 
 /**
- * 绘制进攻路线(双路径策略):
- * 1. 优先 kgraph 最短路(平台空间图,含门/楼梯连通)——场景包建图后自动生效;
- * 2. 图不可达时回退启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用)。
- * 大门均取"1F 门群质心最远门",起点沿外向延伸 6m 呈现"从场外进入"。
+ * 绘制进攻路线(三层策略,自动升级):
+ * 1. SDK 场内导航 大门层 Story→目标 Space/Story(kgraph 连通图;图覆盖后即为
+ *    大门→目标全程真实路径,SDK 自动绘制步行路线);
+ * 2. 目标层 Story→目标 Space(同层真实路径——演示包图目前覆盖 3F-38F,1F/2F/B1F 未建);
+ * 3. 启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用)。
+ * 端点 node_id 一律用 Story/Space 的 twins id(门只能作图中间点,实测 101024)。
  */
 export async function drawAttackRoute(
   runtime: SoonspaceRuntime,
   plan: AttackRoutePlan,
 ): Promise<DrawRouteResult> {
+  // 策略 1:大门层 → 目标(全程;依赖低区建图)
+  if (plan.gateStoryNodeId) {
+    const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
+    if (endNode) {
+      const nav = await runtime.navigateWithinScene(plan.gateStoryNodeId, endNode);
+      if (nav.reachable) {
+        clearSceneRoutes(runtime);
+        navPathDrawn = true;
+        return { real: true, mode: 'full', distanceM: nav.totalDistance };
+      }
+    }
+  }
+  // 策略 2:目标层 → 目标(同层真实路径,当前图覆盖范围内可用)
+  if (plan.targetStoryNodeId && plan.targetSpaceNodeId) {
+    const nav = await runtime.navigateWithinScene(plan.targetStoryNodeId, plan.targetSpaceNodeId);
+    if (nav.reachable) {
+      clearSceneRoutes(runtime);
+      navPathDrawn = true;
+      return { real: true, mode: 'floor', distanceM: nav.totalDistance };
+    }
+  }
+
+  // 策略 3:启发式折线
   const pos = (outId: string | null): { x: number; y: number; z: number } | null =>
     outId ? runtime.getObjectWorldPosition(outId) : null;
 
@@ -294,7 +327,7 @@ export async function drawAttackRoute(
   const gatePts = plan.gateOutIds
     .map((outId) => ({ outId, p: pos(outId) }))
     .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
-  let gatePos: { x: number; y: number; z: number } | null = null;
+  let prev: { x: number; y: number; z: number } | null = null;
   if (gatePts.length > 0) {
     const centroid = gatePts.reduce(
       (acc, g) => ({ x: acc.x + g.p.x / gatePts.length, y: acc.y + g.p.y / gatePts.length, z: acc.z + g.p.z / gatePts.length }),
@@ -304,7 +337,7 @@ export async function drawAttackRoute(
       const d = (q: { x: number; z: number }): number => Math.hypot(q.x - centroid.x, q.z - centroid.z);
       return !best || d(g.p) > d(best.p) ? g : best;
     }, gatePts[0]);
-    gatePos = gate.p;
+    prev = gate.p;
     // 场外起点:沿"质心→门"外向延伸 6m
     const dx = gate.p.x - centroid.x;
     const dz = gate.p.z - centroid.z;
@@ -316,35 +349,21 @@ export async function drawAttackRoute(
     pushPoint(gate.p);
   }
 
-  // 策略 1:kgraph 真实路径(大门→目标整体寻路,图内含门/楼梯连通)
-  let real = false;
-  if (gatePos) {
-    const pts = await fetchShortestPath(runtime.getSceneId(), gatePos, targetPos);
-    if (pts) {
-      real = true;
-      for (const p of pts) pushPoint(p);
+  for (const { outIds } of plan.stairCandidates) {
+    let best: { outId: string; p: { x: number; y: number; z: number } } | null = null;
+    let bestD = Number.POSITIVE_INFINITY;
+    for (const outId of outIds) {
+      const p = pos(outId);
+      if (!p) continue;
+      const d = prev ? Math.hypot(p.x - prev.x, p.z - prev.z) : Number.POSITIVE_INFINITY;
+      if (!best || d < bestD) {
+        best = { outId, p };
+        bestD = d;
+      }
     }
-  }
-
-  // 策略 2:启发式折线(逐层最近邻楼梯链;水平距离选同一楼梯间)
-  if (!real) {
-    let prev = gatePos;
-    for (const { outIds } of plan.stairCandidates) {
-      let best: { outId: string; p: { x: number; y: number; z: number } } | null = null;
-      let bestD = Number.POSITIVE_INFINITY;
-      for (const outId of outIds) {
-        const p = pos(outId);
-        if (!p) continue;
-        const d = prev ? Math.hypot(p.x - prev.x, p.z - prev.z) : Number.POSITIVE_INFINITY;
-        if (!best || d < bestD) {
-          best = { outId, p };
-          bestD = d;
-        }
-      }
-      if (best) {
-        pushPoint(best.p);
-        prev = best.p;
-      }
+    if (best) {
+      pushPoint(best.p);
+      prev = best.p;
     }
   }
   pushPoint(targetPos);
@@ -367,5 +386,5 @@ export async function drawAttackRoute(
     return { error: '路线绘制失败(SDK 不支持)' };
   }
   drawnRoutes.add(ATTACK_ROUTE_ID);
-  return { real };
+  return { real: false, mode: 'heuristic' };
 }

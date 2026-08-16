@@ -157,11 +157,10 @@ export default function SceneObjectInfoCard() {
         showToast(r.error);
         return;
       }
-      showToast(
-        r.real
-          ? `真实路径已绘制(空间图):大门 → ${card.node.name}`
-          : `示意路线已绘制(场景未建空间连通图):大门 → 楼梯 → ${card.node.name}`,
-      );
+      const dist = typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : '';
+      if (r.mode === 'full') showToast(`真实路径已绘制(大门 → ${card.node.name})${dist}`);
+      else if (r.mode === 'floor') showToast(`真实路径已绘制(${plan.targetFloor ?? ''}层内 → ${card.node.name};低区连通图未建)${dist}`);
+      else showToast(`示意路线(场景连通图未覆盖):大门 → 楼梯 → ${card.node.name}`);
     });
   };
 

@@ -26,7 +26,9 @@ function fakeTree(): SceneTreeNode {
       ]),
       node('st-3', '3F', 'Story', [
         node('stair-3-a', '楼梯_3F_0', 'Stairs'),
-        node('dev-3', '室内消火栓3F', 'IndoorFireHydrant'),
+        node('space-3', '房间', 'Space', [
+          node('dev-3', '室内消火栓3F', 'IndoorFireHydrant'),
+        ]),
       ]),
     ]),
     node('oh-out', '室外消火栓', 'OutdoorFireHydrant'),
@@ -34,7 +36,7 @@ function fakeTree(): SceneTreeNode {
 }
 
 describe('planAttackRoute', () => {
-  it('地上目标:大门候选=最低地上层全部门(周边门绘制时选);途经楼层含两端且升序', () => {
+  it('地上目标:大门候选=最低地上层全部门(周边门绘制时选);途经楼层含两端且升序;图节点 twins id 收集', () => {
     const plan = planAttackRoute(fakeTree(), 'dev-3');
     expect(plan).not.toBeNull();
     expect(plan!.targetFloor).toBe(3);
@@ -43,6 +45,10 @@ describe('planAttackRoute', () => {
     expect(plan!.gateOutIds).toEqual(['door-1-a', 'door-1-b']);
     expect(plan!.stairCandidates.map((s) => s.floor)).toEqual([1, 2, 3]);
     expect(plan!.stairCandidates[0]?.outIds).toEqual(['stair-1-a', 'stair-1-b']);
+    // kgraph 图节点:大门层/目标层 Story 与目标最近 Space 祖先的 twins id
+    expect(plan!.gateStoryNodeId).toBe('tw-st-1');
+    expect(plan!.targetStoryNodeId).toBe('tw-st-3');
+    expect(plan!.targetSpaceNodeId).toBe('tw-space-3');
   });
 
   it('地下目标:途经楼层降序(1F→B1F);目标楼层为负', () => {
