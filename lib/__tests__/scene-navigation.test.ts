@@ -34,13 +34,13 @@ function fakeTree(): SceneTreeNode {
 }
 
 describe('planAttackRoute', () => {
-  it('地上目标:大门=最低地上层第一个门;途经楼层含两端且升序', () => {
+  it('地上目标:大门候选=最低地上层全部门(周边门绘制时选);途经楼层含两端且升序', () => {
     const plan = planAttackRoute(fakeTree(), 'dev-3');
     expect(plan).not.toBeNull();
     expect(plan!.targetFloor).toBe(3);
     expect(plan!.targetName).toBe('室内消火栓3F');
-    expect(plan!.gateOutId).toBe('door-1-a');
     expect(plan!.gateFloor).toBe(1);
+    expect(plan!.gateOutIds).toEqual(['door-1-a', 'door-1-b']);
     expect(plan!.stairCandidates.map((s) => s.floor)).toEqual([1, 2, 3]);
     expect(plan!.stairCandidates[0]?.outIds).toEqual(['stair-1-a', 'stair-1-b']);
   });
@@ -51,14 +51,14 @@ describe('planAttackRoute', () => {
     expect(plan!.stairCandidates.map((s) => s.floor)).toEqual([1, -1]);
   });
 
-  it('大门层目标(无爬升)与无楼层归属目标(室外):无楼梯段', () => {
+  it('大门层目标(无爬升)与无楼层归属目标(室外):无楼梯段,大门候选仍可用', () => {
     const same = planAttackRoute(fakeTree(), 'stair-1-a');
     expect(same!.targetFloor).toBe(1);
     expect(same!.stairCandidates).toEqual([]);
     const outdoor = planAttackRoute(fakeTree(), 'oh-out');
     expect(outdoor!.targetFloor).toBeNull();
     expect(outdoor!.stairCandidates).toEqual([]);
-    expect(outdoor!.gateOutId).toBe('door-1-a');
+    expect(outdoor!.gateOutIds).toEqual(['door-1-a', 'door-1-b']);
   });
 
   it('目标不在树中 → null;空入参安全', () => {

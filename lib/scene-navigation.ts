@@ -13,8 +13,8 @@ export interface AttackRoutePlan {
   targetName: string;
   /** 目标所在楼层号(地下为负;null=未归属楼层,仅大门→目标两点直连) */
   targetFloor: number | null;
-  /** 入口大门(最低地上层第一个门;null=未找到,路线从首个楼梯点开始) */
-  gateOutId: string | null;
+  /** 入口大门候选(最低地上层全部门;绘制时取离门群质心最远者=周边出入口,而非树序首个内门) */
+  gateOutIds: string[];
   gateFloor: number | null;
   /** 途经楼层(含两端,升序或降序)各自的楼梯候选 */
   stairCandidates: Array<{ floor: number; outIds: string[] }>;
@@ -66,10 +66,10 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
   const target = found.target;
   if (!target) return null;
 
-  // 大门:最低地上层的第一个门
+  // 大门候选:最低地上层的全部门(绘制时按"离门群质心最远"选周边出入口)
   const aboveGround = [...doorsByFloor.keys()].filter((f) => f > 0).sort((a, b) => a - b);
   const gateFloor = aboveGround[0] ?? null;
-  const gateOutId = gateFloor !== null ? doorsByFloor.get(gateFloor)?.[0] ?? null : null;
+  const gateOutIds = gateFloor !== null ? doorsByFloor.get(gateFloor) ?? [] : [];
 
   // 途经楼层:大门层↔目标层之间(含两端)存在楼梯的楼层,按行进方向排序
   const stairCandidates: Array<{ floor: number; outIds: string[] }> = [];
@@ -85,7 +85,7 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
     targetOutId,
     targetName: target.name,
     targetFloor: target.floor,
-    gateOutId,
+    gateOutIds,
     gateFloor,
     stairCandidates,
   };
@@ -120,8 +120,38 @@ export async function drawAttackRoute(
   if (!targetPos) return '无法定位目标对象';
 
   const path: Array<{ position: { x: number; y: number; z: number } }> = [];
-  let prev = pos(plan.gateOutId);
-  if (prev) path.push({ position: prev });
+
+  // 大门 = 离 1F 门群质心最远的门(周边出入口;树序首个往往是内门);起点再沿
+  // 外向延伸 6m,让路线呈现"从场外进入大门"而不是从墙体里冒出来
+  const gatePts = plan.gateOutIds
+    .map((outId) => ({ outId, p: pos(outId) }))
+    .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
+  let prev: { x: number; y: number; z: number } | null = null;
+  if (gatePts.length > 0) {
+    const centroid = gatePts.reduce(
+      (acc, g) => ({ x: acc.x + g.p.x / gatePts.length, y: acc.y + g.p.y / gatePts.length, z: acc.z + g.p.z / gatePts.length }),
+      { x: 0, y: 0, z: 0 },
+    );
+    const gate = gatePts.reduce((best, g) => {
+      const d = (q: { x: number; z: number }): number => Math.hypot(q.x - centroid.x, q.z - centroid.z);
+      return !best || d(g.p) > d(best.p) ? g : best;
+    }, gatePts[0]);
+    const dx = gate.p.x - centroid.x;
+    const dz = gate.p.z - centroid.z;
+    const len = Math.hypot(dx, dz);
+    const ENTRY_EXTEND_M = 6;
+    if (len > 0.01) {
+      path.push({
+        position: {
+          x: gate.p.x + (dx / len) * ENTRY_EXTEND_M,
+          y: gate.p.y,
+          z: gate.p.z + (dz / len) * ENTRY_EXTEND_M,
+        },
+      });
+    }
+    path.push({ position: gate.p });
+    prev = gate.p;
+  }
 
   for (const { outIds } of plan.stairCandidates) {
     let best: { outId: string; p: { x: number; y: number; z: number } } | null = null;

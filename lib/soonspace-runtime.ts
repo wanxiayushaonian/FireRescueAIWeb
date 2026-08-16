@@ -699,18 +699,38 @@ export class SoonspaceRuntime {
     return this.sdk?.getObjectById?.(id) ?? this.getSsp()?.getObjectById?.(id) ?? null;
   }
 
-  /** 对象世界坐标(包围盒中心,与 flyToObject 同基准);读 three 不改状态(AGENTS.md 灰色区许可)。 */
+  /**
+   * 对象世界坐标(包围盒中心):几何包围盒中心是**对象局部空间**,obj.position 是
+   **父节点空间**(soonspacejs 无 box3/worldPosition 出口,flyToObj 内部自算世界盒),
+   * 故统一经 matrixWorld 列主序 4x4 手工变换(纯读不改引擎状态,AGENTS.md 灰色区许可)。
+   */
   getObjectWorldPosition(id: string): { x: number; y: number; z: number } | null {
     const obj = this.getSsp()?.getObjectById?.(id) as AnyObject | null | undefined;
     if (!obj) return null;
     try {
-      const box = (obj.box3 ?? obj.geometry?.boundingBox) as { center?: { x: number; y: number; z: number } } | undefined;
+      const m = (obj.matrixWorld as AnyObject | undefined)?.elements as number[] | undefined;
+      const box = obj.geometry?.boundingBox as { center?: { x: number; y: number; z: number } } | undefined;
       const c = box?.center;
-      if (c && Number.isFinite(c.x) && Number.isFinite(c.y) && Number.isFinite(c.z)) {
-        return { x: c.x, y: c.y, z: c.z };
+      if (Array.isArray(m) && m.length >= 16 && c && Number.isFinite(c.x)) {
+        // 对象局部 → 世界(完整 3x3 + 平移,含缩放/旋转/剪切)
+        return {
+          x: m[0] * c.x + m[4] * c.y + m[8] * c.z + m[12],
+          y: m[1] * c.x + m[5] * c.y + m[9] * c.z + m[13],
+          z: m[2] * c.x + m[6] * c.y + m[10] * c.z + m[14],
+        };
       }
+      // 无几何盒:position 是父空间 → 经父级世界矩阵变换
       const p = obj.position as { x: number; y: number; z: number } | undefined;
-      if (p && Number.isFinite(p.x)) return { x: p.x, y: p.y, z: p.z };
+      if (p && Number.isFinite(p.x)) {
+        const pm = (obj.parent as AnyObject | undefined)?.matrixWorld as { elements?: number[] } | undefined;
+        const q = Array.isArray(pm?.elements) ? pm!.elements : null;
+        if (!q) return { x: p.x, y: p.y, z: p.z };
+        return {
+          x: q[0] * p.x + q[4] * p.y + q[8] * p.z + q[12],
+          y: q[1] * p.x + q[5] * p.y + q[9] * p.z + q[13],
+          z: q[2] * p.x + q[6] * p.y + q[10] * p.z + q[14],
+        };
+      }
     } catch {
       /* 位置不可得 */
     }
