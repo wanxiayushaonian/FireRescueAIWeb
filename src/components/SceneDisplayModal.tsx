@@ -27,6 +27,9 @@ import {
   ArrowUp as StairsIcon,
   LayoutGrid,
   Building2,
+  Flame as FlameIcon,
+  Trees,
+  MapPin,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useScene } from './SceneProvider';
@@ -54,7 +57,9 @@ const GROUP_ICON: Record<string, LucideIcon> = {
   doors: DoorOpen,
   stairs: StairsIcon,
   spaces: LayoutGrid,
+  outdoorHydrant: Droplets,
   vehicles: Truck,
+  sceneAccess: MapPin,
   buildingStructure: Building2,
 };
 
@@ -81,6 +86,8 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
   );
   const [activeLevel, setActiveLevel] = useState<Level>('whole');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['hydrantSupply']));
+  // 消防设施大目录展开态(父级总开关)
+  const [fireDirOpen, setFireDirOpen] = useState(true);
   // 顶层页签:内容显隐(开关) / 场景包内容(数据解析展示)
   const [topTab, setTopTab] = useState<'visibility' | 'pack'>('visibility');
 
@@ -183,9 +190,9 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
           ))}
         </div>
 
-        {/* 当前 tab 的类别开关 */}
-        <div className="space-y-1.5">
-          {HIDABLE_CATEGORY_GROUPS.map((group) => {
+        {/* 当前 tab 的类别开关:室内/室外语义分区,消防设施为可统一隐藏的大目录 */}
+        {(() => {
+          const renderGroup = (group: (typeof HIDABLE_CATEGORY_GROUPS)[number], nested = false): React.ReactNode => {
             const types = group.types.map((t) => t.type);
             const allVisible = types.every((t) => isVisible(t));
             const isMulti = group.types.length > 1;
@@ -194,7 +201,7 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
             return (
               <div key={group.key} className="rounded-md border border-line/60 bg-bg-panel-2/40">
                 {/* 大类行 */}
-                <div className="flex items-center gap-2 px-3 py-2">
+                <div className={`flex items-center gap-2 px-3 py-2 ${nested ? 'py-1.5' : ''}`}>
                   {isMulti ? (
                     <button
                       onClick={() => toggleGroup(group.key)}
@@ -207,7 +214,7 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
                     <span className="w-3.5" />
                   )}
                   <GroupIcon className="h-3.5 w-3.5 text-text-3" />
-                  <span className="text-[13px] font-medium text-text-1">{group.label}</span>
+                  <span className={`font-medium text-text-1 ${nested ? 'text-[12px]' : 'text-[13px]'}`}>{group.label}</span>
                   <span className="ml-auto">
                     <Toggle on={allVisible} onClick={() => setGroup(types, !allVisible)} />
                   </span>
@@ -231,8 +238,64 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
                 )}
               </div>
             );
-          })}
-        </div>
+          };
+
+          const fireGroups = HIDABLE_CATEGORY_GROUPS.filter((g) => g.fireSystem);
+          const fireTypes = fireGroups.flatMap((g) => g.types.map((t) => t.type));
+          const fireAllVisible = fireTypes.every((t) => isVisible(t));
+          const outdoorGroups = HIDABLE_CATEGORY_GROUPS.filter((g) => g.zone === 'outdoor');
+          const indoorOthers = HIDABLE_CATEGORY_GROUPS.filter((g) => !g.fireSystem && g.zone !== 'outdoor');
+          const zoneHeader = (label: string): React.ReactNode => (
+            <div className="flex items-center gap-2 pt-1 text-[10px] font-semibold tracking-widest text-text-3">
+              <span className="h-px flex-1 bg-line" />
+              {label}
+              <span className="h-px flex-1 bg-line" />
+            </div>
+          );
+
+          return (
+            <div className="space-y-1.5">
+              {zoneHeader('室 内')}
+
+              {/* 消防设施大目录:父级总开关统一隐藏,内含各专业系统子组 */}
+              <div className="rounded-md border border-cyan/30 bg-cyan/5">
+                <div className="flex items-center gap-2 px-3 py-2">
+                  <button
+                    onClick={() => setFireDirOpen((v) => !v)}
+                    className="text-text-3 transition hover:text-text-1"
+                    title={fireDirOpen ? '收起' : '展开'}
+                  >
+                    <ChevronDown className={`h-3.5 w-3.5 transition-transform ${fireDirOpen ? 'rotate-0' : '-rotate-90'}`} />
+                  </button>
+                  <FlameIcon className="h-3.5 w-3.5 text-orange" />
+                  <span className="text-[13px] font-semibold text-text-1">消防设施</span>
+                  <span className="text-[10px] text-text-3">{fireGroups.length} 个系统 · {fireTypes.length} 类</span>
+                  <span className="ml-auto">
+                    <Toggle on={fireAllVisible} onClick={() => setGroup(fireTypes, !fireAllVisible)} />
+                  </span>
+                </div>
+                {fireDirOpen && (
+                  <div className="space-y-1 border-t border-line/40 p-1.5">
+                    {fireGroups.map((g) => renderGroup(g, true))}
+                  </div>
+                )}
+              </div>
+
+              {indoorOthers.map((g) => renderGroup(g))}
+
+              {zoneHeader('室 外')}
+              {outdoorGroups.map((g) => renderGroup(g))}
+
+              {/* 周边环境:不在语义树内,无独立开关 */}
+              <div className="flex items-start gap-2 rounded-md border border-line/40 bg-bg-panel-2/20 px-3 py-2">
+                <Trees className="mt-0.5 h-3.5 w-3.5 shrink-0 text-text-3" />
+                <span className="text-[10px] leading-relaxed text-text-3">
+                  周边环境(草地 / 道路 / 周边建筑)属环境网格,不在语义树内——随「建筑结构」组整体显隐,暂不支持独立开关
+                </span>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* 底部:重置当前层级 */}
         <div className="flex items-center justify-between border-t border-line pt-3">

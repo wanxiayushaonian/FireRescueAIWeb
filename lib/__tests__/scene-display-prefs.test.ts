@@ -72,7 +72,7 @@ describe('defaultVisibleByLevel 层级默认(与 level-policy 渲染实际对齐
     expect(Object.values(d).every(Boolean)).toBe(true);
   });
 
-  it('whole/multi:消防系统类(含消控室设备)/门/空间默认藏,车辆/楼梯/建筑结构保留', () => {
+  it('whole/multi:消防系统类(含消控室设备)/门/空间默认藏,室外区(消火栓/车辆/出入口)/楼梯/结构保留', () => {
     for (const lvl of ['whole', 'multi'] as const) {
       const d = defaultVisibleByLevel(lvl);
       for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(false);
@@ -82,8 +82,11 @@ describe('defaultVisibleByLevel 层级默认(与 level-policy 渲染实际对齐
       expect(d.Stairs).toBe(true);
       expect(d.Wall).toBe(true);
       expect(d.Story).toBe(true);
-      expect(d.SmokeExhaustFireTruck).toBe(true); // 车辆=室外装备默认显
+      // 室外区:室外装备默认显
+      expect(d.OutdoorFireHydrant).toBe(true);
+      expect(d.SmokeExhaustFireTruck).toBe(true);
       expect(d.RemoteWaterSupplyFireTruck).toBe(true);
+      expect(d.SceneInOut).toBe(true);
     }
   });
 });

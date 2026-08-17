@@ -15,11 +15,14 @@ export interface CategoryGroup {
   label: string;
   /** 该大类下的细分类型 */
   types: CategoryTypeDef[];
-  /** 消防系统类(含消控室设备):whole/multi 层级默认隐藏(见 defaultVisibleByLevel);车辆等室外装备不标 */
+  /** 消防系统类:归属「消防设施」大目录(父级总开关统一隐藏);whole/multi 默认隐藏 */
   fireSystem?: boolean;
+  /** 语义空间归属:outdoor=室外区(默认显示);缺省=室内 */
+  zone?: 'outdoor';
 }
 
-/** 分组对齐平台本体分类树(实测 category_name:消火栓系统/火灾探测报警系统/防排烟系统/疏散逃生设施/消防载具…) */
+/** 分组对齐平台本体分类树 + 语义空间归属(室内/室外)。
+ *  注意:草地/道路/周边底模不在语义树内(CPS 环境网格),只能随建筑结构模式整体简化,无独立开关。 */
 export const HIDABLE_CATEGORY_GROUPS: CategoryGroup[] = [
   {
     key: 'hydrantSupply',
@@ -29,7 +32,6 @@ export const HIDABLE_CATEGORY_GROUPS: CategoryGroup[] = [
       { type: 'IndoorFireHydrant', label: '室内消火栓' },
       { type: 'PumpAdapter', label: '水泵接合器' },
       { type: 'Shuixiangshuibeng', label: '水箱水泵' },
-      { type: 'OutdoorFireHydrant', label: '室外消火栓' },
     ],
   },
   {
@@ -85,12 +87,25 @@ export const HIDABLE_CATEGORY_GROUPS: CategoryGroup[] = [
   { key: 'stairs', label: '楼梯', types: [{ type: 'Stairs', label: '楼梯' }] },
   { key: 'spaces', label: '空间', types: [{ type: 'Space', label: '空间' }] },
   {
+    key: 'outdoorHydrant',
+    label: '室外消火栓',
+    zone: 'outdoor',
+    types: [{ type: 'OutdoorFireHydrant', label: '室外消火栓' }],
+  },
+  {
     key: 'vehicles',
     label: '消防车辆',
+    zone: 'outdoor',
     types: [
       { type: 'SmokeExhaustFireTruck', label: '排烟消防车' },
       { type: 'RemoteWaterSupplyFireTruck', label: '远程供水消防车' },
     ],
+  },
+  {
+    key: 'sceneAccess',
+    label: '出入口',
+    zone: 'outdoor',
+    types: [{ type: 'SceneInOut', label: '场景出入口' }],
   },
   {
     key: 'buildingStructure',
