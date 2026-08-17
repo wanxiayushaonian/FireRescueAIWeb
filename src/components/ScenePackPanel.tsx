@@ -38,7 +38,7 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
   const entrances = inv.siteLevel.filter((s) => s.type === 'SceneInOut');
 
   return (
-    <div className="space-y-3">
+    <div className="w-full min-w-0 space-y-3">
       {/* 总览 */}
       <div className="grid grid-cols-4 gap-1.5">
         {[
@@ -60,7 +60,7 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
           <Boxes className="h-3.5 w-3.5 text-cyan" />
           类型清单(点击可跳显隐开关)
         </div>
-        <div className="max-h-44 overflow-y-auto rounded-md border border-line/60 [scrollbar-width:thin]">
+        <div className="max-h-44 min-w-0 overflow-y-auto overflow-x-hidden rounded-md border border-line/60 [scrollbar-width:thin]">
           {inv.types.map((t) => (
             <button
               key={t.type}
@@ -85,7 +85,7 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
           <MapPin className="h-3.5 w-3.5 text-cyan" />
           楼层内容{median > 0 && <span className="text-[9px] text-text-3">标准层中位 {median} 节点,偏离层高亮</span>}
         </div>
-        <div className="max-h-40 overflow-y-auto rounded-md border border-line/60 [scrollbar-width:thin]">
+        <div className="max-h-40 min-w-0 overflow-y-auto overflow-x-hidden rounded-md border border-line/60 [scrollbar-width:thin]">
           {inv.stories.map((s) => {
             const anomaly = isAnomalyStory(s, median);
             return (
@@ -124,10 +124,10 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
         </div>
         <div className="space-y-1 rounded-md border border-line/60 bg-bg-panel-2/40 p-2 text-[11px]">
           {entrances.length > 0 && (
-            <div className="flex items-center gap-1.5 text-text-1">
-              <DoorOpen className="h-3.5 w-3.5 text-orange" />
-              {entrances.map((e) => e.name).join(' / ')}
-              <span className="text-[9px] text-text-3">出入口 · 带 WGS84 坐标(场外导航起点)</span>
+            <div className="flex flex-wrap items-center gap-1.5 text-text-1">
+              <DoorOpen className="h-3.5 w-3.5 shrink-0 text-orange" />
+              <span className="truncate">{entrances.map((e) => e.name).join(' / ')}</span>
+              <span className="min-w-0 flex-1 truncate text-[9px] text-text-3">出入口 · 带 WGS84 坐标(场外导航起点)</span>
             </div>
           )}
           {[...siteByType.entries()]

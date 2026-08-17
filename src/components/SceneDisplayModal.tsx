@@ -121,7 +121,9 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto border-line bg-bg-panel text-text-1 sm:max-w-md">
+      <DialogContent
+        className={`max-h-[85vh] overflow-y-auto border-line bg-bg-panel text-text-1 ${topTab === 'pack' ? 'sm:max-w-lg' : 'sm:max-w-md'}`}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-text-1">
             <Eye className="h-4 w-4 text-cyan" />
