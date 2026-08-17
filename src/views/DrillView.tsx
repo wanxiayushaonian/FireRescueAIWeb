@@ -16,14 +16,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { RealSceneView } from '@/components/RealSceneView';
 import { useScene } from '@/components/SceneProvider';
+import { showToast } from '@/components/Toast';
 import { EventTreeOverlay } from '@/drill/EventTreeOverlay';
 import { DrillToolbar } from '@/drill/DrillToolbar';
 import { DrillStatusPanel } from '@/drill/DrillStatusPanel';
 import { useTimeline } from '@/drill/hooks/use-timeline';
 import { useAgentRunner } from '@/drill/hooks/use-agent-runner';
 import { EventBus, type DrillEvent } from '@/lib/drill/event-bus';
-import { DisasterState, type DisasterStatus } from '@/lib/drill/disaster-state';
+import { DisasterState, type DisasterStatus, type DisasterScenario } from '@/lib/drill/disaster-state';
 import { DrillRecorder } from '@/lib/drill/drill-recorder';
+import DrillScenarioPanel from '@/components/drill/DrillScenarioPanel';
+import type { ScenarioApplyResult } from '@/components/drill/DrillScenarioPanel';
 import {
   DEFAULT_SCENARIO_ID,
   getScenario,
@@ -103,6 +106,18 @@ export default function DrillView() {
   const activeScenario: DrillScenarioDef =
     getScenario(selectedScenarioId) ?? getDefaultScenario();
 
+  // ---- 自定义灾情参数(ref 4.1 手动设定/随机/按建筑生成;应用后重建演练) ----
+  const [customScenario, setCustomScenario] = useState<DisasterScenario | null>(null);
+  const [customBriefing, setCustomBriefing] = useState<string | null>(null);
+  const handleApplyScenario = (r: ScenarioApplyResult): void => {
+    setCustomScenario(r.scenario);
+    setCustomBriefing(r.briefing);
+    showToast('灾情参数已应用,启动演练时生效');
+  };
+  // 有效灾情 = 自定义 ?? 剧本默认
+  const effectiveScenario = customScenario ?? activeScenario.scenario;
+  const effectiveBriefing = customBriefing ?? activeScenario.briefing;
+
   // ---- Timeline + AgentRunner ----
   const { status, speed, clock, start, pause, resume, setSpeed, stop } = useTimeline();
 
@@ -162,7 +177,7 @@ export default function DrillView() {
     // 重置(支持反复启动)
     bus.clear();
     recorder.clear();
-    state.init(activeScenario.scenario);
+    state.init(effectiveScenario);
     bus.seed(activeScenario.seedEvents);
     lastTickRef.current = -1;
 
@@ -178,7 +193,7 @@ export default function DrillView() {
     // 触发指挥 agent(异步 fire-and-forget,不阻塞 tick)
     // TODO(6.6): runAgent 失败仅 logger.warn,UI 无感知;后续注入 status/execution
     // 事件到 bus/recorder 让操作员看到「agent 触发失败」。
-    void runner.triggerCommander(activeScenario.briefing);
+    void runner.triggerCommander(effectiveBriefing);
   };
 
   // ---- 停止 ----
@@ -207,6 +222,14 @@ export default function DrillView() {
           onSetSpeed={setSpeed}
           onStop={handleStop}
         />
+        {/* 灾情参数条(ref 4.1 手动/随机/按建筑生成);运行中禁用 */}
+        <div className="mt-1">
+          <DrillScenarioPanel
+            baseScenario={activeScenario.scenario}
+            disabled={status !== 'idle'}
+            onApply={handleApplyScenario}
+          />
+        </div>
       </div>
       {/* 顶部工具栏需恢复 pointer-events(父层 pointer-events-none) */}
 

@@ -102,6 +102,10 @@ export interface DisasterScenario {
   readonly buildingStructure: BuildingStructure;
   /** 初始火势等级(默认 1;0=未起火)。 */
   readonly initialFireLevel?: number;
+  /** 着火楼层(信息性/briefing;如 "5F"/"B1";由灾情参数面板或按建筑生成填充)。 */
+  readonly fireFloor?: string;
+  /** 着火部位名(信息性/briefing;如 "3F 后厨")。 */
+  readonly fireLocation?: string;
 }
 
 /** 态势快照(给 query_scene_state MCP + agent forwardedProps;只读视图)。 */
