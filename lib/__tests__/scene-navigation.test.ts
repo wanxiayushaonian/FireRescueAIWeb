@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { planAttackRoute, extractPathPoints } from '../scene-navigation';
+import {
+  planAttackRoute,
+  extractPathPoints,
+  navigateBetween,
+  navigateFromOutside,
+  clearSceneRoutes,
+  type NavPoint,
+} from '../scene-navigation';
 import type { SceneTreeNode } from '../ustudio';
+import type { SoonspaceRuntime } from '../soonspace-runtime';
 
 /** 模拟场景树:Site → Building → Story(B1F/1F/2F/3F),1F 有门,各层有楼梯,3F/B1F 有目标设备 */
 function fakeTree(): SceneTreeNode {
@@ -119,5 +127,127 @@ describe('extractPathPoints(kgraph 返回容错解析)', () => {
       { x: 1, y: 2, z: 3 },
       { x: 4, y: 5, z: 6 },
     ]);
+  });
+});
+
+// ─── 两点导航(3D 打点连通)合规化:走 SDK navigateWithinScene + path_id 精确清理 ───
+interface FakeCall {
+  op: string;
+  args?: unknown;
+}
+
+function makeRuntime(overrides?: {
+  navigateResult?: unknown;
+  externalResult?: unknown;
+  position?: { x: number; y: number; z: number } | null;
+}) {
+  const calls: FakeCall[] = [];
+  const runtime = {
+    getSceneId: () => 'scene-1',
+    getObjectWorldPosition: (id: string) =>
+      overrides?.position === null ? null : overrides?.position ?? { x: 1, y: 2, z: 3 },
+    navigateWithinScene: async (p: unknown) => {
+      calls.push({ op: 'navigateWithinScene', args: p });
+      return overrides?.navigateResult ?? { reachable: true, path_id: 'path-9', message: 'ok', total_distance: 42 };
+    },
+    navigateFromExternal: async (p: unknown) => {
+      calls.push({ op: 'navigateFromExternal', args: p });
+      return overrides?.externalResult ?? { reachable: true, path_id: 'path-ext-7', message: 'ok', total_distance: 1285.3 };
+    },
+    drawVirtualRoute: async (detail: unknown) => {
+      calls.push({ op: 'drawVirtualRoute', args: detail });
+      return {};
+    },
+    clearVirtualRoute: (id: string) => calls.push({ op: 'clearVirtualRoute', args: id }),
+    deleteNavigationRoute: (id: string) => calls.push({ op: 'deleteNavigationRoute', args: id }),
+  };
+  return { runtime: runtime as unknown as SoonspaceRuntime, calls };
+}
+
+describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
+
+  const start: NavPoint = { name: '起点', nodeId: 'tw-space-a', outId: 'out-a' };
+  const end: NavPoint = { name: '终点', nodeId: 'tw-space-b', outId: 'out-b' };
+
+  it('走 SDK navigateWithinScene(source/target node_id),不再直请求导航接口;POI 用 drawVirtualRoute 叠加', async () => {
+    const { runtime, calls } = makeRuntime();
+    const r = await navigateBetween(runtime, start, end);
+
+    expect(r).toEqual({ real: true, mode: 'full', distanceM: 42 });
+    expect(calls.some((c) => c.op === 'navigateWithinScene')).toBe(true);
+    expect(calls.find((c) => c.op === 'navigateWithinScene')?.args).toEqual({
+      source: { node_id: 'tw-space-a' },
+      target: { node_id: 'tw-space-b' },
+    }); // scene_id 由 runtime 包装层注入(fake 直接替换方法故不含)
+    // POI 叠加:drawVirtualRoute 只传起终点坐标(path 空数组,不重复画线)
+    const poiCall = calls.find((c) => c.op === 'drawVirtualRoute')?.args as Record<string, unknown>;
+    expect(poiCall).toBeDefined();
+    expect(poiCall.path).toEqual([]);
+    expect(poiCall.route_id).toBe('nav-attack');
+    expect(poiCall.start_coordinate).toEqual({ x: 1, y: 2, z: 3 });
+    expect(poiCall.end_coordinate).toEqual({ x: 1, y: 2, z: 3 });
+  });
+
+  it('打点不带 outId(如 2D 通道)时跳过 POI 叠加,导航线照常', async () => {
+    const { runtime, calls } = makeRuntime();
+    const r = await navigateBetween(runtime, { name: 'A', nodeId: 'n-a' }, { name: 'B', nodeId: 'n-b' });
+    expect(r?.real).toBe(true);
+    expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
+    expect(calls.some((c) => c.op === 'navigateWithinScene')).toBe(true);
+  });
+
+  it('SDK 不可达 → navigateBetween 返回错误信息(不画任何东西)', async () => {
+    const { runtime, calls } = makeRuntime({
+      navigateResult: { reachable: false, path_id: null, message: '不可达' },
+    });
+    const r = await navigateBetween(runtime, start, end);
+    expect(r.error).toContain('不可达');
+    expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
+  });
+
+  it('clearSceneRoutes 按 path_id 精确清理 SDK 导航线(非无参 delete 全部)', async () => {
+    const { runtime, calls } = makeRuntime();
+    await navigateBetween(runtime, start, end); // 登记 path-9 + POI 虚拟路线
+    calls.length = 0;
+    clearSceneRoutes(runtime);
+    expect(calls).toContainEqual({ op: 'deleteNavigationRoute', args: 'path-9' });
+    expect(calls).toContainEqual({ op: 'clearVirtualRoute', args: 'nav-attack' });
+    // 绝不调用无参删除(会误伤平台 agent 的导航线)
+    expect(calls.some((c) => c.op === 'deleteNavigationRoute' && c.args === undefined)).toBe(false);
+  });
+});
+
+// ─── 场外到场内导航:navigateFromOutside(SDK navigateFromExternal + path_id 统一注册) ───
+describe('navigateFromOutside(场外进场)', () => {
+  const src = { lon: 116.39, lat: 39.91, name: '广场21D' };
+
+  it('走 SDK navigateFromExternal(source WGS84 + target node_id),返回 mode=external 与距离', async () => {
+    const { runtime, calls } = makeRuntime();
+    const r = await navigateFromOutside(runtime, src, 'tw-space-b', '场外进场 → 设备');
+
+    expect(r).toEqual({ real: true, mode: 'external', distanceM: 1285.3 });
+    expect(calls.find((c) => c.op === 'navigateFromExternal')?.args).toEqual({
+      source: { lon: 116.39, lat: 39.91 },
+      target: { node_id: 'tw-space-b' },
+    }); // scene_id 由 runtime 包装层注入
+    expect(calls.some((c) => c.op === 'navigateWithinScene')).toBe(false);
+  });
+
+  it('场外不可达 → 返回错误信息(不画线)', async () => {
+    const { runtime, calls } = makeRuntime({
+      externalResult: { reachable: false, path_id: null, message: '不可达' },
+    });
+    const r = await navigateFromOutside(runtime, src, 'tw-space-b', 'x');
+    expect(r.error).toContain('不可达');
+    expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
+  });
+
+  it('path_id 进统一注册表,clearSceneRoutes 一并精确清理(与室内导航互不误伤)', async () => {
+    const { runtime, calls } = makeRuntime();
+    await navigateFromOutside(runtime, src, 'tw-space-b', 'x'); // 登记 path-ext-7
+    calls.length = 0;
+    clearSceneRoutes(runtime);
+    expect(calls).toContainEqual({ op: 'deleteNavigationRoute', args: 'path-ext-7' });
+    expect(calls.some((c) => c.op === 'deleteNavigationRoute' && c.args === undefined)).toBe(false);
   });
 });

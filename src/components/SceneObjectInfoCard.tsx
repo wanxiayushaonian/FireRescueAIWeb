@@ -8,14 +8,34 @@
  * 读 three 拾取结果但不改引擎状态(AGENTS.md 灰色区许可);动作全部走 SDK/runtime。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, Eye, Layers, Navigation, X } from 'lucide-react';
+import { Crosshair, DoorOpen, Eye, Layers, Navigation, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scene-pick';
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight } from '@/lib/scene-navigation';
+import { gcj02ToWgs84 } from '@/lib/coord-transform';
+import { fetchKeyBuildings } from '@/api/key-buildings';
 import { showToast } from '@/components/Toast';
+
+/** 场景 → 建筑外 WGS84 起点(znya key_buildings.scene_id 匹配 + GCJ02→WGS84;模块级缓存)。
+ * 注意:业务库坐标为高德 GCJ02,SDK 场外导航要 WGS84,必须转换,否则偏移数百米。 */
+let buildingWgs84Cache: { sceneId: string; src: { lon: number; lat: number; name: string } } | null = null;
+
+async function resolveBuildingWgs84(sceneId: string): Promise<{ lon: number; lat: number; name: string } | null> {
+  if (buildingWgs84Cache?.sceneId === sceneId) return buildingWgs84Cache.src;
+  try {
+    const buildings = await fetchKeyBuildings();
+    const hit = buildings.find((b) => b.sceneId === sceneId);
+    if (!hit) return null;
+    const src = { ...gcj02ToWgs84(hit.lng, hit.lat), name: hit.name };
+    buildingWgs84Cache = { sceneId, src };
+    return src;
+  } catch {
+    return null;
+  }
+}
 
 interface CardState {
   node: PickNodeInfo;
@@ -58,7 +78,7 @@ export default function SceneObjectInfoCard() {
   }, [recipeStore]);
 
   /** 两点导航:消费一个打点(Space/Story 图节点;highlightOutId 可选高亮被点对象,先清旧防累积) */
-  const consumeNavPoint = (pt: { name: string; nodeId: string }, highlightOutId?: string): void => {
+  const consumeNavPoint = (pt: { name: string; nodeId: string; outId?: string }, highlightOutId?: string): void => {
     const scene = sceneRef.current;
     if (!scene.runtime) return;
     if (highlightOutId) highlightNavPick(scene.runtime, highlightOutId);
@@ -194,7 +214,7 @@ export default function SceneObjectInfoCard() {
           showToast('该对象未挂空间/楼层节点,换个点位试试');
           return;
         }
-        navConsumeRef.current(pt, node.outId);
+        navConsumeRef.current({ ...pt, outId: node.outId }, node.outId);
         return;
       }
 
@@ -266,6 +286,41 @@ export default function SceneObjectInfoCard() {
       if (r.mode === 'full') showToast(`真实路径已绘制(大门 → ${card.node.name})${dist}`);
       else if (r.mode === 'floor') showToast(`真实路径已绘制(${plan.targetFloor ?? ''}层内 → ${card.node.name};低区连通图未建)${dist}`);
       else showToast(`示意路线(场景连通图未覆盖):大门 → 楼梯 → ${card.node.name}`);
+    });
+  };
+  /** 场外进场:起点取 znya 该场景建筑坐标(GCJ02→WGS84),SDK 画红色室外段+绿色室内段。 */
+  const navigateFromOutsideTo = (): void => {
+    if (!runtime || !tree) return;
+    const plan = planAttackRoute(tree, card.node.outId);
+    if (!plan) {
+      showToast('无法规划路线(场景中未找到该对象)');
+      return;
+    }
+    const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
+    if (!endNode) {
+      showToast('该对象未挂空间/楼层节点,无法作为进场终点');
+      return;
+    }
+    void resolveBuildingWgs84(runtime.getSceneId()).then((src) => {
+      if (!src) {
+        showToast('未找到该场景的建筑坐标(请在 GIS 中录入该建筑经纬度)');
+        return;
+      }
+      void navigateFromOutside(
+        runtime,
+        src,
+        endNode,
+        `场外进场(${src.name}) → ${card.node.name}`,
+        { end: runtime.getObjectWorldPosition(card.node.outId) },
+      ).then((r) => {
+        if (r.error) {
+          showToast(r.error);
+          return;
+        }
+        showToast(
+          `场外进场路线已生成(${src.name} → ${card.node.name})${typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : ''}`,
+        );
+      });
     });
   };
 
@@ -344,6 +399,14 @@ export default function SceneObjectInfoCard() {
         >
           <Navigation className="h-3 w-3" />
           导航至此
+        </button>
+        <button
+          onClick={navigateFromOutsideTo}
+          className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+          title="从建筑外坐标进场导航:起点取 znya 该场景建筑坐标(自动转 WGS84),SDK 画室外+室内段"
+        >
+          <DoorOpen className="h-3 w-3" />
+          场外进场
         </button>
         {card.story && (
           <button

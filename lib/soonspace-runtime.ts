@@ -690,6 +690,86 @@ export class SoonspaceRuntime {
     (this.sdk as unknown as { deleteNavigationRoute?: (params?: unknown) => unknown } | null)?.deleteNavigationRoute?.({});
   }
 
+  /**
+   * SDK 场内导航:source/target 传 `{ node_id }`(Space/Story 的 twins_instance_id)或 `{ x, y, z }`,
+   * 可带途经点。由 SDK 调 kgraph、绘制导航路线并登记 path_id;失败/不可达返回 `reachable: false`。
+   * 与 AGENTS.md 约定一致:导航接口、绘制与路线登记一律走 SDK,不要自请求导航接口。
+   */
+  navigateWithinScene(params: {
+    source: Record<string, unknown> | string;
+    target: Record<string, unknown> | string;
+    waypointNodeIds?: string[];
+  }): Promise<{
+    reachable: boolean;
+    path_id: string | null;
+    message?: string;
+    total_distance?: number;
+  } | null> {
+    const sceneId = this.getSceneId();
+    if (!sceneId) return Promise.resolve(null);
+    const sdk = this.sdk as unknown as {
+      navigateWithinScene?: (p: unknown) => unknown;
+    } | null;
+    if (!sdk?.navigateWithinScene) return Promise.resolve(null);
+    return Promise.resolve(
+      sdk.navigateWithinScene({
+        scene_id: sceneId,
+        source: params.source,
+        target: params.target,
+        ...(params.waypointNodeIds?.length ? { waypoint_node_ids: params.waypointNodeIds } : {}),
+      }) as {
+        reachable: boolean;
+        path_id: string | null;
+        message?: string;
+        total_distance?: number;
+      },
+    );
+  }
+
+  /** 删除指定 SDK 导航路线(传 path_id;不传 = 全部)。 */
+  deleteNavigationRoute(pathId?: string): void {
+    const sdk = this.sdk as unknown as { deleteNavigationRoute?: (params?: unknown) => unknown } | null;
+    if (pathId) sdk?.deleteNavigationRoute?.(pathId);
+    else sdk?.deleteNavigationRoute?.({});
+  }
+
+  /**
+   * SDK 场外到场内导航:source 为 **WGS84** 经纬度(经度在前),target 传 `{ node_id }`
+   * (Space/Story 的 twins_instance_id)或 `{ x, y, z }` 场景坐标。SDK 绘制红色室外段 +
+   * 连接段 + 绿色室内段并登记 path_id;失败/不可达返回 `reachable: false`。
+   * 注意:业务库(高德)坐标是 GCJ02,传入前须经 coord-transform.gcj02ToWgs84 转换。
+   */
+  navigateFromExternal(params: {
+    source: { lon: number; lat: number };
+    target: Record<string, unknown> | string;
+  }): Promise<{
+    reachable: boolean;
+    path_id: string | null;
+    message?: string;
+    total_distance?: number;
+    walking_distance?: number;
+  } | null> {
+    const sceneId = this.getSceneId();
+    if (!sceneId) return Promise.resolve(null);
+    const sdk = this.sdk as unknown as {
+      navigateFromExternal?: (p: unknown) => unknown;
+    } | null;
+    if (!sdk?.navigateFromExternal) return Promise.resolve(null);
+    return Promise.resolve(
+      sdk.navigateFromExternal({
+        scene_id: sceneId,
+        source: params.source,
+        target: params.target,
+      }) as {
+        reachable: boolean;
+        path_id: string | null;
+        message?: string;
+        total_distance?: number;
+        walking_distance?: number;
+      },
+    );
+  }
+
   setVirtualRouteVisible(routeId: string, visible: boolean): unknown {
     return this.sdk?.setVirtualRouteVisible?.(routeId, visible);
   }

@@ -1,6 +1,7 @@
 // 场内导航(3D 路线图 B 组):大门 → 楼梯链(逐层) → 目标设备的"进攻路线"。
-// 路线点取场景对象世界坐标(门/楼梯/设备),经 SDK drawVirtualRoute 绘制(SDK 自带
-// 路线动效与起终点 POI);楼梯段按"距上一点最近邻"选楼梯间,视觉上沿同一楼梯间攀升。
+// 路线点取场景对象世界坐标(门/楼梯/设备);导航线本体一律走 SDK navigateWithinScene
+// (SDK 计算 kgraph 路径 + 自动绘制 + 登记 path_id,符合 AGENTS.md 导航铁律),
+// 起终点 POI 标识用 drawVirtualRoute 只传起终点坐标叠加(纯 POI,不画线)。
 // pathMove 到场动画暂缺:演示包无人员/车辆模型可移动对象。
 import type { SceneTreeNode } from './ustudio';
 import { parseFloorToken } from './floor-focus';
@@ -113,29 +114,42 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
 /** 已绘制导航路线 id 集(模块态;SceneViewBar「清除路线」用) */
 const drawnRoutes = new Set<string>();
 
+/** 已创建 SDK 导航路线 path_id 集(按 path_id 精确清理;不用无参 delete 以免误伤平台 agent 导航线) */
+const navPathIds = new Set<string>();
+
 export function hasDrawnRoute(): boolean {
-  return drawnRoutes.size > 0;
+  return drawnRoutes.size > 0 || navPathIds.size > 0;
 }
 
-/** 清除全部导航路线(含 SDK 场内导航可能残留的内部线) */
+/** 清除全部导航路线:自绘虚拟路线(含 POI 叠加) + 按 path_id 删 SDK 导航线。 */
 export function clearSceneRoutes(runtime: SoonspaceRuntime | null): void {
   for (const id of drawnRoutes) runtime?.clearVirtualRoute(id);
   drawnRoutes.clear();
-  runtime?.deleteNavigationRoutes();
+  for (const pathId of navPathIds) runtime?.deleteNavigationRoute(pathId);
+  navPathIds.clear();
 }
 
 // ---- 两点导航拾取模式(SceneViewBar 按钮 / 信息卡点击拾取共用;模块态 + 订阅) ----
 export type NavPickMode = 'off' | 'start' | 'end';
+
+/** 打点:kgraph 图节点端点(Space/Story 的 twins id) + 被点对象 out id(3D 拾取有,POI 定位用) */
+export interface NavPoint {
+  name: string;
+  nodeId: string;
+  /** 被点对象的 out_instance_id(仅 3D 拾取带;用于起终点 POI 叠加定位) */
+  outId?: string;
+}
+
 let navPickMode: NavPickMode = 'off';
 const navPickListeners = new Set<() => void>();
 /** 起点(拾取起点后暂存,点终点时消费;退出模式清空) */
-let navStart: { name: string; nodeId: string } | null = null;
+let navStart: NavPoint | null = null;
 
 export function getNavPickMode(): NavPickMode {
   return navPickMode;
 }
 
-export function getNavStart(): { name: string; nodeId: string } | null {
+export function getNavStart(): NavPoint | null {
   return navStart;
 }
 
@@ -145,7 +159,7 @@ export function setNavPickMode(mode: NavPickMode): void {
   navPickListeners.forEach((fn) => fn());
 }
 
-export function setNavStart(point: { name: string; nodeId: string }): void {
+export function setNavStart(point: NavPoint): void {
   navStart = point;
 }
 
@@ -208,56 +222,105 @@ export function findNodeByOutId(tree: SceneTreeNode, outId: string): { name: str
   return found;
 }
 
-/** 两点导航:起点/终点图节点 → kgraph 路径 + drawVirtualRoute 自绘(线+起终点 POI+2D 抬升)。 */
+/** POI 叠加:起终点世界坐标(可只给一端;null 表示该端不画) */
+export interface NavPoi {
+  start?: { x: number; y: number; z: number } | null;
+  end?: { x: number; y: number; z: number } | null;
+}
+
+/** SDK 导航源:internal=场内图节点(node_id);external=场外 WGS84 经纬度(经度在前)。 */
+type NavSource =
+  | { kind: 'internal'; nodeId: string }
+  | { kind: 'external'; lonLat: { lon: number; lat: number } };
+
+/** 两点导航:起点/终点图节点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
-  start: { name: string; nodeId: string },
-  end: { name: string; nodeId: string },
+  start: NavPoint,
+  end: NavPoint,
 ): Promise<DrawRouteResult> {
-  const r = await navigateAndDraw(runtime, start.nodeId, end.nodeId, `${start.name} → ${end.name}`);
+  const poi: NavPoi = {
+    start: start.outId ? runtime.getObjectWorldPosition(start.outId) : null,
+    end: end.outId ? runtime.getObjectWorldPosition(end.outId) : null,
+  };
+  const r = await navigateAndDraw(runtime, { kind: 'internal', nodeId: start.nodeId }, end.nodeId, `${start.name} → ${end.name}`, poi);
   return r ?? { error: '两点间不可达(连通图目前覆盖 3F-38F 的室内点)' };
 }
 
 /**
- * kgraph 场内导航规划 + 自绘:BFF(navigate-within-scene)取 path_nodes 坐标,
- * drawVirtualRoute 绘制——线 + 起终点 POI 标识 + 2D 平面图抬升(SDK internal
- * 绘制只有线没有起终点标识,故统一自绘)。不可达/失败返回 null。
+ * 场外到场内导航:source 为 WGS84 经纬度(业务库 GCJ02 数据须先经
+ * coord-transform.gcj02ToWgs84 转换),target 为场内 Space/Story 图节点。
+ * SDK 绘制红色室外段 + 连接段 + 绿色室内段并登记 path_id。不可达返回错误信息。
+ */
+export async function navigateFromOutside(
+  runtime: SoonspaceRuntime,
+  source: { lon: number; lat: number; name: string },
+  targetNodeId: string,
+  label: string,
+  poi?: NavPoi,
+): Promise<DrawRouteResult> {
+  const r = await navigateAndDraw(
+    runtime,
+    { kind: 'external', lonLat: { lon: source.lon, lat: source.lat } },
+    targetNodeId,
+    label,
+    poi,
+  );
+  return r ?? { error: '场外到场内不可达(场景未配置 GIS 定位或目标不在连通图)' };
+}
+
+/**
+ * SDK 导航 + POI 叠加:线本体由 SDK 完成(场内 navigateWithinScene / 场外
+ * navigateFromExternal,计算 kgraph 路径、自动绘制并登记 path_id,符合 AGENTS.md
+ * 「导航接口/绘制/登记一律走 SDK」铁律);起终点标识用 drawVirtualRoute 只传起终点
+ * 坐标叠加(纯 POI,不重复画线)。不可达/失败返回 null(调用方决定降级)。
  */
 async function navigateAndDraw(
   runtime: SoonspaceRuntime,
-  sourceNodeId: string,
+  source: NavSource,
   targetNodeId: string,
   label: string,
+  poi?: NavPoi,
 ): Promise<DrawRouteResult | null> {
+  clearSceneRoutes(runtime); // 先清旧:SDK 导航绘制立即发生,须在调用前清
   try {
-    const res = await fetch('/api/ustudio/navigate-within-scene', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        sceneId: runtime.getSceneId(),
-        source: { node_id: sourceNodeId },
-        target: { node_id: targetNodeId },
-      }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { reachable?: boolean; total_distance?: number; path_nodes?: unknown; path?: unknown };
-    if (data?.reachable !== true) return null;
-    const pts = extractPathPoints(data.path_nodes ?? data.path);
-    if (!pts) return null;
-    clearSceneRoutes(runtime);
-    await runtime.drawVirtualRoute(
-      {
-        route_id: ATTACK_ROUTE_ID,
-        route_name: label,
-        route_color: '#f97316',
-        path: pts.map((p) => ({ position: p })),
-        start_coordinate: pts[0],
-        end_coordinate: pts[pts.length - 1],
-      } as Parameters<SoonspaceRuntime['drawVirtualRoute']>[0],
-      { id: ATTACK_ROUTE_ID },
-    );
-    drawnRoutes.add(ATTACK_ROUTE_ID);
-    return { real: true, mode: 'full', distanceM: data.total_distance };
+    const result =
+      source.kind === 'external'
+        ? await runtime.navigateFromExternal({
+            source: { lon: source.lonLat.lon, lat: source.lonLat.lat },
+            target: { node_id: targetNodeId },
+          })
+        : await runtime.navigateWithinScene({
+            source: { node_id: source.nodeId },
+            target: { node_id: targetNodeId },
+          });
+    if (!result || result.reachable !== true) return null;
+    if (result.path_id) navPathIds.add(result.path_id);
+    const start = poi?.start ?? null;
+    const end = poi?.end ?? null;
+    if (start || end) {
+      try {
+        await runtime.drawVirtualRoute(
+          {
+            route_id: ATTACK_ROUTE_ID,
+            route_name: label,
+            route_color: '#f97316',
+            path: [],
+            start_coordinate: start,
+            end_coordinate: end,
+          } as Parameters<SoonspaceRuntime['drawVirtualRoute']>[0],
+          { id: ATTACK_ROUTE_ID },
+        );
+        drawnRoutes.add(ATTACK_ROUTE_ID);
+      } catch {
+        // POI 叠加失败不阻断导航线(线本体由 SDK 绘制,已登记)
+      }
+    }
+    return {
+      real: true,
+      mode: source.kind === 'external' ? 'external' : 'full',
+      distanceM: result.total_distance,
+    };
   } catch {
     return null;
   }
@@ -314,10 +377,10 @@ export function extractPathPoints(value: unknown): Array<{ x: number; y: number;
 export interface DrawRouteResult {
   /** 失败原因(null 表示成功) */
   error?: string;
-  /** real=连通图真实路径(全路径或同层);false=启发式示意折线 */
+  /** real=连通图真实路径(全场外/全路径或同层);false=启发式示意折线 */
   real?: boolean;
-  /** full=大门→目标全程;floor=目标层内(低区未建图);heuristic=示意 */
-  mode?: 'full' | 'floor' | 'heuristic';
+  /** external=场外到场内;full=大门→目标全程;floor=目标层内(低区未建图);heuristic=示意 */
+  mode?: 'external' | 'full' | 'floor' | 'heuristic';
   /** 真实路径总距离(米) */
   distanceM?: number;
 }
@@ -412,6 +475,22 @@ export function animateTruckAlongRoute(
   return null;
 }
 
+/** 大门世界坐标:1F 门群中离质心最远者(周边出入口;树序首个往往是内门);无可定位门返回 null。 */
+function resolveGatePosition(runtime: SoonspaceRuntime, plan: AttackRoutePlan): { x: number; y: number; z: number } | null {
+  const gatePts = plan.gateOutIds
+    .map((outId) => ({ outId, p: runtime.getObjectWorldPosition(outId) }))
+    .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
+  if (gatePts.length === 0) return null;
+  const centroid = gatePts.reduce(
+    (acc, g) => ({ x: acc.x + g.p.x / gatePts.length, y: acc.y + g.p.y / gatePts.length, z: acc.z + g.p.z / gatePts.length }),
+    { x: 0, y: 0, z: 0 },
+  );
+  return gatePts.reduce((best, g) => {
+    const d = (q: { x: number; z: number }): number => Math.hypot(q.x - centroid.x, q.z - centroid.z);
+    return !best || d(g.p) > d(best.p) ? g : best;
+  }, gatePts[0]).p;
+}
+
 /**
  * 绘制进攻路线(三层策略,自动升级):
  * 1. SDK 场内导航 大门层 Story→目标 Space/Story(kgraph 连通图;图覆盖后即为
@@ -419,31 +498,38 @@ export function animateTruckAlongRoute(
  * 2. 目标层 Story→目标 Space(同层真实路径——演示包图目前覆盖 3F-38F,1F/2F/B1F 未建);
  * 3. 启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用)。
  * 端点 node_id 一律用 Story/Space 的 twins id(门只能作图中间点,实测 101024)。
+ * 真实路径(策略 1/2)走 SDK navigateWithinScene + POI 叠加;启发式(策略 3)自绘整线。
  */
 export async function drawAttackRoute(
   runtime: SoonspaceRuntime,
   plan: AttackRoutePlan,
 ): Promise<DrawRouteResult> {
+  const targetPos = (id: string | null): { x: number; y: number; z: number } | null =>
+    id ? runtime.getObjectWorldPosition(id) : null;
+  const targetPos0 = targetPos(plan.targetOutId);
+
   // 策略 1:大门层 → 目标(全程真实路径;依赖低区建图,建好自动生效)
   if (plan.gateStoryNodeId) {
     const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
     if (endNode) {
-      const r = await navigateAndDraw(runtime, plan.gateStoryNodeId, endNode, `进攻路线 → ${plan.targetName}`);
+      const r = await navigateAndDraw(runtime, { kind: 'internal', nodeId: plan.gateStoryNodeId }, endNode, `进攻路线 → ${plan.targetName}`, {
+        start: resolveGatePosition(runtime, plan),
+        end: targetPos0,
+      });
       if (r) return r;
     }
   }
   // 策略 2:目标层 → 目标(同层真实路径,当前图覆盖 3F-38F 内即刻可用)
   if (plan.targetStoryNodeId && plan.targetSpaceNodeId) {
-    const r = await navigateAndDraw(runtime, plan.targetStoryNodeId, plan.targetSpaceNodeId, `进攻路线(层内) → ${plan.targetName}`);
+    const r = await navigateAndDraw(runtime, { kind: 'internal', nodeId: plan.targetStoryNodeId }, plan.targetSpaceNodeId, `进攻路线(层内) → ${plan.targetName}`, {
+      end: targetPos0,
+    });
     if (r) return { ...r, mode: 'floor' };
   }
 
   // 策略 3:启发式折线
   const pos = (outId: string | null): { x: number; y: number; z: number } | null =>
     outId ? runtime.getObjectWorldPosition(outId) : null;
-
-  const targetPos = pos(plan.targetOutId);
-  if (!targetPos) return { error: '无法定位目标对象' };
 
   const path: Array<{ position: { x: number; y: number; z: number } }> = [];
   // 近重去重(0.4m):同点重复会让拓扑线在原点打结
@@ -454,29 +540,26 @@ export async function drawAttackRoute(
   };
 
   // 大门 = 离 1F 门群质心最远的门(周边出入口;树序首个往往是内门)
-  const gatePts = plan.gateOutIds
-    .map((outId) => ({ outId, p: pos(outId) }))
-    .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
+  const gate = resolveGatePosition(runtime, plan);
   let prev: { x: number; y: number; z: number } | null = null;
-  if (gatePts.length > 0) {
+  if (gate) {
+    prev = gate;
+    // 场外起点:沿"质心→门"外向延伸 6m
+    const gatePts = plan.gateOutIds
+      .map((outId) => ({ outId, p: pos(outId) }))
+      .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
     const centroid = gatePts.reduce(
       (acc, g) => ({ x: acc.x + g.p.x / gatePts.length, y: acc.y + g.p.y / gatePts.length, z: acc.z + g.p.z / gatePts.length }),
       { x: 0, y: 0, z: 0 },
     );
-    const gate = gatePts.reduce((best, g) => {
-      const d = (q: { x: number; z: number }): number => Math.hypot(q.x - centroid.x, q.z - centroid.z);
-      return !best || d(g.p) > d(best.p) ? g : best;
-    }, gatePts[0]);
-    prev = gate.p;
-    // 场外起点:沿"质心→门"外向延伸 6m
-    const dx = gate.p.x - centroid.x;
-    const dz = gate.p.z - centroid.z;
+    const dx = gate.x - centroid.x;
+    const dz = gate.z - centroid.z;
     const len = Math.hypot(dx, dz);
     const ENTRY_EXTEND_M = 6;
     if (len > 0.01) {
-      pushPoint({ x: gate.p.x + (dx / len) * ENTRY_EXTEND_M, y: gate.p.y, z: gate.p.z + (dz / len) * ENTRY_EXTEND_M });
+      pushPoint({ x: gate.x + (dx / len) * ENTRY_EXTEND_M, y: gate.y, z: gate.z + (dz / len) * ENTRY_EXTEND_M });
     }
-    pushPoint(gate.p);
+    pushPoint(gate);
   }
 
   for (const { outIds } of plan.stairCandidates) {
@@ -496,7 +579,8 @@ export async function drawAttackRoute(
       prev = best.p;
     }
   }
-  pushPoint(targetPos);
+  if (!targetPos0) return { error: '无法定位目标对象' };
+  pushPoint(targetPos0);
   if (path.length < 2) return { error: '路径点不足,无法绘制' };
 
   clearSceneRoutes(runtime);
@@ -508,7 +592,7 @@ export async function drawAttackRoute(
         route_color: '#f97316',
         path,
         start_coordinate: path[0]?.position ?? null,
-        end_coordinate: targetPos,
+        end_coordinate: targetPos0,
       } as Parameters<SoonspaceRuntime['drawVirtualRoute']>[0],
       { id: ATTACK_ROUTE_ID },
     );

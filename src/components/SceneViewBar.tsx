@@ -29,7 +29,7 @@ import {
 import { showToast } from '@/components/Toast';
 
 export default function SceneViewBar() {
-  const { runtime, sceneId, view, tree } = useScene();
+  const { runtime, sceneId, view, tree, recipeStore } = useScene();
   const [marks, setMarks] = useState<ViewBookmark[]>([]);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState('');
@@ -211,12 +211,18 @@ export default function SceneViewBar() {
           onClick={() => {
             const next = navMode === 'off' ? 'start' : 'off';
             setNavPickMode(next);
-            if (next === 'off') clearNavPickHighlight(runtime);
+            if (next === 'off') {
+              clearNavPickHighlight(runtime);
+            } else {
+              // 联动:开启两点导航自动切平面图(2D)——打点走 2D 语义点击通道,
+              // 与 SDK 连通性/打点交互同体验;退出时不强制切回,用户可自选视图
+              recipeStore?.patchStructural({ mode: '2D' });
+            }
           }}
           className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition ${
             navMode !== 'off' ? 'bg-orange/15 text-orange' : 'text-text-2 hover:text-cyan'
           }`}
-          title="两点导航:开启后先点起点再点终点,按空间连通生成路径(Esc 退出)"
+          title="两点导航:开启后自动切平面图,先点起点再点终点,按空间连通生成路径(Esc 退出)"
         >
           <Navigation className="h-3 w-3" />
           {navMode === 'off' ? '两点导航' : navMode === 'start' ? '两点导航 · 点起点' : '两点导航 · 点终点'}
