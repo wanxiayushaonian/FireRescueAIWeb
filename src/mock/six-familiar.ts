@@ -9,7 +9,7 @@ export interface GuideStep {
   title: string;
   /** 引导词段落(每段一行) */
   narration: string[];
-  /** 楼层段("B1"/"3-5F"/"16F/30F")→ 3D 聚焦该层(多层段炸开) */
+  /** 楼层段("B1"/"3-5F"/"13F/25F")→ 3D 聚焦该层(多层段炸开) */
   floorSpec?: string;
   /** 恢复整体视角(章节收尾/总体介绍) */
   whole?: boolean;
@@ -159,14 +159,14 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
       },
       {
         id: 'ch4-s4',
-        title: '避难层（16F）',
+        title: '避难层（13F）',
         narration: [
           '避难层是超高层疏散的中转与庇护空间：设独立机械加压送风、消防专线电话与应急广播。',
           '战术意义：内攻时的进攻起点层通常设在着火层下一层，避难层可作为轮换休整与器材集结点。',
-          '已聚焦 16F——注意避难区的划分与设备区的分隔。',
+          '已聚焦 13F——注意避难区的划分与设备区的分隔。',
         ],
-        floorSpec: '16F',
-        relatedNodeId: 'bf-16f-refuge',
+        floorSpec: '13F',
+        relatedNodeId: 'bf-13f-refuge',
       },
       {
         id: 'ch4-s5',

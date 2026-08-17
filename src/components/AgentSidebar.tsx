@@ -1,7 +1,7 @@
 'use client';
 // 右侧智能体对话侧边栏:壳(折叠栏/标题栏)+ assistant-ui Thread(AgentChatThread)。
 // 对话/流式/思考/图片/工具卡由 assistant-ui 渲染,协议桥接见 AgentChatThread;历史对话见 ChatHistoryPanel。
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Bot, Compass, Crosshair, FileText, Sparkles, ChevronLeft, ChevronRight,
@@ -9,12 +9,15 @@ import {
 } from 'lucide-react';
 import type { AgentPanelId, ModuleKey } from '@/mock/agentScripts';
 import { AGENT_APP_IDS, GLOBAL_ASSISTANT_APP_ID } from '@/lib/agent-app-ids';
+import { buildAgentContext, type AgentContextDeps } from '@/lib/agent-context';
 import { AgentChatThread, type AgentConnState } from '@/components/assistant-ui/AgentChatThread';
 import ChatHistoryPanel from '@/components/assistant-ui/ChatHistoryPanel';
 
 export interface AgentSidebarProps {
   onOpenPanel?: (panelId: AgentPanelId) => void;
   module?: ModuleKey;
+  /** 模块上下文依赖(App 层组装;经 buildAgentContext 注入每次发送的消息前缀)。 */
+  contextDeps?: AgentContextDeps;
 }
 
 /** 多身份映射：标题/副标题/图标随模块切换 */
@@ -50,7 +53,7 @@ function ConnBadge({ state }: { state: AgentConnState }) {
   );
 }
 
-export default function AgentSidebar({ onOpenPanel, module = 'overview' }: AgentSidebarProps) {
+export default function AgentSidebar({ onOpenPanel, module = 'overview', contextDeps }: AgentSidebarProps) {
   const [expanded, setExpanded] = useState(false);
   const [conn, setConn] = useState<AgentConnState>('idle');
   const [unread, setUnread] = useState(0);
@@ -66,6 +69,11 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview' }: Agent
   const identity = agentTab === 'global' ? GLOBAL_IDENTITY : AGENT_IDENTITIES[module];
   const hasGlobal = Boolean(GLOBAL_ASSISTANT_APP_ID);
   const appId = agentTab === 'global' ? AGENT_APP_IDS[module].global : AGENT_APP_IDS[module].business;
+  // 上下文注入:仅业务助手(全局助手定位通识,不注入模块状态);每次发送时新鲜计算
+  const buildContext = useCallback(
+    () => (agentTab === 'business' ? buildAgentContext(module, contextDeps) : null),
+    [agentTab, module, contextDeps],
+  );
 
   const handleToggle = () => {
     setExpanded((v) => !v);
@@ -230,6 +238,7 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview' }: Agent
               <AgentChatThread
                 module={module}
                 appId={appId}
+                buildContext={buildContext}
                 sessionId={activeSessionId}
                 onSessionChange={(s) => setActiveSessionId(s?.id)}
                 sendRef={sendRef}

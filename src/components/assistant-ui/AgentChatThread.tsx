@@ -34,6 +34,8 @@ interface AgentChatThreadProps {
   onSessionChange?: (s: { id: string; title: string } | null) => void;
   /** 快捷话术 chips 触发发送的句柄 */
   sendRef: React.MutableRefObject<((text: string) => void) | null>;
+  /** 每次发送时组装模块上下文前缀(B 方案:界面状态注入,返回 null 则不注入)。 */
+  buildContext?: () => string | null;
   /** 连接状态上报 */
   onStateChange?: (state: AgentConnState) => void;
 }
@@ -78,7 +80,7 @@ function createImageAttachmentAdapter(): AttachmentAdapter {
   };
 }
 
-export function AgentChatThread({ module, appId: appIdProp, sessionId, onSessionChange, sendRef, onStateChange }: AgentChatThreadProps) {
+export function AgentChatThread({ module, appId: appIdProp, sessionId, onSessionChange, sendRef, onStateChange, buildContext }: AgentChatThreadProps) {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const convIdRef = useRef<string | undefined>(undefined);
@@ -149,8 +151,9 @@ export function AgentChatThread({ module, appId: appIdProp, sessionId, onSession
     const abort = new AbortController();
     abortRef.current = abort;
     try {
+      const ctxPrefix = buildContext?.() ?? null;
       const stream = await postAgentChat({
-        content: text,
+        content: ctxPrefix ? `${ctxPrefix}\n${text}` : text,
         app_id: appId,
         forwardedProps: sceneId ? { scene_id: sceneId } : {},
         conversationId: convIdRef.current,
@@ -248,7 +251,7 @@ export function AgentChatThread({ module, appId: appIdProp, sessionId, onSession
         abortRef.current = null;
       }
     }
-  }, [appId, patchAssistant, onStateChange, onSessionChange]);
+  }, [appId, patchAssistant, onStateChange, onSessionChange, buildContext]);
 
   const onNew = useCallback(async (msg: AppendMessage) => {
     // 图片不在 msg.content,而在 msg.attachments(assistant-ui 发送时把附件单独放)

@@ -349,7 +349,7 @@ function AppContent() {
           )}
           <SceneCommandBridge />
         </main>
-        <AgentSidebar module={module} onOpenPanel={handleAgentOpenPanel} />
+        <AgentSidebar module={module} onOpenPanel={handleAgentOpenPanel} contextDeps={{ objectsBuildingId: objectsBuildingId || undefined }} />
       </div>
     <ToastHost />
   </div>

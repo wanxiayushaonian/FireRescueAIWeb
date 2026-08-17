@@ -15,6 +15,9 @@ export const COMMANDER_APP_ID = '2087535122373074946';
 /** 对象总览业务助手(灭火作战参谋;平台建应用后以 NEXT_PUBLIC_OBJECTS_APP_ID 注入,未配回退通用)。 */
 export const OBJECTS_APP_ID = (process.env.NEXT_PUBLIC_OBJECTS_APP_ID ?? '').trim() || COMMANDER_APP_ID;
 
+/** 熟悉考核业务助手(教练闭环;平台建应用后以 NEXT_PUBLIC_TRAINING_APP_ID 注入,未配回退通用)。 */
+export const TRAINING_APP_ID = (process.env.NEXT_PUBLIC_TRAINING_APP_ID ?? '').trim() || COMMANDER_APP_ID;
+
 /**
  * 全局助手 app_id(五模块共享同一 app:工作流串联 + 通识)。
  * 以构建环境变量 NEXT_PUBLIC_GLOBAL_AGENT_APP_ID 注入;未配置时双 tab 降级为仅业务助手。
@@ -55,6 +58,6 @@ export const AGENT_APP_IDS: Record<ModuleKey, ModuleAgentIds> = {
   overview: { business: OVERVIEW_APP_ID, ...globalEntry() },
   objects: { business: OBJECTS_APP_ID, ...globalEntry() },
   drill: { business: COMMANDER_APP_ID, ...globalEntry() },
-  training: { business: COMMANDER_APP_ID, ...globalEntry() },
+  training: { business: TRAINING_APP_ID, ...globalEntry() },
   command: { business: COMMANDER_APP_ID, ...globalEntry() },
 };
