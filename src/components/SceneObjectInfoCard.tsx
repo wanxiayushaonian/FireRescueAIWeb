@@ -78,7 +78,10 @@ export default function SceneObjectInfoCard() {
   }, [recipeStore]);
 
   /** 两点导航:消费一个打点(Space/Story 图节点;highlightOutId 可选高亮被点对象,先清旧防累积) */
-  const consumeNavPoint = (pt: { name: string; nodeId: string; outId?: string }, highlightOutId?: string): void => {
+  const consumeNavPoint = (
+    pt: { name: string; nodeId: string; outId?: string; position?: { x: number; y: number; z: number } | null },
+    highlightOutId?: string,
+  ): void => {
     const scene = sceneRef.current;
     if (!scene.runtime) return;
     if (highlightOutId) highlightNavPick(scene.runtime, highlightOutId);
@@ -122,14 +125,17 @@ export default function SceneObjectInfoCard() {
       const storyLabel = storyEntry?.storyLabel ?? '';
       let nodeId = '';
       let name = '';
+      let outId = '';
       if (identifier === 'Space' || identifier === 'Story') {
         nodeId = String(info.twins_instance_id ?? '');
+        outId = String(info.out_instance_id ?? '');
         name = identifier === 'Space' ? (storyLabel ? `${storyLabel}·空间` : '空间') : (storyLabel || '楼层');
       } else {
         // 门/窗线/墙线等非端点语义 → 回退所在楼层(楼层是合法图端点)
         const story = info.story_id ? findNodeByOutId(scene.tree, String(info.story_id)) : null;
         if (story) {
           nodeId = story.twinsId;
+          outId = String(info.story_id ?? '');
           name = storyLabel || story.name;
         }
       }
@@ -137,7 +143,10 @@ export default function SceneObjectInfoCard() {
         showToast('该处未命中空间,请在平面图的房间区域打点');
         return;
       }
-      navConsumeRef.current({ name, nodeId }, info.out_instance_id || undefined);
+      // 端点世界坐标:空间/楼层本体可直接反查(贴合点击位置,而非空间中心);查不到回退图节点
+      if (!scene.runtime) return;
+      const position = outId ? scene.runtime.getObjectWorldPosition(outId) : null;
+      navConsumeRef.current({ name, nodeId, outId: outId || undefined, position }, info.out_instance_id || undefined);
     });
   }, [runtime, view]);
   const lastPickRef = useRef<{ sids: string[]; hitChains?: string[][]; clientX: number; clientY: number } | null>(null);
@@ -214,7 +223,10 @@ export default function SceneObjectInfoCard() {
           showToast('该对象未挂空间/楼层节点,换个点位试试');
           return;
         }
-        navConsumeRef.current({ ...pt, outId: node.outId }, node.outId);
+        navConsumeRef.current(
+          { ...pt, outId: node.outId, position: scene.runtime.getObjectWorldPosition(node.outId) },
+          node.outId,
+        );
         return;
       }
 
@@ -309,7 +321,7 @@ export default function SceneObjectInfoCard() {
       void navigateFromOutside(
         runtime,
         src,
-        endNode,
+        { nodeId: endNode, position: runtime.getObjectWorldPosition(card.node.outId) },
         `场外进场(${src.name}) → ${card.node.name}`,
         { end: runtime.getObjectWorldPosition(card.node.outId) },
       ).then((r) => {

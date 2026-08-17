@@ -196,6 +196,38 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     expect(calls.some((c) => c.op === 'navigateWithinScene')).toBe(true);
   });
 
+  it('打点带世界坐标 → 端点用 {x,y,z}(贴合点击位置),不再落空间中心', async () => {
+    const { runtime, calls } = makeRuntime();
+    const r = await navigateBetween(
+      runtime,
+      { name: 'A', nodeId: 'tw-space-a', outId: 'out-a', position: { x: 10, y: 0.5, z: 20 } },
+      { name: 'B', nodeId: 'tw-space-b', outId: 'out-b', position: { x: 30, y: 1.2, z: 40 } },
+    );
+    expect(r?.real).toBe(true);
+    expect(calls.find((c) => c.op === 'navigateWithinScene')?.args).toEqual({
+      source: { x: 10, y: 0.5, z: 20 },
+      target: { x: 30, y: 1.2, z: 40 },
+    });
+    // POI 依旧在点击对象位置
+    const poiCall = calls.find((c) => c.op === 'drawVirtualRoute')?.args as Record<string, unknown>;
+    expect(poiCall?.start_coordinate).toEqual({ x: 1, y: 2, z: 3 }); // fake getObjectWorldPosition 返回
+    expect(poiCall?.end_coordinate).toEqual({ x: 1, y: 2, z: 3 });
+  });
+
+  it('打点 position 为 null(对象定位失败) → 回退 node_id', async () => {
+    const { runtime, calls } = makeRuntime({ position: null });
+    const r = await navigateBetween(
+      runtime,
+      { name: 'A', nodeId: 'tw-space-a', outId: 'out-a', position: null },
+      { name: 'B', nodeId: 'tw-space-b', outId: 'out-b', position: null },
+    );
+    expect(r?.real).toBe(true);
+    expect(calls.find((c) => c.op === 'navigateWithinScene')?.args).toEqual({
+      source: { node_id: 'tw-space-a' },
+      target: { node_id: 'tw-space-b' },
+    });
+  });
+
   it('SDK 不可达 → navigateBetween 返回错误信息(不画任何东西)', async () => {
     const { runtime, calls } = makeRuntime({
       navigateResult: { reachable: false, path_id: null, message: '不可达' },
@@ -223,7 +255,7 @@ describe('navigateFromOutside(场外进场)', () => {
 
   it('走 SDK navigateFromExternal(source WGS84 + target node_id),返回 mode=external 与距离', async () => {
     const { runtime, calls } = makeRuntime();
-    const r = await navigateFromOutside(runtime, src, 'tw-space-b', '场外进场 → 设备');
+    const r = await navigateFromOutside(runtime, src, { nodeId: 'tw-space-b' }, '场外进场 → 设备');
 
     expect(r).toEqual({ real: true, mode: 'external', distanceM: 1285.3 });
     expect(calls.find((c) => c.op === 'navigateFromExternal')?.args).toEqual({
@@ -237,14 +269,14 @@ describe('navigateFromOutside(场外进场)', () => {
     const { runtime, calls } = makeRuntime({
       externalResult: { reachable: false, path_id: null, message: '不可达' },
     });
-    const r = await navigateFromOutside(runtime, src, 'tw-space-b', 'x');
+    const r = await navigateFromOutside(runtime, src, { nodeId: 'tw-space-b' }, 'x');
     expect(r.error).toContain('不可达');
     expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
   });
 
   it('path_id 进统一注册表,clearSceneRoutes 一并精确清理(与室内导航互不误伤)', async () => {
     const { runtime, calls } = makeRuntime();
-    await navigateFromOutside(runtime, src, 'tw-space-b', 'x'); // 登记 path-ext-7
+    await navigateFromOutside(runtime, src, { nodeId: 'tw-space-b' }, 'x'); // 登记 path-ext-7
     calls.length = 0;
     clearSceneRoutes(runtime);
     expect(calls).toContainEqual({ op: 'deleteNavigationRoute', args: 'path-ext-7' });

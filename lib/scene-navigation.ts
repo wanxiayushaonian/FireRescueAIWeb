@@ -132,12 +132,14 @@ export function clearSceneRoutes(runtime: SoonspaceRuntime | null): void {
 // ---- 两点导航拾取模式(SceneViewBar 按钮 / 信息卡点击拾取共用;模块态 + 订阅) ----
 export type NavPickMode = 'off' | 'start' | 'end';
 
-/** 打点:kgraph 图节点端点(Space/Story 的 twins id) + 被点对象 out id(3D 拾取有,POI 定位用) */
+/** 打点:kgraph 图节点端点(Space/Story 的 twins id) + 被点对象 out id + 世界坐标(3D/2D 拾取有) */
 export interface NavPoint {
   name: string;
   nodeId: string;
-  /** 被点对象的 out_instance_id(仅 3D 拾取带;用于起终点 POI 叠加定位) */
+  /** 被点对象的 out_instance_id(3D 拾取带;用于起终点 POI 叠加定位) */
   outId?: string;
+  /** 被点对象的场景世界坐标(有则导航端点贴点击位置,否则回退空间/楼层节点中心) */
+  position?: { x: number; y: number; z: number } | null;
 }
 
 let navPickMode: NavPickMode = 'off';
@@ -228,12 +230,21 @@ export interface NavPoi {
   end?: { x: number; y: number; z: number } | null;
 }
 
-/** SDK 导航源:internal=场内图节点(node_id);external=场外 WGS84 经纬度(经度在前)。 */
-type NavSource =
-  | { kind: 'internal'; nodeId: string }
-  | { kind: 'external'; lonLat: { lon: number; lat: number } };
+/**
+ * 场内导航端点:node_id(Space/Story 的 twins id)是 kgraph 路由锚点;
+ * position 可选——有则 SDK 从该**场景坐标**连图(端点贴合点击对象,而非空间中心),
+ * 无则用 node_id(空间/楼层节点中心)。SDK 契约:同一端点不能同时传 node_id 和坐标。
+ */
+export interface NavEnd {
+  nodeId: string;
+  position?: { x: number; y: number; z: number } | null;
+}
 
-/** 两点导航:起点/终点图节点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。 */
+/** 导航源:internal=场内端点(见 NavEnd);external=场外 WGS84 经纬度(经度在前)。 */
+type NavSource = NavEnd | { kind: 'external'; lonLat: { lon: number; lat: number } };
+
+/** 两点导航:起点/终点打点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。
+ * 端点优先用被点对象世界坐标(贴合点击位置),无坐标时回退 Space/Story 图节点。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
   start: NavPoint,
@@ -243,30 +254,48 @@ export async function navigateBetween(
     start: start.outId ? runtime.getObjectWorldPosition(start.outId) : null,
     end: end.outId ? runtime.getObjectWorldPosition(end.outId) : null,
   };
-  const r = await navigateAndDraw(runtime, { kind: 'internal', nodeId: start.nodeId }, end.nodeId, `${start.name} → ${end.name}`, poi);
+  const r = await navigateAndDraw(
+    runtime,
+    { nodeId: start.nodeId, position: start.position ?? null },
+    { nodeId: end.nodeId, position: end.position ?? null },
+    `${start.name} → ${end.name}`,
+    poi,
+  );
   return r ?? { error: '两点间不可达(连通图目前覆盖 3F-38F 的室内点)' };
 }
 
 /**
  * 场外到场内导航:source 为 WGS84 经纬度(业务库 GCJ02 数据须先经
- * coord-transform.gcj02ToWgs84 转换),target 为场内 Space/Story 图节点。
+ * coord-transform.gcj02ToWgs84 转换),target 为场内端点(NavEnd)。
  * SDK 绘制红色室外段 + 连接段 + 绿色室内段并登记 path_id。不可达返回错误信息。
  */
 export async function navigateFromOutside(
   runtime: SoonspaceRuntime,
   source: { lon: number; lat: number; name: string },
-  targetNodeId: string,
+  target: NavEnd,
   label: string,
   poi?: NavPoi,
 ): Promise<DrawRouteResult> {
   const r = await navigateAndDraw(
     runtime,
     { kind: 'external', lonLat: { lon: source.lon, lat: source.lat } },
-    targetNodeId,
+    target,
     label,
     poi,
   );
   return r ?? { error: '场外到场内不可达(场景未配置 GIS 定位或目标不在连通图)' };
+}
+
+/** 端点 → SDK 导航入参:有坐标用 {x,y,z}(贴合点击点),否则 {node_id}(空间/楼层锚点)。 */
+function navEndPayload(end: NavEnd): Record<string, unknown> {
+  return end.position
+    ? { x: end.position.x, y: end.position.y, z: end.position.z }
+    : { node_id: end.nodeId };
+}
+
+/** NavSource 判别(NavEnd 无 kind 字段,用 in 收窄外部源)。 */
+function isExternalSource(s: NavSource): s is Extract<NavSource, { kind: 'external' }> {
+  return 'kind' in s && s.kind === 'external';
 }
 
 /**
@@ -278,22 +307,22 @@ export async function navigateFromOutside(
 async function navigateAndDraw(
   runtime: SoonspaceRuntime,
   source: NavSource,
-  targetNodeId: string,
+  target: NavEnd,
   label: string,
   poi?: NavPoi,
 ): Promise<DrawRouteResult | null> {
   clearSceneRoutes(runtime); // 先清旧:SDK 导航绘制立即发生,须在调用前清
   try {
-    const result =
-      source.kind === 'external'
-        ? await runtime.navigateFromExternal({
-            source: { lon: source.lonLat.lon, lat: source.lonLat.lat },
-            target: { node_id: targetNodeId },
-          })
-        : await runtime.navigateWithinScene({
-            source: { node_id: source.nodeId },
-            target: { node_id: targetNodeId },
-          });
+    const external = isExternalSource(source);
+    const result = external
+      ? await runtime.navigateFromExternal({
+          source: { lon: source.lonLat.lon, lat: source.lonLat.lat },
+          target: navEndPayload(target),
+        })
+      : await runtime.navigateWithinScene({
+          source: navEndPayload(source),
+          target: navEndPayload(target),
+        });
     if (!result || result.reachable !== true) return null;
     if (result.path_id) navPathIds.add(result.path_id);
     const start = poi?.start ?? null;
@@ -318,7 +347,7 @@ async function navigateAndDraw(
     }
     return {
       real: true,
-      mode: source.kind === 'external' ? 'external' : 'full',
+      mode: external ? 'external' : 'full',
       distanceM: result.total_distance,
     };
   } catch {
@@ -512,7 +541,7 @@ export async function drawAttackRoute(
   if (plan.gateStoryNodeId) {
     const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
     if (endNode) {
-      const r = await navigateAndDraw(runtime, { kind: 'internal', nodeId: plan.gateStoryNodeId }, endNode, `进攻路线 → ${plan.targetName}`, {
+      const r = await navigateAndDraw(runtime, { nodeId: plan.gateStoryNodeId }, { nodeId: endNode }, `进攻路线 → ${plan.targetName}`, {
         start: resolveGatePosition(runtime, plan),
         end: targetPos0,
       });
@@ -521,7 +550,7 @@ export async function drawAttackRoute(
   }
   // 策略 2:目标层 → 目标(同层真实路径,当前图覆盖 3F-38F 内即刻可用)
   if (plan.targetStoryNodeId && plan.targetSpaceNodeId) {
-    const r = await navigateAndDraw(runtime, { kind: 'internal', nodeId: plan.targetStoryNodeId }, plan.targetSpaceNodeId, `进攻路线(层内) → ${plan.targetName}`, {
+    const r = await navigateAndDraw(runtime, { nodeId: plan.targetStoryNodeId }, { nodeId: plan.targetSpaceNodeId }, `进攻路线(层内) → ${plan.targetName}`, {
       end: targetPos0,
     });
     if (r) return { ...r, mode: 'floor' };
