@@ -104,6 +104,9 @@ function AppContent() {
   // 对象总览当前建筑 ID(由 GIS 信息窗「查看档案」或内部下拉切换)。
   const [objectsBuildingId, setObjectsBuildingId] = useState<string>('');
 
+  // 六熟悉/考核「问智能体」预填消息(ts 变化触发 AgentSidebar 展开并发送)
+  const [hintPrefill, setHintPrefill] = useState<{ text: string; ts: number } | null>(null);
+
   // 场景列表 + 最近使用(替代写死 .env SCENE_ID,场景选择交前端 TopBar 下拉)
   useEffect(() => {
     void (async () => {
@@ -295,7 +298,14 @@ function AppContent() {
                 className="h-full w-full"
               >
                 {module === 'training' ? (
-                  <TrainingView />
+                  <TrainingView
+                    onRequestAgentHint={(topic) =>
+                      setHintPrefill({
+                        text: `[六熟悉引导] 我正在学习「${topic}」这一步,请结合当前场景讲解重点,并带我到现场熟悉。`,
+                        ts: Date.now(),
+                      })
+                    }
+                  />
                 ) : module === 'command' ? (
                   <CommandView />
                 ) : module === 'drill' ? (
@@ -355,7 +365,12 @@ function AppContent() {
           )}
           <SceneCommandBridge />
         </main>
-        <AgentSidebar module={module} onOpenPanel={handleAgentOpenPanel} contextDeps={{ objectsBuildingId: objectsBuildingId || undefined }} />
+        <AgentSidebar
+          module={module}
+          onOpenPanel={handleAgentOpenPanel}
+          contextDeps={{ objectsBuildingId: objectsBuildingId || undefined }}
+          prefillText={hintPrefill}
+        />
       </div>
     <ToastHost />
   </div>

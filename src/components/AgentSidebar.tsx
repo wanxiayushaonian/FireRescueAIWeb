@@ -18,6 +18,8 @@ export interface AgentSidebarProps {
   module?: ModuleKey;
   /** 模块上下文依赖(App 层组装;经 buildAgentContext 注入每次发送的消息前缀)。 */
   contextDeps?: AgentContextDeps;
+  /** 外部预填消息(六熟悉「问智能体」等:自动展开面板并发送;ts 变化触发)。 */
+  prefillText?: { text: string; ts: number } | null;
 }
 
 /** 多身份映射：标题/副标题/图标随模块切换 */
@@ -53,7 +55,7 @@ function ConnBadge({ state }: { state: AgentConnState }) {
   );
 }
 
-export default function AgentSidebar({ onOpenPanel, module = 'overview', contextDeps }: AgentSidebarProps) {
+export default function AgentSidebar({ onOpenPanel, module = 'overview', contextDeps, prefillText }: AgentSidebarProps) {
   const [expanded, setExpanded] = useState(false);
   const [conn, setConn] = useState<AgentConnState>('idle');
   const [unread, setUnread] = useState(0);
@@ -85,6 +87,17 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview', context
     setActiveSessionId(undefined);
     setHistoryOpen(false);
   }, [module, agentTab]);
+
+  // 外部预填消息(六熟悉「问智能体」):展开面板并发送(等 thread 挂载后 sendRef 就绪)
+  useEffect(() => {
+    if (!prefillText?.text) return;
+    setExpanded(true);
+    setUnread(0);
+    const t = window.setTimeout(() => {
+      sendRef.current?.(prefillText.text);
+    }, 180);
+    return () => window.clearTimeout(t);
+  }, [prefillText?.ts]);
 
   const Icon = identity.Icon;
 
