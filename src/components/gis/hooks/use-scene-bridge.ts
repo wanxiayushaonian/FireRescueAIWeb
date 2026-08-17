@@ -36,10 +36,12 @@ export function useSceneBridge(deps: {
       const map = mapRef.current;
       if (!map || !latest) return;
       if (latest.action === 'flyTo' || latest.action === 'addMarker') {
-        const p = latest.params as { lng?: number; lat?: number; id?: string } | undefined;
+        const p = latest.params as { lng?: number; lat?: number; id?: string; zoom?: number } | undefined;
         if (typeof p?.lng === 'number' && typeof p?.lat === 'number' && (p.lng || p.lat)) {
           // 首选:params 直接带坐标(面板联动),免搜索直达;zoom 拉到点位级保证水源逐点渲染
-          map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), 15));
+          // (agent gis_fly_to 可带 zoom 覆盖默认 15;只放大不缩小,保持用户已放大的视野)
+          const targetZoom = typeof p.zoom === 'number' && p.zoom > 0 ? p.zoom : 15;
+          map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), targetZoom));
           if (p.id) {
             // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染
             let tries = 0;

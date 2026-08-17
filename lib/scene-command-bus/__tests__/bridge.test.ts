@@ -29,21 +29,23 @@ function makeFixture() {
   const disconnect = vi.fn();
   const connect = vi.fn().mockReturnValue(disconnect);
   const register = vi.fn();
+  const registerGis = vi.fn();
   const sdk = { fly: vi.fn() } as unknown as SceneSdkLike;
   const eventTarget = makeEventTarget();
   return {
     deps: {
       getSdk: vi.fn().mockReturnValue(sdk),
       register,
+      registerGis,
       connect,
       eventTarget,
     },
-    mocks: { disconnect, connect, register, sdk },
+    mocks: { disconnect, connect, register, registerGis, sdk },
   };
 }
 
 describe('manageSceneBridge', () => {
-  it('mount 时 sdk 未就绪(getSdk 抛错)→ 不建连,等待就绪事件', () => {
+  it('mount 时 sdk 未就绪(getSdk 抛错)→ 仍建连 + 仅注册 GIS 工具(态势总览等无 3D 场景模块)', () => {
     const { deps, mocks } = makeFixture();
     deps.getSdk.mockImplementation(() => {
       throw new Error('场景 SDK 未就绪');
@@ -51,20 +53,23 @@ describe('manageSceneBridge', () => {
 
     manageSceneBridge('http://mcp/scene-events', deps);
 
-    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(mocks.connect).toHaveBeenCalledTimes(1);
+    expect(mocks.connect).toHaveBeenCalledWith('http://mcp/scene-events', expect.any(Function));
+    expect(mocks.registerGis).toHaveBeenCalledTimes(1);
+    expect(mocks.register).not.toHaveBeenCalled();
     expect(deps.eventTarget.listenerCount('ustudio:scene')).toBe(1);
   });
 
-  it('mount 时 sdk 已就绪 → 立即 register + connect(覆盖组件晚挂载的边界)', () => {
+  it('mount 时 sdk 已就绪 → 立即 register 全量 + connect(连接与 sdk 实例解耦,经 getter 惰性读取)', () => {
     const { deps, mocks } = makeFixture();
 
     manageSceneBridge('http://mcp/scene-events', deps);
 
     expect(mocks.register).toHaveBeenCalledTimes(1);
-    expect(mocks.connect).toHaveBeenCalledWith('http://mcp/scene-events', mocks.sdk);
+    expect(mocks.connect).toHaveBeenCalledWith('http://mcp/scene-events', expect.any(Function));
   });
 
-  it('sdk 未就绪时收到就绪事件(sceneId 非空)→ 首次建连,无需断开', () => {
+  it('sdk 未就绪时收到就绪事件 → 升级为全量注册并重建连接', () => {
     const { deps, mocks } = makeFixture();
     deps.getSdk.mockImplementation(() => {
       throw new Error('未就绪');
@@ -75,8 +80,8 @@ describe('manageSceneBridge', () => {
     deps.eventTarget.dispatch('ustudio:scene', { sceneId: 'scene-1' });
 
     expect(mocks.register).toHaveBeenCalledTimes(1);
-    expect(mocks.connect).toHaveBeenCalledTimes(1);
-    expect(mocks.disconnect).not.toHaveBeenCalled();
+    expect(mocks.connect).toHaveBeenCalledTimes(2);
+    expect(mocks.disconnect).toHaveBeenCalledTimes(1);
   });
 
   it('已连接时收到就绪事件(切换场景,sdk 变了)→ 先断开旧连接再重建', () => {
@@ -92,15 +97,19 @@ describe('manageSceneBridge', () => {
     expect(mocks.connect).toHaveBeenCalledTimes(1);
   });
 
-  it('收到退出事件(sceneId 为空)→ 断开当前连接,不再建连', () => {
+  it('收到退出事件且 sdk 已不可用 → 连接保持(GIS 仍可达),注册降级为 GIS-only', () => {
     const { deps, mocks } = makeFixture();
     manageSceneBridge('http://mcp/scene-events', deps);
     mocks.connect.mockClear();
 
+    deps.getSdk.mockImplementation(() => {
+      throw new Error('场景已退出');
+    });
     deps.eventTarget.dispatch('ustudio:scene', { sceneId: '' });
 
     expect(mocks.disconnect).toHaveBeenCalledTimes(1);
-    expect(mocks.connect).not.toHaveBeenCalled();
+    expect(mocks.connect).toHaveBeenCalledTimes(1); // 重建,不是只断开
+    expect(mocks.registerGis).toHaveBeenCalledTimes(1);
   });
 
   it('卸载 → 移除事件监听并断开当前连接', () => {

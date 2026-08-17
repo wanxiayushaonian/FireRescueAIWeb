@@ -43,6 +43,20 @@ export const TOOLS = [
     },
   },
   {
+    name: 'gis_fly_to',
+    description: '让 2D 态势总览 GIS 地图飞向指定坐标(风险研判时定位警情/波及单位/水源等点位;坐标为 GCJ02,与高德底图一致,地址可先经 Python MCP geocode_address 解析)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        lat: { type: 'number', description: '纬度(GCJ02)' },
+        lng: { type: 'number', description: '经度(GCJ02)' },
+        zoom: { type: 'number', description: '缩放级别(可选,默认 15;参考:11=九江市全域,14=街区,16=建筑级;实际取 max(当前缩放,该值))' },
+        label: { type: 'string', description: '点位名称(可选,用于场景动作日志显示)' },
+      },
+      required: ['lat', 'lng'],
+    },
+  },
+  {
     name: 'show_route',
     description: '在 2D 态势总览渲染多站派遣路线(routes: 路线数组,每项含 stationName/polyline[[lat,lng]]/distance/duration/trafficLights;业务查询/规划走 Python MCP,本工具只负责场景渲染)',
     inputSchema: {
@@ -242,6 +256,37 @@ export async function handleToolCall(
       content: [{
         type: 'text',
         text: `已下发 fly_to -> ${target}:命令经 /scene-events 推送至场景页面。仅当页面在线且场景 SDK 就绪时才会执行;命令通道为单向,无执行回执,实际效果需另行确认。`,
+      }],
+    };
+  }
+
+  if (name === 'gis_fly_to') {
+    const lat = Number(args.lat);
+    const lng = Number(args.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'gis_fly_to 缺少/非法 lat,lng:需提供 GCJ02 数值坐标(地址可先经 geocode_address 解析)' }],
+      };
+    }
+    const zoom = Number(args.zoom);
+    const label = args.label != null ? String(args.label).slice(0, 50) : '';
+    const cmd: SceneCommand = {
+      id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tool: 'gis_fly_to',
+      args: {
+        lat,
+        lng,
+        ...(Number.isFinite(zoom) ? { zoom } : {}),
+        ...(label ? { label } : {}),
+      },
+      ts: Date.now(),
+    };
+    publishCommand(cmd);
+    return {
+      content: [{
+        type: 'text',
+        text: `已下发 gis_fly_to -> ${label || `${lng},${lat}`}:命令经 /scene-events 推送至态势总览 GIS 地图。仅当页面在线且地图就绪时生效,通道单向无回执。`,
       }],
     };
   }

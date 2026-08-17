@@ -35,6 +35,16 @@ vi.mock('../business-client.js', () => ({
   getKeyParts: vi.fn().mockResolvedValue([
     { id: 'kf1', name: '避难层', floor: '15', func: '避难' },
   ]),
+  getKnowledge: vi.fn().mockResolvedValue({
+    query: '高层建筑火灾风险', kbId: 'kb-1', count: 1,
+    chunks: [
+      {
+        chunkId: 'c1', documentId: 'd1', documentName: '乐盈广场21号楼预案.docx',
+        content: '29F 楼梯间高空坠落/烟囱效应风险', score: 0.702,
+        chunkIndex: 0, kbId: 'kb-1', kbType: '处置对策',
+      },
+    ],
+  }),
 }));
 
 beforeEach(() => {
@@ -121,6 +131,36 @@ describe('tools', () => {
     expect(publishCommand).not.toHaveBeenCalled();
   });
 
+  it('TOOLS 含 gis_fly_to(GIS 态势总览地图命令)', () => {
+    expect(TOOLS.map((t) => t.name)).toContain('gis_fly_to');
+  });
+
+  it('gis_fly_to 发布命令:坐标必填,zoom/label 可选透传', async () => {
+    const res = await handleToolCall('gis_fly_to', { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼' });
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'gis_fly_to',
+      args: { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼' },
+    }));
+    expect(res.content[0].text).toContain('已下发');
+    expect(res.content[0].text).toContain('乐盈广场21号楼');
+  });
+
+  it('gis_fly_to 仅坐标也可(无 zoom/label 时 args 不含空字段)', async () => {
+    await handleToolCall('gis_fly_to', { lat: 29.6612, lng: 115.9475 });
+    expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
+      tool: 'gis_fly_to',
+      args: { lat: 29.6612, lng: 115.9475 },
+    }));
+  });
+
+  it('gis_fly_to 缺坐标/非法坐标 → 标记错误且不发布命令', async () => {
+    for (const bad of [{}, { lat: 29.6612 }, { lat: 'abc', lng: 115.9475 }]) {
+      const res = await handleToolCall('gis_fly_to', bad);
+      expect(res.isError).toBe(true);
+    }
+    expect(publishCommand).not.toHaveBeenCalled();
+  });
+
   it('TOOLS 含 5C 新工具(query_building_profile/query_facilities/query_key_parts/query_scene_state/inject_event/report_decision)', () => {
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain('query_building_profile');
@@ -129,6 +169,30 @@ describe('tools', () => {
     expect(names).toContain('query_scene_state');
     expect(names).toContain('inject_event');
     expect(names).toContain('report_decision');
+  });
+
+  it('TOOLS 含 query_knowledge（RAG 检索，Round 9 加入）', () => {
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain('query_knowledge');
+  });
+
+  it('query_knowledge 调 business-client 返回检索结果', async () => {
+    const res = await handleToolCall('query_knowledge', { query: '高层建筑火灾风险' });
+    const text = res.content[0].text;
+    expect(text).toContain('"count": 1');
+    expect(text).toContain('29F 楼梯间高空坠落/烟囱效应风险');
+    expect(text).toContain('"score": 0.702');
+  });
+
+  it('query_knowledge 透传 top_k', async () => {
+    const { getKnowledge } = await import('../business-client.js');
+    await handleToolCall('query_knowledge', { query: '危化品泄漏处置', top_k: 3 });
+    expect(getKnowledge).toHaveBeenCalledWith('危化品泄漏处置', { topK: 3 });
+  });
+
+  it('query_knowledge 缺 query → 错误', async () => {
+    const res = await handleToolCall('query_knowledge', {});
+    expect(res.isError).toBe(true);
   });
 
   it('query_building_profile 调 business-client 返回档案', async () => {

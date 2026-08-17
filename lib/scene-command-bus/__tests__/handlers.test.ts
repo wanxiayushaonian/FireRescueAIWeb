@@ -126,3 +126,54 @@ describe('show_route handler', () => {
     expect(addSceneAction).not.toHaveBeenCalled();
   });
 });
+
+describe('gis_fly_to handler', () => {
+  it('注入 addSceneAction → 写场景总线(flyTo + 坐标 + zoom + 智能体 source)', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, { addSceneAction });
+    await dispatch({ id: '1', tool: 'gis_fly_to', args: { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼' }, ts: 0 }, sdk);
+    expect(addSceneAction).toHaveBeenCalledTimes(1);
+    expect(addSceneAction).toHaveBeenCalledWith({
+      action: 'flyTo',
+      target: '乐盈广场21号楼',
+      params: { lng: 115.9475, lat: 29.6612, zoom: 16 },
+      source: '智能体',
+    });
+  });
+
+  it('无 label → target 用坐标兜底;无 zoom → params 不含 zoom', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, { addSceneAction });
+    await dispatch({ id: '1', tool: 'gis_fly_to', args: { lat: 29.6612, lng: 115.9475 }, ts: 0 }, sdk);
+    expect(addSceneAction).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'flyTo',
+        params: { lng: 115.9475, lat: 29.6612 },
+      }),
+    );
+    expect(addSceneAction.mock.calls[0][0].target).toContain('115.94750');
+  });
+
+  it('缺坐标/非法坐标 → warn,不写总线', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, { addSceneAction });
+    await dispatch({ id: '1', tool: 'gis_fly_to', args: {}, ts: 0 }, sdk);
+    await dispatch({ id: '2', tool: 'gis_fly_to', args: { lat: 'x', lng: 115.9475 }, ts: 0 }, sdk);
+    expect(addSceneAction).not.toHaveBeenCalled();
+  });
+
+  it('未注入 addSceneAction → 降级 warn,不写总线', async () => {
+    __resetForTest();
+    const addSceneAction = vi.fn();
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'gis_fly_to', args: { lat: 29.6612, lng: 115.9475 }, ts: 0 }, sdk);
+    expect(addSceneAction).not.toHaveBeenCalled();
+  });
+});
