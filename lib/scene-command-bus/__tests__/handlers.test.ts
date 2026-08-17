@@ -128,17 +128,17 @@ describe('show_route handler', () => {
 });
 
 describe('gis_fly_to handler', () => {
-  it('注入 addSceneAction → 写场景总线(flyTo + 坐标 + zoom + 智能体 source)', async () => {
+  it('注入 addSceneAction → 写场景总线(flyTo + 坐标 + zoom/layer + 智能体 source)', async () => {
     __resetForTest();
     const addSceneAction = vi.fn();
     const sdk = {} as unknown as SceneSdkLike;
     registerDefaultTools(sdk, { addSceneAction });
-    await dispatch({ id: '1', tool: 'gis_fly_to', args: { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼' }, ts: 0 }, sdk);
+    await dispatch({ id: '1', tool: 'gis_fly_to', args: { lat: 29.6612, lng: 115.9475, zoom: 16, layer: 'water', label: '市政消火栓A' }, ts: 0 }, sdk);
     expect(addSceneAction).toHaveBeenCalledTimes(1);
     expect(addSceneAction).toHaveBeenCalledWith({
       action: 'flyTo',
-      target: '乐盈广场21号楼',
-      params: { lng: 115.9475, lat: 29.6612, zoom: 16 },
+      target: '市政消火栓A',
+      params: { lng: 115.9475, lat: 29.6612, zoom: 16, layer: 'water' },
       source: '智能体',
     });
   });

@@ -44,14 +44,15 @@ export const TOOLS = [
   },
   {
     name: 'gis_fly_to',
-    description: '让 2D 态势总览 GIS 地图飞向指定坐标(风险研判时定位警情/波及单位/水源等点位;坐标为 GCJ02,与高德底图一致,地址可先经 Python MCP geocode_address 解析)',
+    description: '让 2D 态势总览 GIS 地图飞向指定坐标(风险研判时定位警情/波及单位/水源等点位;坐标为 GCJ02,与高德底图一致,地址可先经 Python MCP geocode_address 解析)。目标点会显示脉冲标记;带 layer 时若该图层未打开会自动打开,确保用户能看到目标点位',
     inputSchema: {
       type: 'object',
       properties: {
         lat: { type: 'number', description: '纬度(GCJ02)' },
         lng: { type: 'number', description: '经度(GCJ02)' },
         zoom: { type: 'number', description: '缩放级别(可选,默认 15;参考:11=九江市全域,14=街区,16=建筑级;实际取 max(当前缩放,该值))' },
-        label: { type: 'string', description: '点位名称(可选,用于场景动作日志显示)' },
+        label: { type: 'string', description: '点位名称(可选,脉冲标记旁显示)' },
+        layer: { type: 'string', description: '目标所属图层(可选;该图层未开时自动打开):water=消防水源,units=重点单位(联动重点建筑),stations=消防站,buildings=重点建筑,incidents=警情', enum: ['water', 'units', 'stations', 'buildings', 'incidents'] },
       },
       required: ['lat', 'lng'],
     },
@@ -271,6 +272,7 @@ export async function handleToolCall(
     }
     const zoom = Number(args.zoom);
     const label = args.label != null ? String(args.label).slice(0, 50) : '';
+    const layer = args.layer != null ? String(args.layer) : '';
     const cmd: SceneCommand = {
       id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       tool: 'gis_fly_to',
@@ -279,6 +281,7 @@ export async function handleToolCall(
         lng,
         ...(Number.isFinite(zoom) ? { zoom } : {}),
         ...(label ? { label } : {}),
+        ...(layer ? { layer } : {}),
       },
       ts: Date.now(),
     };

@@ -11,6 +11,7 @@ import type { Station, WaterSource } from '@/mock/types';
 import { fetchWaterSourcesPage } from '@/api/water';
 import { subscribeSceneLog } from '@/mock/sceneLog';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
+import { drawFlyToPulse, clearFlyToPulse } from '@/lib/gis/flyto-pulse';
 import type { PlannedRoute } from '../DeployPanel';
 
 export function useSceneBridge(deps: {
@@ -24,10 +25,12 @@ export function useSceneBridge(deps: {
   waterMarkers: React.MutableRefObject<Map<string, L.Marker>>;
   keyUnitMarkers: React.MutableRefObject<Map<string, L.Marker>>;
   setPlanned: React.Dispatch<React.SetStateAction<PlannedRoute[]>>;
+  /** flyTo 携带 layer 时回调(RealGisMap 据此自动打开未开启的图层;agent gis_fly_to 联动)。 */
+  onFlyToLayer?: (layer: string) => void;
 }): void {
   const {
     mapRef, routeLayer, defaultCenter, defaultZoom,
-    stationsRef, waterRef, stationMarkers, waterMarkers, keyUnitMarkers, setPlanned,
+    stationsRef, waterRef, stationMarkers, waterMarkers, keyUnitMarkers, setPlanned, onFlyToLayer,
   } = deps;
 
   // sceneLog 联动
@@ -36,12 +39,16 @@ export function useSceneBridge(deps: {
       const map = mapRef.current;
       if (!map || !latest) return;
       if (latest.action === 'flyTo' || latest.action === 'addMarker') {
-        const p = latest.params as { lng?: number; lat?: number; id?: string; zoom?: number } | undefined;
+        const p = latest.params as { lng?: number; lat?: number; id?: string; zoom?: number; layer?: string } | undefined;
         if (typeof p?.lng === 'number' && typeof p?.lat === 'number' && (p.lng || p.lat)) {
+          // 目标点位的图层未开时先开(agent 飞向水源/单位等,看不到 marker 就不知道飞向了什么)
+          if (p.layer) onFlyToLayer?.(p.layer);
           // 首选:params 直接带坐标(面板联动),免搜索直达;zoom 拉到点位级保证水源逐点渲染
           // (agent gis_fly_to 可带 zoom 覆盖默认 15;只放大不缩小,保持用户已放大的视野)
           const targetZoom = typeof p.zoom === 'number' && p.zoom > 0 ? p.zoom : 15;
           map.flyTo([p.lat, p.lng], Math.max(map.getZoom(), targetZoom));
+          // 脉冲标记:坐标级视觉反馈(不依赖图层数据是否已加载),下一次飞行/复位时替换或清除
+          drawFlyToPulse(map, { lat: p.lat, lng: p.lng, label: latest.target });
           if (p.id) {
             // 点位数据在 moveend 防抖 + bbox 请求后才到位,重试几次等它渲染
             let tries = 0;
@@ -96,6 +103,8 @@ export function useSceneBridge(deps: {
       }
       if (latest.action === 'resetView') {
         mapRef.current?.setView(defaultCenter, defaultZoom);
+        const m = mapRef.current;
+        if (m) clearFlyToPulse(m);
       }
       if (latest.action === 'showRoute' && latest.source !== '面板') {
         // MCP/agent 通道:外部写 showRoute(含 routes[])→ 渲染多 polyline(面板自己写的跳过,避免重复)
@@ -114,5 +123,5 @@ export function useSceneBridge(deps: {
     return () => {
       unsub();
     };
-  }, [routeLayer, defaultCenter, defaultZoom, setPlanned]);
+  }, [routeLayer, defaultCenter, defaultZoom, setPlanned, onFlyToLayer]);
 }

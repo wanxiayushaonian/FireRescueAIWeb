@@ -895,6 +895,15 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
     renderRegions(layer, regions, { map });
   }, [regions, mapInited]);
 
+  // agent gis_fly_to 携带 layer → 自动打开对应未开图层(只开不关;units 与面板合并开关一致,联动建筑)
+  const handleFlyToLayer = useCallback((layer: string) => {
+    if (layer === 'stations') setShowStations(true);
+    else if (layer === 'water') setShowWater(true);
+    else if (layer === 'units') { setShowKeyUnits(true); setShowBuildings(true); }
+    else if (layer === 'buildings') setShowBuildings(true);
+    else if (layer === 'incidents') setShowIncidents(true);
+  }, []);
+
   // sceneLog 联动(flyTo/addMarker/resetView/showRoute,见 gis/hooks/use-scene-bridge)
   useSceneBridge({
     mapRef,
@@ -907,6 +916,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
     waterMarkers: waterMarkersRef,
     keyUnitMarkers: keyUnitMarkersRef,
     setPlanned,
+    onFlyToLayer: handleFlyToLayer,
   });
 
   // 地图拾取模式:点击地图 → 回填 draft 坐标(GCJ02,高德瓦片原生坐标系)

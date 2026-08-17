@@ -128,6 +128,7 @@ export function registerGisTools(add?: AddSceneActionFn): void {
     }
     const zoom = Number(args.zoom);
     const label = args.label != null ? String(args.label) : '';
+    const layer = args.layer != null ? String(args.layer) : '';
     const addSceneAction = add;
     if (!addSceneAction) {
       console.warn('[scene-bus] gis_fly_to: 未注入 addSceneAction,跳过 sceneLog 写入');
@@ -136,7 +137,7 @@ export function registerGisTools(add?: AddSceneActionFn): void {
     addSceneAction({
       action: 'flyTo',
       target: label || `智能体定位(${lng.toFixed(5)}, ${lat.toFixed(5)})`,
-      params: { lng, lat, ...(Number.isFinite(zoom) ? { zoom } : {}) },
+      params: { lng, lat, ...(Number.isFinite(zoom) ? { zoom } : {}), ...(layer ? { layer } : {}) },
       source: '智能体',
     });
   });

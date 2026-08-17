@@ -70,7 +70,10 @@ agent 调 gis_fly_to 工具(mcp-server:8787)
 1. **定位目标**:地址/单位名 → `geocode_address` 取坐标;若用户提到实时警情(地址/编号),
    先 `query_incidents` 查警情(keyword/status 过滤),用警情自带坐标。
 2. **地图联动(标志性动作,研判开始必做)**:立即调用
-   `gis_fly_to(lat=…, lng=…, zoom=16, label=目标名)` 让态势地图飞到目标。
+   `gis_fly_to(lat=…, lng=…, zoom=16, label=目标名, layer=目标图层)` 让态势地图飞到目标。
+   **layer 必带**(目标图层未开时前端自动打开,否则用户看不到目标点):
+   水源=`water`,重点单位=`units`,消防站=`stations`,重点建筑=`buildings`,警情=`incidents`。
+   目标点会显示红色脉冲标记 + 名称。
 3. **周边水源**:`query_water_sources(lng, lat, radius=500)` 查 500m 水源。
 4. **周边单位**:`query_units()` 拉重点单位清单,按返回坐标与目标坐标估算距离,
    筛出约 1000m 内的单位,标注风险特征(高层/化工/人员密集/仓储)。

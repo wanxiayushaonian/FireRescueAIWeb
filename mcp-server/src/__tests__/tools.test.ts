@@ -135,11 +135,11 @@ describe('tools', () => {
     expect(TOOLS.map((t) => t.name)).toContain('gis_fly_to');
   });
 
-  it('gis_fly_to 发布命令:坐标必填,zoom/label 可选透传', async () => {
-    const res = await handleToolCall('gis_fly_to', { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼' });
+  it('gis_fly_to 发布命令:坐标必填,zoom/label/layer 可选透传', async () => {
+    const res = await handleToolCall('gis_fly_to', { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼', layer: 'units' });
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
       tool: 'gis_fly_to',
-      args: { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼' },
+      args: { lat: 29.6612, lng: 115.9475, zoom: 16, label: '乐盈广场21号楼', layer: 'units' },
     }));
     expect(res.content[0].text).toContain('已下发');
     expect(res.content[0].text).toContain('乐盈广场21号楼');
