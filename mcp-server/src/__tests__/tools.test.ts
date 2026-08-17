@@ -161,6 +161,17 @@ describe('tools', () => {
     expect(publishCommand).not.toHaveBeenCalled();
   });
 
+  it('get_scene_command_status 无记录 → not_found', async () => {
+    const res = await handleToolCall('get_scene_command_status', { cmd_id: 'cmd_missing' });
+    const text = res.content[0].text;
+    expect(text).toContain('not_found');
+  });
+
+  it('get_scene_command_status 缺 cmd_id → 标记错误', async () => {
+    const res = await handleToolCall('get_scene_command_status', {});
+    expect(res.isError).toBe(true);
+  });
+
   it('TOOLS 含 5C 新工具(query_building_profile/query_facilities/query_key_parts/query_scene_state/inject_event/report_decision)', () => {
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain('query_building_profile');

@@ -4,6 +4,7 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { createMcpServer } from './server.js';
 import { subscribeCommands } from './command-bus.js';
+import { recordCommandStatus } from './command-status.js';
 import { checkAppKey } from './auth.js';
 
 export function startHttp(opts: {
@@ -132,6 +133,40 @@ export function startHttp(opts: {
         res.writeHead(401); res.end('unauthorized'); return;
       }
       await transport.handlePostMessage(req, res);
+      return;
+    }
+
+    if (url.pathname === '/scene-events/ack' && req.method === 'POST') {
+      // 浏览器执行场景命令后的回执上报(经 BFF 同源代理,带 appKey)。
+      // 只接受合法载荷;记录失败静默(ack 是尽力而为通道)。
+      if (!appKeyAuthorized(req, url)) {
+        res.writeHead(401); res.end('unauthorized'); return;
+      }
+      let body = '';
+      req.on('data', (c) => {
+        body += c;
+        if (body.length > 4096) req.destroy(); // 防超长载荷
+      });
+      req.on('end', () => {
+        try {
+          const parsed = JSON.parse(body || '{}') as {
+            cmd_id?: unknown; tool?: unknown; status?: unknown; message?: unknown;
+          };
+          if (typeof parsed.cmd_id === 'string' && parsed.cmd_id
+              && (parsed.status === 'ok' || parsed.status === 'error')) {
+            recordCommandStatus(
+              parsed.cmd_id,
+              typeof parsed.tool === 'string' ? parsed.tool : '',
+              parsed.status,
+              typeof parsed.message === 'string' ? parsed.message.slice(0, 200) : undefined,
+            );
+          }
+          res.writeHead(204); res.end();
+        } catch (err) {
+          console.error('[mcp] /scene-events/ack parse failed:', err);
+          res.writeHead(400); res.end('bad json');
+        }
+      });
       return;
     }
 

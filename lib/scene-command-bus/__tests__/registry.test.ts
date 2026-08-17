@@ -13,11 +13,21 @@ describe('scene-command-bus registry', () => {
     expect(h).toHaveBeenCalledWith({ target: 'd1' }, fakeSdk);
   });
 
-  it('未知 tool 不抛,只记录', async () => {
+  it('未知 tool 不抛,返回 no-handler', async () => {
     __resetForTest();
     await expect(
       dispatch({ id: '2', tool: 'nope', args: {}, ts: 0 }, fakeSdk),
-    ).resolves.toBeUndefined();
+    ).resolves.toBe('no-handler');
+  });
+
+  it('handler 成功返回 ok,失败返回 error(供 transport ack)', async () => {
+    __resetForTest();
+    const err = vi.fn().mockRejectedValue(new Error('boom'));
+    const ok = vi.fn().mockResolvedValue(undefined);
+    registerSceneTool('a', err);
+    registerSceneTool('b', ok);
+    await expect(dispatch({ id: '3', tool: 'a', args: {}, ts: 0 }, fakeSdk)).resolves.toBe('error');
+    await expect(dispatch({ id: '4', tool: 'b', args: {}, ts: 0 }, fakeSdk)).resolves.toBe('ok');
   });
 
   it('handler 抛错被吞掉,不卡死后续命令', async () => {

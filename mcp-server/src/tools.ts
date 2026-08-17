@@ -2,6 +2,7 @@ import { getSceneOverview, getFireDeviceList, getFloorList } from './bff-client.
 import { getBuildingProfile, getFacilities, getKeyParts, getKnowledge } from './business-client.js';
 import { querySceneState, injectEvent, reportDecision } from './drill-control.js';
 import { publishCommand } from './command-bus.js';
+import { getCommandStatus } from './command-status.js';
 import type { SceneCommand } from './types.js';
 
 export const TOOLS = [
@@ -67,6 +68,17 @@ export const TOOLS = [
         target: { type: 'string', description: '目标名称(可选)' },
       },
       required: ['routes'],
+    },
+  },
+  {
+    name: 'get_scene_command_status',
+    description: '查询场景命令的执行回执(fly_to/focus_objects/focus_floors/gis_fly_to/show_route 等下发后的执行结果;浏览器在线执行后回传,10 分钟有效)。返回 ok=已执行/error=执行失败+原因/not_found=未执行或已过期。用于确认 3D/GIS 动作是否真正落地(命令通道为异步,下发不代表已执行)。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        cmd_id: { type: 'string', description: '命令 id(下发命令的返回/日志中的 cmd_xxx)' },
+      },
+      required: ['cmd_id'],
     },
   },
   // ─── 业务查询(对接 znya /api/business/*,供演练 agent 查建筑档案)───
@@ -213,7 +225,7 @@ export async function handleToolCall(
     return {
       content: [{
         type: 'text',
-        text: `已下发 focus_objects:${action}。命令经 /scene-events 推送;仅当页面在线且场景 SDK 就绪时生效,通道为单向无回执。`,
+        text: `已下发 focus_objects:${action} (cmd_id=${cmd.id})。可用 get_scene_command_status(cmd_id) 查询执行回执。`,
       }],
     };
   }
@@ -231,7 +243,7 @@ export async function handleToolCall(
     return {
       content: [{
         type: 'text',
-        text: `已下发 focus_floors:${floorAction}。命令经 /scene-events 推送;仅当页面在线且场景 SDK 就绪时生效,通道为单向无回执。`,
+        text: `已下发 focus_floors:${floorAction} (cmd_id=${cmd.id})。可用 get_scene_command_status(cmd_id) 查询执行回执。`,
       }],
     };
   }
@@ -256,7 +268,7 @@ export async function handleToolCall(
     return {
       content: [{
         type: 'text',
-        text: `已下发 fly_to -> ${target}:命令经 /scene-events 推送至场景页面。仅当页面在线且场景 SDK 就绪时才会执行;命令通道为单向,无执行回执,实际效果需另行确认。`,
+        text: `已下发 fly_to -> ${target} (cmd_id=${cmd.id}):命令经 /scene-events 推送至场景页面。可用 get_scene_command_status(cmd_id) 查询执行回执(浏览器在线执行后返回 ok/error)。`,
       }],
     };
   }
@@ -289,7 +301,7 @@ export async function handleToolCall(
     return {
       content: [{
         type: 'text',
-        text: `已下发 gis_fly_to -> ${label || `${lng},${lat}`}:命令经 /scene-events 推送至态势总览 GIS 地图。仅当页面在线且地图就绪时生效,通道单向无回执。`,
+        text: `已下发 gis_fly_to -> ${label || `${lng},${lat}`} (cmd_id=${cmd.id}):命令经 /scene-events 推送至态势总览 GIS 地图。可用 get_scene_command_status(cmd_id) 查询执行回执。`,
       }],
     };
   }
@@ -312,12 +324,31 @@ export async function handleToolCall(
     return {
       content: [{
         type: 'text',
-        text: `已下发 show_route(${routes.length} 站):命令经 /scene-events 推送至 2D 态势总览渲染。仅当页面在线且地图就绪时生效,通道为单向无回执。`,
+        text: `已下发 show_route(${routes.length} 站) (cmd_id=${cmd.id}):命令经 /scene-events 推送至 2D 态势总览渲染。可用 get_scene_command_status(cmd_id) 查询执行回执。`,
       }],
     };
   }
 
   // ─── 业务查询:对接 znya /api/business/*(经 web BFF,x-app-key 鉴权)───
+  if (name === 'get_scene_command_status') {
+    const cmdId = String(args.cmd_id ?? '').trim();
+    if (!cmdId) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'get_scene_command_status 缺少 cmd_id:需提供下发命令返回的 cmd_xxx id' }],
+      };
+    }
+    const st = getCommandStatus(cmdId);
+    if (!st) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ cmd_id: cmdId, status: 'not_found', message: '未执行或已过期(浏览器可能离线/命令未被消费)' }, null, 2) }],
+      };
+    }
+    return {
+      content: [{ type: 'text', text: JSON.stringify({ cmd_id: st.cmdId, tool: st.tool, status: st.status, message: st.message ?? null, ts: st.ts }, null, 2) }],
+    };
+  }
+
   if (name === 'query_building_profile') {
     const buildingId = String(args.building_id ?? '').trim();
     if (!buildingId) {
