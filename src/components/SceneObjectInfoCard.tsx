@@ -14,7 +14,7 @@ import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scen
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId } from '@/lib/scene-navigation';
 import { showToast } from '@/components/Toast';
 
 interface CardState {
@@ -40,9 +40,86 @@ export default function SceneObjectInfoCard() {
   const indexRef = useRef(pickIndex);
   const storyIndexRef = useRef(storyIndex);
   const bridgeRef = useRef(bridge);
-  // onUp 事件闭包deps为[],经 ref 取最新场景句柄(两点导航拾取要用)
+  // onUp/语义点击闭包经 ref 取最新句柄(两点导航拾取要用)
   const sceneRef = useRef<{ tree: typeof tree; runtime: typeof runtime }>({ tree, runtime });
   sceneRef.current = { tree, runtime };
+  // 当前 recipe 模式('3D'/'2D'):2D 平面图下两点导航走语义点击,3D 走 pointerup 拾取
+  const recipeModeRef = useRef<string>('3D');
+  useEffect(() => {
+    if (!recipeStore) {
+      recipeModeRef.current = '3D';
+      return;
+    }
+    const sync = (): void => {
+      recipeModeRef.current = recipeStore.getCurrent().structural.mode ?? '3D';
+    };
+    sync();
+    return recipeStore.subscribe(sync);
+  }, [recipeStore]);
+
+  /** 两点导航:消费一个打点(Space/Story 图节点;highlightOutId 可选高亮被点对象) */
+  const consumeNavPoint = (pt: { name: string; nodeId: string }, highlightOutId?: string): void => {
+    const scene = sceneRef.current;
+    if (!scene.runtime) return;
+    if (highlightOutId) scene.runtime.highlightObject(highlightOutId, '#f97316');
+    const mode = getNavPickMode();
+    if (mode === 'start') {
+      setNavStart(pt);
+      setNavPickMode('end');
+      showToast(`起点:${pt.name} · 请点击终点`);
+      return;
+    }
+    if (mode === 'end') {
+      const start = getNavStart();
+      if (!start) {
+        setNavPickMode('start');
+        showToast('请先点击起点');
+        return;
+      }
+      setNavPickMode('start'); // 连续规划:生成后回到起点拾取
+      void navigateBetween(scene.runtime, start, pt).then((r) => {
+        showToast(
+          r.error
+            ?? `路径已生成:${start.name} → ${pt.name}${typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : ''}`,
+        );
+      });
+    }
+  };
+  const navConsumeRef = useRef(consumeNavPoint);
+  navConsumeRef.current = consumeNavPoint;
+
+  // 2D 平面图模式下,两点导航打点走 SDK 语义点击(命中 2D 重绘语义对象:
+  // Space/Story 直接取语义 twins id;门/窗线等回退所在楼层 Story 节点)
+  useEffect(() => {
+    if (!runtime || view !== 'ready') return;
+    return runtime.setSceneClickHandler((info) => {
+      if (getNavPickMode() === 'off' || !info) return;
+      if (recipeModeRef.current !== '2D') return; // 3D 模式走 pointerup 拾取,防双触发
+      const scene = sceneRef.current;
+      if (!scene.tree) return;
+      const identifier = String(info.twins_identifier ?? '');
+      const storyEntry = info.story_id ? storyIndexRef.current.get(String(info.story_id)) : undefined;
+      const storyLabel = storyEntry?.storyLabel ?? '';
+      let nodeId = '';
+      let name = '';
+      if (identifier === 'Space' || identifier === 'Story') {
+        nodeId = String(info.twins_instance_id ?? '');
+        name = identifier === 'Space' ? (storyLabel ? `${storyLabel}·空间` : '空间') : (storyLabel || '楼层');
+      } else {
+        // 门/窗线/墙线等非端点语义 → 回退所在楼层(楼层是合法图端点)
+        const story = info.story_id ? findNodeByOutId(scene.tree, String(info.story_id)) : null;
+        if (story) {
+          nodeId = story.twinsId;
+          name = storyLabel || story.name;
+        }
+      }
+      if (!nodeId) {
+        showToast('该处未命中空间,请在平面图的房间区域打点');
+        return;
+      }
+      navConsumeRef.current({ name, nodeId }, info.out_instance_id || undefined);
+    });
+  }, [runtime, view]);
   const lastPickRef = useRef<{ sids: string[]; hitChains?: string[][]; clientX: number; clientY: number } | null>(null);
   const downRef = useRef<{ x: number; y: number } | null>(null);
   indexRef.current = pickIndex;
@@ -103,9 +180,10 @@ export default function SceneObjectInfoCard() {
       const chains = pick.hitChains ?? [pick.sids];
       const node = resolvePickAcross(chains, indexRef.current);
 
-      // 两点导航拾取模式:点击作为起点/终点,不弹信息卡
+      // 两点导航拾取(仅 3D 模式;2D 平面图走语义点击通道):点击作为起点/终点,不弹信息卡
       const navMode = getNavPickMode();
       if (navMode !== 'off') {
+        if (recipeModeRef.current === '2D') return; // 2D 由语义点击处理,跳过防双触发
         const scene = sceneRef.current;
         if (!node || !scene.tree || !scene.runtime) {
           showToast('该处无可导航对象,请点击设备/空间');
@@ -116,26 +194,7 @@ export default function SceneObjectInfoCard() {
           showToast('该对象未挂空间/楼层节点,换个点位试试');
           return;
         }
-        scene.runtime.highlightObject(node.outId, '#f97316');
-        if (navMode === 'start') {
-          setNavStart(pt);
-          setNavPickMode('end');
-          showToast(`起点:${pt.name} · 请点击终点`);
-        } else {
-          const start = getNavStart();
-          if (!start) {
-            setNavPickMode('start');
-            showToast('请先点击起点');
-            return;
-          }
-          setNavPickMode('start'); // 连续规划:生成后回到起点拾取
-          void navigateBetween(scene.runtime, start, pt).then((r) => {
-            showToast(
-              r.error
-                ?? `路径已生成:${start.name} → ${pt.name}${typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : ''}`,
-            );
-          });
-        }
+        navConsumeRef.current(pt, node.outId);
         return;
       }
 

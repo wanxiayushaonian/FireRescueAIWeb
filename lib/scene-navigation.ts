@@ -168,6 +168,22 @@ export function navNodeForOutId(tree: SceneTreeNode, outId: string): { name: str
   return nodeId ? { name: plan.targetName, nodeId } : null;
 }
 
+/** 按 out 实例 id 找树节点(twins id + 名字;2D 语义点击的楼层回退用) */
+export function findNodeByOutId(tree: SceneTreeNode, outId: string): { name: string; twinsId: string } | null {
+  let found: { name: string; twinsId: string } | null = null;
+  const walk = (n: SceneTreeNode): void => {
+    if (found) return;
+    if (nodeOutId(n) === outId) {
+      const twinsId = String(n.twins_instance_id ?? '');
+      if (twinsId) found = { name: nodeLabel(n), twinsId };
+      return;
+    }
+    for (const c of n.children ?? []) walk(c);
+  };
+  walk(tree);
+  return found;
+}
+
 /** 两点导航:起点/终点图节点 → SDK 场内导航(SDK 自动绘制步行路线)。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,

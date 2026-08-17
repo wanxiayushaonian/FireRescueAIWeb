@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, ChevronDown, Layers, Box, Columns3 } from 'lucide-react';
+import { Search, ChevronDown, Layers, Box, Columns3, Map as MapIcon } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { extractBuildings } from '@/lib/scene-buildings';
@@ -44,6 +44,18 @@ export default function SceneToolbar() {
 
   // 从 Recipe 单一真相源派生选中集(外部聚焦 → 工具栏同步)
   const prevSelectedRef = useRef<Set<string>>(new Set());
+  // 平面图(2D)模式:recipe.mode 单一真相源,切换走 patchStructural({mode})
+  const [is2d, setIs2d] = useState(false);
+  useEffect(() => {
+    if (!recipeStore) {
+      setIs2d(false);
+      return;
+    }
+    const sync = (): void => setIs2d(recipeStore.getCurrent().structural.mode === '2D');
+    sync();
+    return recipeStore.subscribe(sync);
+  }, [recipeStore]);
+
   useEffect(() => {
     if (!recipeStore) {
       setSelected(new Set());
@@ -67,6 +79,19 @@ export default function SceneToolbar() {
     sync();
     return recipeStore.subscribe(sync);
   }, [recipeStore, outIdToKey]);
+
+  /** 平面图/立体切换:2D 摊平当前楼层;整体视角进入时默认聚焦首层(全楼层同时摊平会叠影) */
+  const toggleFlat = (): void => {
+    if (!recipeStore || view !== 'ready') return;
+    if (!is2d && selected.size === 0 && allStories[0]) {
+      const keys = new Set([allStories[0].key]);
+      setSelected(keys);
+      apply(keys);
+      recipeStore.patchStructural({ mode: '2D' });
+      return;
+    }
+    recipeStore.patchStructural({ mode: is2d ? '3D' : '2D' });
+  };
 
   const level: LayerLevel = levelFromStoryCount(selected.size);
   const selectedStories = useMemo(
@@ -226,6 +251,20 @@ export default function SceneToolbar() {
             </button>
           ))}
         </div>
+
+        <span className="h-4 w-px shrink-0 bg-line" />
+
+        {/* 平面图(2D)/立体(3D)切换:摊平成楼层平面图,配合两点导航打点 */}
+        <button
+          onClick={toggleFlat}
+          className={`flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] transition ${
+            is2d ? 'border-orange/50 bg-orange/15 text-orange' : 'border-line text-text-3 hover:text-text-1'
+          }`}
+          title={is2d ? '回到立体视图' : '摊平为楼层平面图(2D)——配合底部「两点导航」在平面图上打点'}
+        >
+          <MapIcon className="h-3 w-3" />
+          {is2d ? '立体' : '平面图'}
+        </button>
 
         <span className="h-4 w-px shrink-0 bg-line" />
 
