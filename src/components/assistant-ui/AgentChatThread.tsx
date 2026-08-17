@@ -111,12 +111,18 @@ export function AgentChatThread({ module, sessionId, onSessionChange, sendRef, o
   const attachments = useMemo<AttachmentAdapter>(() => createImageAttachmentAdapter(), []);
 
   /** patch 最后一条 assistant 消息(仅当 id 匹配当前 run)。 */
+  /** patch 最后一条 assistant 消息(仅当 id 匹配当前 run)。
+   *  自愈:runtime 经 adapter.setMessages 回写(如 onNew 合入 user 消息)会覆盖掉
+   *  预置的 assistant 占位 → 此处发现末位不是 assistant 时自动补一条再应用增量,
+   *  否则整轮流式内容会被静默丢弃(现象:发消息后 AI 回复空白)。 */
   const patchAssistant = useCallback((runId: number, updater: (m: ThreadMessageLike) => ThreadMessageLike) => {
     if (runId !== runIdRef.current) return;
     setMessages((prev) => {
       const last = prev[prev.length - 1];
-      if (!last || last.role !== 'assistant') return prev;
-      return [...prev.slice(0, -1), updater(last)];
+      if (last && last.role === 'assistant') {
+        return [...prev.slice(0, -1), updater(last)];
+      }
+      return [...prev, updater({ role: 'assistant', content: [], status: RUNNING })];
     });
   }, []);
 
