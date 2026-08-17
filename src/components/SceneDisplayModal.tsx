@@ -26,6 +26,7 @@ import { useScene } from './SceneProvider';
 import type { StructuralRecipe } from '@/lib/scene-recipe/types';
 import { HIDABLE_CATEGORY_GROUPS, defaultVisibleByLevel } from '@/lib/scene-categories';
 import { saveSceneDisplayPrefs } from '@/lib/scene-display-prefs';
+import ScenePackPanel from '@/components/ScenePackPanel';
 
 type Level = 'whole' | 'single' | 'multi';
 
@@ -66,6 +67,8 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
   );
   const [activeLevel, setActiveLevel] = useState<Level>('whole');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['fireDevices']));
+  // 顶层页签:内容显隐(开关) / 场景包内容(数据解析展示)
+  const [topTab, setTopTab] = useState<'visibility' | 'pack'>('visibility');
 
   useEffect(() => {
     if (!recipeStore) return;
@@ -129,6 +132,25 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
           </DialogDescription>
         </DialogHeader>
 
+        {/* 顶层页签:内容显隐 / 场景包内容(数据解析) */}
+        <div className="flex gap-1 rounded-md border border-line bg-bg-panel p-0.5">
+          {([['visibility', '内容显隐'], ['pack', '场景包内容']] as const).map(([tab, label]) => (
+            <button
+              key={tab}
+              onClick={() => setTopTab(tab)}
+              className={`flex-1 rounded px-2 py-1.5 text-[11px] transition ${
+                topTab === tab ? 'bg-cyan/20 text-cyan' : 'text-text-3 hover:text-text-1'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {topTab === 'pack' ? (
+          <ScenePackPanel onJumpVisibility={() => setTopTab('visibility')} />
+        ) : (
+          <>
         {/* 层级 tab:整体 / 单楼层 / 多楼层(各 tab 独立) */}
         <div className="flex gap-1 rounded-md border border-line bg-bg-panel p-0.5">
           {LEVEL_TABS.map(({ level, label, icon: Icon }) => (
@@ -210,6 +232,8 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
             重置本层
           </button>
         </div>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );
