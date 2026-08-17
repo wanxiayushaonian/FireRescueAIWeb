@@ -16,7 +16,7 @@
 import type { DrillEvent } from '@/lib/drill/event-bus';
 import type { DrillScenarioDef } from './types';
 import { registerScenario } from './registry';
-import { ADVERSARY_APP_ID } from '@/lib/agent-app-ids';
+import { ADVERSARY_APP_ID, DRILL_COMMANDER_APP_ID } from '@/lib/agent-app-ids';
 
 // ============================================================
 // 常量 ID(实测,从 SSE 格式文档)
@@ -221,7 +221,9 @@ export const BUILDING_21_SCENARIO_DEF: DrillScenarioDef = {
   sceneId: BUILDING_21_SCENE_ID,
   buildingId: BUILDING_21_ID,
   drillId: BUILDING_21_DRILL_ID,
-  commanderAppId: COMMANDER_APP_ID,
+  // 指挥 agent:NEXT_PUBLIC_DRILL_COMMANDER_APP_ID 注入专属「演练指挥官」应用(未配回退通用 app,
+  // 无指挥角色配置——决策只调无关工具、3D 零联动,2026-08-17 演练实测)
+  commanderAppId: DRILL_COMMANDER_APP_ID,
   // 对抗 agent:ADVERSARY_APP_ID(NEXT_PUBLIC_ADVERSARY_APP_ID)注入即启用(每 5 tick 注入一次特情);
   // 未配置时保持 0 禁用(triggerAdversary 对空 appId 也是 no-op,双保险)
   adversaryEveryNTicks: ADVERSARY_APP_ID ? 5 : 0,
