@@ -43,25 +43,27 @@ export default function App() {
   );
 }
 
-/** 3D 场景容器：始终存在，跨模块复用 */
-function SceneContainer() {
+/** 3D 场景容器：始终存在，跨模块复用。演练(drill)时 3D 为纯背景——隐藏全部交互浮层,
+ *  避免与演练自己的顶部条/参数条/右栏重合(此前帧率/工具栏/书签条全叠在演练 UI 上)。 */
+function SceneContainer({ module }: { module: ModuleKey }) {
   const { containerRef, view, progress } = useScene();
+  const isDrill = module === 'drill';
 
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
       <div ref={containerRef} className="absolute inset-0" />
       {/* 顶部居中工具栏:层级切换+当前楼层徽章+楼层chip云+设备搜索(与场景深度联动) */}
-      <SceneToolbar />
+      {!isDrill && <SceneToolbar />}
       {/* 整体建筑视角下 hover 楼层浮层标签(仅整体视角开启 hover raycast;双击直达单层) */}
-      <SceneFloorHoverLabel />
+      {!isDrill && <SceneFloorHoverLabel />}
       {/* 单/多层视角下 hover 设备轻提示(名称+类型+楼层;与楼层浮标经多订阅通道并存) */}
-      <SceneDeviceHoverTip />
+      {!isDrill && <SceneDeviceHoverTip />}
       {/* 点击对象信息卡 / 视角书签+截图+清除高亮(底部居中) / 首次提示 */}
-      <SceneObjectInfoCard />
-      <SceneViewBar />
-      <SceneHintBar />
+      {!isDrill && <SceneObjectInfoCard />}
+      {!isDrill && <SceneViewBar />}
+      {!isDrill && <SceneHintBar />}
       {/* 帧率监控浮窗(仅 3D 场景就绪时显示,纯展示不拦截交互) */}
-      <ScenePerfWidget />
+      {!isDrill && <ScenePerfWidget />}
       {view === 'loading' && (
         <div className="absolute inset-0 z-30 grid place-items-center bg-bg-deep/50 backdrop-blur-[2px]">
           <div className="w-72 rounded-xl border border-line bg-bg-panel/85 px-6 py-5 text-center shadow-xl">
@@ -272,7 +274,7 @@ function AppContent() {
         <main className="relative min-w-0 flex-1">
           {/* 3D 场景容器：始终挂载（保持 WebGL canvas），用 CSS 控制显隐 */}
           <div className={module === 'overview' ? 'hidden' : 'absolute inset-0 z-0'}>
-            <SceneContainer />
+            <SceneContainer module={module} />
           </div>
 
           {/* 模块内容层 */}
@@ -341,8 +343,8 @@ function AppContent() {
               />
             </DraggablePanel>
           )}
-          {/* 3D 场景左上角场景切换(仅非 overview 模块显示;overview 用 GIS 地图无场景包) */}
-          {module !== 'overview' && scenes.length > 0 && (
+          {/* 3D 场景左上角场景切换(对象/培训/指挥模块显示;overview 用 GIS 无场景包,drill 场景固定) */}
+          {module !== 'overview' && module !== 'drill' && scenes.length > 0 && (
             <SceneSwitcher scenes={scenes} selectedSceneId={sceneId} onSelectScene={handleSelectScene} />
           )}
           <SceneCommandBridge />
