@@ -8,6 +8,7 @@ import {
   Wifi, WifiOff, History,
 } from 'lucide-react';
 import type { AgentPanelId, ModuleKey } from '@/mock/agentScripts';
+import { AGENT_APP_IDS, GLOBAL_ASSISTANT_APP_ID } from '@/lib/agent-app-ids';
 import { AgentChatThread, type AgentConnState } from '@/components/assistant-ui/AgentChatThread';
 import ChatHistoryPanel from '@/components/assistant-ui/ChatHistoryPanel';
 
@@ -24,6 +25,12 @@ const AGENT_IDENTITIES: Record<ModuleKey, { title: string; subtitle: string; Ico
   training: { title: '熟悉引导智能体', subtitle: '引导熟悉 · 考核答疑', Icon: Compass },
   command: { title: '辅助决策智能体', subtitle: '实时灾情推理 · 调度建议', Icon: Crosshair },
 };
+
+/** 全局助手身份(双 tab 第二页签;五模块共享同一 app:工作流串联 + 通识)。 */
+const GLOBAL_IDENTITY = { title: '全局助手', subtitle: '跨模块工作流 · 消防通识', Icon: Sparkles };
+
+/** 侧边栏助手维度:business=本模块业务助手;global=全局助手(共享 app)。 */
+type AgentTab = 'business' | 'global';
 
 /** 连接状态徽标(标题栏右侧) */
 function ConnBadge({ state }: { state: AgentConnState }) {
@@ -52,20 +59,24 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview' }: Agent
   // 历史对话:当前会话 id + 历史面板开关
   const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // 双 tab:业务助手/全局助手(全局 app 未配时隐藏 tab 条,退化为单助手)
+  const [agentTab, setAgentTab] = useState<AgentTab>('business');
   const resizeRef = useRef<{ startX: number; startW: number } | null>(null);
   const sendRef = useRef<((text: string) => void) | null>(null);
-  const identity = AGENT_IDENTITIES[module];
+  const identity = agentTab === 'global' ? GLOBAL_IDENTITY : AGENT_IDENTITIES[module];
+  const hasGlobal = Boolean(GLOBAL_ASSISTANT_APP_ID);
+  const appId = agentTab === 'global' ? AGENT_APP_IDS[module].global : AGENT_APP_IDS[module].business;
 
   const handleToggle = () => {
     setExpanded((v) => !v);
     if (!expanded) setUnread(0);
   };
 
-  // 切模块时重置会话(历史按模块隔离)
+  // 切模块时重置会话(历史按模块隔离);tab 切换同理(业务/全局助手会话不同)
   useEffect(() => {
     setActiveSessionId(undefined);
     setHistoryOpen(false);
-  }, [module]);
+  }, [module, agentTab]);
 
   const Icon = identity.Icon;
 
@@ -141,7 +152,7 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview' }: Agent
             <div className="absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-cyan/50 to-transparent" />
             <AnimatePresence mode="wait" initial={false}>
               <motion.div
-                key={module}
+                key={`${module}-${agentTab}`}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
@@ -179,11 +190,31 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview' }: Agent
             </div>
           </div>
 
+          {/* 双 tab:本模块业务助手 / 全局助手(全局 app 未配时隐藏,退化为单助手) */}
+          {hasGlobal && (
+            <div className="flex h-8 shrink-0 items-center gap-1 border-b border-line/60 px-2">
+              {([['business', AGENT_IDENTITIES[module].title], ['global', '全局助手']] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setAgentTab(key)}
+                  className={`h-6 rounded-md px-2.5 text-[11px] transition ${
+                    agentTab === key
+                      ? 'bg-gradient-to-r from-violet/40 to-cyan/30 text-text-1'
+                      : 'text-text-3 hover:bg-white/5 hover:text-text-2'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* 对话区(assistant-ui Thread)+ 历史浮层 */}
           <div className="relative min-h-0 flex-1 overflow-y-auto">
             {historyOpen ? (
               <ChatHistoryPanel
                 module={module}
+                appId={appId}
                 activeId={activeSessionId}
                 onSelect={(id) => {
                   setActiveSessionId(id);
@@ -198,6 +229,7 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview' }: Agent
             ) : (
               <AgentChatThread
                 module={module}
+                appId={appId}
                 sessionId={activeSessionId}
                 onSessionChange={(s) => setActiveSessionId(s?.id)}
                 sendRef={sendRef}

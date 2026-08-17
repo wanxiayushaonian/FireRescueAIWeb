@@ -16,18 +16,20 @@ function relTime(ts: number): string {
 
 interface Props {
   module: ModuleKey;
+  /** 显式 app_id(双 tab:业务/全局助手由 Sidebar 算好传入);缺省用本模块业务助手 */
+  appId?: string;
   activeId: string | undefined;
   onSelect: (id: string) => void;
   onNew: () => void;
   onClose: () => void;
 }
 
-export default function ChatHistoryPanel({ module, activeId, onSelect, onNew, onClose }: Props) {
+export default function ChatHistoryPanel({ module, appId: appIdProp, activeId, onSelect, onNew, onClose }: Props) {
   const [sessions, setSessions] = useState<RemoteSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const appId = AGENT_APP_IDS[module];
+  const appId = appIdProp ?? AGENT_APP_IDS[module].business;
 
   const load = useCallback(() => {
     setLoading(true);

@@ -26,6 +26,8 @@ export type AgentConnState = 'idle' | 'streaming' | 'online' | 'error';
 
 interface AgentChatThreadProps {
   module: ModuleKey;
+  /** 显式 app_id(双 tab:业务/全局助手由 Sidebar 算好传入);缺省用本模块业务助手 */
+  appId?: string;
   /** 当前会话 id(来自历史列表);变化时恢复对应会话,undefined=新会话 */
   sessionId?: string;
   /** 会话变更上报(新建/恢复时给父组件同步 activeId) */
@@ -76,13 +78,13 @@ function createImageAttachmentAdapter(): AttachmentAdapter {
   };
 }
 
-export function AgentChatThread({ module, sessionId, onSessionChange, sendRef, onStateChange }: AgentChatThreadProps) {
+export function AgentChatThread({ module, appId: appIdProp, sessionId, onSessionChange, sendRef, onStateChange }: AgentChatThreadProps) {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
   const convIdRef = useRef<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const runIdRef = useRef<number>(0); // 并发守卫:只 patch 当前 run 的消息
-  const appId = AGENT_APP_IDS[module];
+  const appId = appIdProp ?? AGENT_APP_IDS[module].business;
 
   // sessionId(平台 conversation_id)变化 → 拉详情恢复消息;undefined → 空新会话
   useEffect(() => {
@@ -149,7 +151,7 @@ export function AgentChatThread({ module, sessionId, onSessionChange, sendRef, o
     try {
       const stream = await postAgentChat({
         content: text,
-        app_id: AGENT_APP_IDS[module],
+        app_id: appId,
         forwardedProps: sceneId ? { scene_id: sceneId } : {},
         conversationId: convIdRef.current,
         images: images && images.length > 0 ? images : undefined,
@@ -246,7 +248,7 @@ export function AgentChatThread({ module, sessionId, onSessionChange, sendRef, o
         abortRef.current = null;
       }
     }
-  }, [module, patchAssistant, onStateChange, onSessionChange]);
+  }, [appId, patchAssistant, onStateChange, onSessionChange]);
 
   const onNew = useCallback(async (msg: AppendMessage) => {
     // 图片不在 msg.content,而在 msg.attachments(assistant-ui 发送时把附件单独放)
