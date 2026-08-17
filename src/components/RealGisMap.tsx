@@ -58,7 +58,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap({ onEnterScene, onMapReady }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void }) {
+export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; chrome?: 'full' | 'minimal' }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
@@ -983,7 +983,9 @@ export default function RealGisMap({ onEnterScene, onMapReady }: { onEnterScene?
         }}
       />
       {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化)。
-          居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称 */}
+          居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称。
+          minimal chrome(实战指挥等被面板占用的模块)隐藏,避免与左下/右下面板重合 */}
+      {chrome === 'full' && (
       <div className="absolute bottom-3 left-1/2 z-[450] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-line bg-bg-panel/90 px-3 py-2 shadow-lg backdrop-blur">
         <div className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 text-cyan" />
@@ -999,6 +1001,7 @@ export default function RealGisMap({ onEnterScene, onMapReady }: { onEnterScene?
           <span>单位 <b className="text-text-1">{districtStats.keyUnits.toLocaleString()}</b></span>
         </div>
       </div>
+      )}
       {/* 到场路线图例:planned 时显示,颜色↔站名↔距离/ETA 对应,最快路线高亮 */}
       {planned.length > 0 && (() => {
         const fastest = Math.min(...planned.map((x) => x.duration));
@@ -1189,7 +1192,7 @@ export default function RealGisMap({ onEnterScene, onMapReady }: { onEnterScene?
           底图瓦片加载失败(高德不可达)——显示占位底图
         </div>
       )}
-      {showWater && (waterLoading || waterDense || waterEmpty) && (
+      {chrome === 'full' && showWater && (waterLoading || waterDense || waterEmpty) && (
         <div className="absolute bottom-3 right-14 z-[500] flex items-center rounded border border-line bg-bg-panel/90 px-2.5 py-1 text-[11px] text-text-2">
           {waterLoading ? (
             <>
