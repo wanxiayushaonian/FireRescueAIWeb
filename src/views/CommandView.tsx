@@ -11,6 +11,7 @@ import DisasterVarsPanel from '@/components/command/DisasterVarsPanel';
 import RecommendPanel from '@/components/command/RecommendPanel';
 import VideoPlaybackPanel from '@/components/command/VideoPlaybackPanel';
 import TacticalOverlay from '@/components/command/TacticalOverlay';
+import CommandIntelPanel from '@/components/command/CommandIntelPanel';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
 import {
@@ -33,6 +34,7 @@ export default function CommandView() {
   const [snap, setSnap] = useState<LiveSnapshot>(() => getSnapshot());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [incidentPanelOpen, setIncidentPanelOpen] = useState(true);
+  const [intelOpen, setIntelOpen] = useState(true);
   const [varsPanelOpen, setVarsPanelOpen] = useState(true);
   const [recPanelOpen, setRecPanelOpen] = useState(true);
   const [videoOpen, setVideoOpen] = useState(false);
@@ -265,7 +267,7 @@ export default function CommandView() {
         sourceName={selected?.address}
       />
 
-      {/* 左：实时警情接入 */}
+      {/* 左：实时警情接入(高度让位左下作战要素卡片区) */}
       <DraggablePanel
         panelId="command-incidents"
         title="实时警情接入"
@@ -273,7 +275,7 @@ export default function CommandView() {
         width={380}
         dock="left"
         defaultPos={{ x: 16, y: 16 }}
-        height="calc(100% - 32px)"
+        height="calc(100% - 360px)"
         open={incidentPanelOpen}
         onOpenChange={setIncidentPanelOpen}
       >
@@ -284,6 +286,24 @@ export default function CommandView() {
           onInject={mode === 'mock' ? handleInject : undefined}
           channelDown={false}
         />
+      </DraggablePanel>
+
+      {/* 左下：作战要素卡片(ref 5.5 周边水源/设施完好/物质理化/被困位置) */}
+      <DraggablePanel
+        panelId="command-intel"
+        title="作战要素"
+        icon={Sparkles}
+        width={560}
+        dock="left"
+        defaultPos={{ x: 16, y: 16 }}
+        bottomOffset={16}
+        height="330px"
+        open={intelOpen}
+        onOpenChange={setIntelOpen}
+      >
+        <div className="h-full overflow-y-auto p-2 [scrollbar-width:thin]">
+          <CommandIntelPanel incident={selected} vars={selectedVars} />
+        </div>
       </DraggablePanel>
 
       {/* 右上：灾情变量监测 */}
