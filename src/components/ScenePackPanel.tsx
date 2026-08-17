@@ -36,6 +36,8 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
     else siteByType.set(item.type, { label: item.label, count: 1 });
   }
   const entrances = inv.siteLevel.filter((s) => s.type === 'SceneInOut');
+  // 未定义楼层(名不可解析)是建模残缺产物,不计入楼层数(矩阵中仍如实展示)
+  const namedStoryCount = inv.stories.filter((s) => s.floor !== null).length;
 
   return (
     <div className="w-full min-w-0 space-y-3">
@@ -44,7 +46,7 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
         {[
           { label: '节点总数', value: inv.totalNodes.toLocaleString() },
           { label: '类型', value: `${inv.types.length} 种` },
-          { label: '楼层', value: `${inv.stories.length} 层` },
+          { label: '楼层', value: `${namedStoryCount} 层` },
           { label: 'Site 级', value: `${inv.siteLevel.length} 个` },
         ].map((c) => (
           <div key={c.label} className="rounded-md border border-line/60 bg-bg-panel-2/40 px-2 py-1.5 text-center">

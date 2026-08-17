@@ -14,6 +14,7 @@ import type { LucideIcon } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { extractBuildings } from '@/lib/scene-buildings';
 import { levelFromStoryCount, deriveLayerPolicy, type LayerLevel } from '@/lib/scene-recipe/level-policy';
+import { parseFloorToken } from '@/lib/floor-focus';
 import { buildDeviceSearchIndex, searchDevices, groupDevicesByStory, type DeviceSearchItem } from '@/lib/scene-pick';
 
 const LEVEL_BUTTONS: { lvl: LayerLevel; icon: LucideIcon; label: string }[] = [
@@ -25,7 +26,11 @@ const LEVEL_BUTTONS: { lvl: LayerLevel; icon: LucideIcon; label: string }[] = [
 export default function SceneToolbar() {
   const { tree, recipeStore, runtime, view, initialView } = useScene();
   const buildings = useMemo(() => extractBuildings(tree), [tree]);
-  const allStories = useMemo(() => buildings.flatMap((b) => b.stories), [buildings]);
+  // 未定义楼层(名不可解析)是建模残缺产物:不计入楼层数,也不进 chip 云供选择
+  const allStories = useMemo(
+    () => buildings.flatMap((b) => b.stories).filter((s) => parseFloorToken(s.label) !== null),
+    [buildings],
+  );
   const searchItems = useMemo(() => buildDeviceSearchIndex(tree), [tree]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [query, setQuery] = useState('');
