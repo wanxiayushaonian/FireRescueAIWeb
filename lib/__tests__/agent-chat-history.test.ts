@@ -4,6 +4,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   fetchRemoteSessions, fetchRemoteSession, deleteRemoteSession, platformMessagesToThread,
+  fetchTextMessageCount, enrichSessionMessageCounts,
 } from '../agent-chat-history';
 
 function mockFetchOnce(body: unknown, ok = true, status = 200) {
@@ -107,5 +108,53 @@ describe('deleteRemoteSession', () => {
     const [url, init] = fn.mock.calls[0];
     expect(String(url)).toContain('/conversations/cid1');
     expect(init.method).toBe('DELETE');
+  });
+});
+
+describe('fetchTextMessageCount', () => {
+  it('拉详情统计文本消息数（平台 message_count 含工具消息，此处只算 USER/ASSISTANT 文本）', async () => {
+    // 平台列表给 message_count=5，但详情只有 3 条文本消息（另 2 条是工具过程）
+    mockFetchOnce({
+      conversation_id: 'cid1',
+      messages: [
+        { messageType: 'USER', text: '九江有哪些消防站' },
+        { messageType: 'ASSISTANT', text: '九江有 X 个消防站：…' },
+        { messageType: 'USER', text: '最近的呢？' },
+      ],
+    });
+    await expect(fetchTextMessageCount('app1', 'cid1')).resolves.toBe(3);
+  });
+
+  it('详情拉取失败返回 null（调用方保留平台原值）', async () => {
+    mockFetchOnce({}, false, 500);
+    await expect(fetchTextMessageCount('app1', 'cid1')).resolves.toBeNull();
+  });
+});
+
+describe('enrichSessionMessageCounts', () => {
+  it('并发重算：有详情会话修正消息数，详情失败保留平台原值', async () => {
+    const sessions = [
+      { id: 'a', title: '会话A', updatedAt: 1, messageCount: 5 },
+      { id: 'b', title: '会话B', updatedAt: 2, messageCount: 8 },
+    ];
+    const fn = vi.fn((url: string) => {
+      if (String(url).includes('/conversations/a')) {
+        return Promise.resolve({
+          ok: true, status: 200,
+          json: async () => ({
+            conversation_id: 'a',
+            messages: [
+              { messageType: 'USER', text: '问1' },
+              { messageType: 'ASSISTANT', text: '答1' },
+            ],
+          }),
+        });
+      }
+      return Promise.resolve({ ok: false, status: 500, json: async () => ({}) });
+    });
+    vi.stubGlobal('fetch', fn);
+    const enriched = await enrichSessionMessageCounts('app1', sessions);
+    expect(enriched[0].messageCount).toBe(2);
+    expect(enriched[1].messageCount).toBe(8);
   });
 });

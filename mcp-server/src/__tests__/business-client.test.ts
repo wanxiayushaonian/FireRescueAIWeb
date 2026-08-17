@@ -3,6 +3,8 @@ import {
   getBuildingProfile,
   getFacilities,
   getKeyParts,
+  getKnowledge,
+  DEFAULT_KB_ID,
 } from '../business-client.js';
 
 beforeEach(() => {
@@ -138,5 +140,61 @@ describe('getKeyParts', () => {
     mockFetch({ 'key-buildings/b1': { ...BUILDING_DETAIL, key_floors: undefined } });
     const parts = await getKeyParts('b1');
     expect(parts).toEqual([]);
+  });
+});
+
+describe('getKnowledge', () => {
+  const RETRIEVE_BODY = {
+    items: [
+      {
+        chunk_id: 'c1', document_id: 'd1', document_name: '乐盈广场21号楼预案.docx',
+        content: '29F 楼梯间高空坠落/烟囱效应风险', score: 0.702,
+        chunk_index: 0, kb_id: 'kb-1', kb_type: '处置对策',
+      },
+      {
+        chunk_id: 'c2', document_id: 'd1', document_name: '乐盈广场21号楼预案.docx',
+        content: '29F 泵房爆炸风险', score: 0.698,
+        chunk_index: 1, kb_id: 'kb-1', kb_type: '处置对策',
+      },
+    ],
+    total: 2,
+  };
+
+  it('POST retrieve + 返回结构化结果（显式 kbId/topK 传参）', async () => {
+    mockFetch({ 'knowledge/bases/kb-1/retrieve': RETRIEVE_BODY });
+    const r = await getKnowledge('高层建筑火灾风险', { kbId: 'kb-1' });
+    expect(r).toMatchObject({ query: '高层建筑火灾风险', kbId: 'kb-1', count: 2 });
+    expect(r.chunks[0]).toMatchObject({
+      chunk_id: 'c1', document_name: '乐盈广场21号楼预案.docx',
+      content: '29F 楼梯间高空坠落/烟囱效应风险', score: 0.702,
+    });
+  });
+
+  it('请求体携带 query/top_k（topK 传参覆盖默认 5）', async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (String(url).includes('knowledge/bases/kb-1/retrieve')) {
+        return Promise.resolve(new Response(JSON.stringify(RETRIEVE_BODY), {
+          headers: { 'content-type': 'application/json' },
+        }));
+      }
+      return Promise.resolve(new Response('not found', { status: 404 }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    await getKnowledge('危化品泄漏处置', { topK: 3, kbId: 'kb-1' });
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(String(init.body))).toEqual({ query: '危化品泄漏处置', top_k: 3 });
+  });
+
+  it('items 缺失时 count=0 空数组（不抛错）', async () => {
+    mockFetch({ [`knowledge/bases/${DEFAULT_KB_ID}/retrieve`]: { total: 0 } });
+    const r = await getKnowledge('任意查询');
+    expect(r).toMatchObject({ count: 0, chunks: [] });
+    expect(r.kbId).toBe(DEFAULT_KB_ID);
+  });
+
+  it('BFF 网络错误时抛出可读信息', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connect ECONNREFUSED')));
+    await expect(getKnowledge('高层建筑火灾风险')).rejects.toThrow(/网络错误或超时/);
   });
 });

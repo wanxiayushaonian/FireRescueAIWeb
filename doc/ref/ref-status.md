@@ -46,12 +46,12 @@ ref.md 定义的是**业务意图**而非技术方案，作为需求基线依然
 | 灾情参数智能体生成（随机/针对性） | ❌ | 未实现 |
 | 常驻预案输出智能体 | ✅ | commander agent（app_id 已配） |
 | 内容输出 → 模型动态交互 | ❓ | 待前台实测（平台 WS 是否自动执行 batchInvokeTwinsFunction；见双跑调研结论） |
-| 预案库保留 + 评估智能体归档高分 | 🟡 | planLibrary/addLibraryItem mock 骨架在，无评估智能体真实化 |
+| 预案库保留 + 评估智能体归档高分 | ✅🔧 | 2026-08-17：评估走平台评估 agent（NEXT_PUBLIC_EVALUATE_APP_ID 注入启用，未配降级 mock）；评估通过后 fire-and-forget 在 znya emergency_plans 建档 draft（实测 service token 有权限）；PlanLibraryPanel 挂载演练/指挥两视图 |
 | 悬浮主智能体 | ✅ | AgentSidebar |
 | 二级：对抗时间轴 | ✅⭐ | TimelineEngine（tick/速度/暂停/事件流） |
 | 二级：对抗思路 | ↩️ | ref 设想"推理选项给操作员选、延伸分支"（人机分支对抗）；实现为"指挥 agent 自动决策 + 对抗 agent 注入特情"（自动对抗）——更适合比赛演示，保留此偏移 |
 | 对抗 agent 启用 | 🟡 | 代码侧就绪（NEXT_PUBLIC_ADVERSARY_APP_ID 注入即启用），待平台建应用拿 app_id |
-| 评估智能体对过程评分 | ❌ | 未实现（模块五的战后评估是同一个角色的落点） |
+| 评估智能体对过程评分 | ✅🔧 | 2026-08-17：演练预案评估 + 实战战后评估统一走平台评估 agent（评估数据经消息前缀注入，JSON 结构化输出，解析失败/未配置自动降级 mock） |
 
 ## 模块五 实战指挥 —— 闭环骨架已建，数据为 mock，一处硬伤
 
@@ -62,14 +62,14 @@ ref.md 定义的是**业务意图**而非技术方案，作为需求基线依然
 | 灾情变量字段（响应等级/被困/着火物质/位置/发展/通道/队站/人员） | 🟡 | DisasterVarsPanel：温度/烟气/被困/火势仪表，字段集与 ref 不完全一致 |
 | 变量变化 → 模型交互动作 | 🟡⭐ | 告警联动 3D 聚焦楼层已通（topbar:open-alert）；变量级联动未做 |
 | 左下角四卡片（周边水源/设施完好/理化性质/被困位置） | 🟡 | 有 fetchBuildingAnalysis/analysisSummary 数据通道，四卡片未做 |
-| 结束后评估智能体决策评估 | 🟡 | RecommendPanel 有战后评估入口与评估卡（PostActionReview mock），无智能体真实化 |
+| 结束后评估智能体决策评估 | ✅🔧 | 2026-08-17：战后评估接平台评估 agent（真生成评分/维度/改进措施），未配置时降级 PostActionReview mock |
 | 悬浮主智能体（理化性质问答等） | ✅ | AgentSidebar |
 | **TacticalOverlay 投影** | ✅🔧 | 2026-08-16 已修复：改为 Leaflet 容器坐标投影（跟随 pan/zoom），就近队站换 znya 九江真实站点，圈层半径米制按 zoom 换算；坐标不在底图的 mock 警情自动降级为地图中心演示位置并标注 |
 
-## 建议优先级（2026-08-16，按比赛价值）
+## 建议优先级（2026-08-17 刷新）
 
-1. **模块三一级界面**：六熟悉顺序引导 + 常驻智能体实时输出（ref 写得最细、离现状最远）
-2. **评估智能体 + 预案库真实化**：模块四 4.4 与模块五第 6 点是同一角色，mock 骨架已在
+1. ✅ **模块三一级界面**：六熟悉顺序引导已完成（2026-08-16）；常驻智能体实时输出待平台配 agent 后接通
+2. ✅ **评估智能体 + 预案库真实化**（2026-08-17）：评估接平台评估 agent（NEXT_PUBLIC_EVALUATE_APP_ID，未配降级 mock）+ 预案归档建档 emergency_plans + 预案库面板双页签挂载两视图；待用户平台建评估 agent app 后验证真评估
 3. **对抗 agent 启用**（差平台 app_id）+ 演练 3D 动作前台验证
-4. **TacticalOverlay 投影九江化**（演示可见 bug，进行中）
+4. ✅ **TacticalOverlay 投影九江化**（2026-08-16 已修复）
 5. 模块一/模块二：已达标，不再投入

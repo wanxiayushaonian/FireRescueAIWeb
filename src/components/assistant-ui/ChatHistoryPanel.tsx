@@ -2,7 +2,7 @@
 // 历史会话列表浮层:拉取 agent 平台会话(跨浏览器共享),支持选中恢复/删除/新建。
 import { useCallback, useEffect, useState } from 'react';
 import { MessageSquare, Trash2, Plus, X, History, Loader2 } from 'lucide-react';
-import { fetchRemoteSessions, deleteRemoteSession, type RemoteSession } from '@/lib/agent-chat-history';
+import { fetchRemoteSessions, deleteRemoteSession, enrichSessionMessageCounts, type RemoteSession } from '@/lib/agent-chat-history';
 import { AGENT_APP_IDS } from '@/lib/agent-app-ids';
 import type { ModuleKey } from '@/mock/agentScripts';
 
@@ -32,8 +32,10 @@ export default function ChatHistoryPanel({ module, activeId, onSelect, onNew, on
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
+    // 平台 message_count 含工具调用消息 → 并发拉详情修正为纯文本消息数
     fetchRemoteSessions(appId)
-      .then((list) => setSessions(list))
+      .then((list) => enrichSessionMessageCounts(appId, list))
+      .then(setSessions)
       .catch(() => setError('历史会话加载失败'))
       .finally(() => setLoading(false));
   }, [appId]);

@@ -112,3 +112,28 @@ export async function deleteRemoteSession(appId: string, conversationId: string)
   const res = await apiFetch(apiUrl(appId, conversationId), { method: 'DELETE' });
   if (!res.ok) throw new Error(`删除会话失败 ${res.status}`);
 }
+
+/**
+ * 文本消息数：拉会话详情统计 USER/ASSISTANT 文本消息。
+ * 平台列表 API 的 message_count 把工具调用等过程消息也计入，前端以详情重算修正。
+ * 详情拉取失败返回 null（调用方保留平台原值）。
+ */
+export async function fetchTextMessageCount(appId: string, conversationId: string): Promise<number | null> {
+  try {
+    const detail = await fetchRemoteSession(appId, conversationId);
+    return detail.messages.length;
+  } catch {
+    return null;
+  }
+}
+
+/** 修正会话列表消息数：并发拉详情只统计文本消息；任一失败保留平台原值（不阻断列表展示）。 */
+export async function enrichSessionMessageCounts(appId: string, sessions: RemoteSession[]): Promise<RemoteSession[]> {
+  const enriched = await Promise.all(
+    sessions.map(async (s) => {
+      const n = await fetchTextMessageCount(appId, s.id);
+      return n === null ? s : { ...s, messageCount: n };
+    }),
+  );
+  return enriched;
+}
