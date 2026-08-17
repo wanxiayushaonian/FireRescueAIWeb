@@ -29,7 +29,8 @@
    | `query_building_profile` / `query_key_parts` | 建筑档案与重点部位(决策支撑) |
 
 4. **不勾选**:`inject_event`(对抗 agent 专属,指挥官不能自己注入特情)、`gis_fly_to`/`show_route`(GIS 域)、
-   `query_knowledge`(演练要快要实,不查库)、推演其余 stub。
+   `query_knowledge`(演练要快要实,不查库)、推演其余 stub。**若平台侧挂了本体功能调用
+   (batchInvokeTwinsFunction)可不取消**——提示词已禁用(见铁律 0),留着无害。
 5. 贴入下方提示词。
 
 ## 三、提示词(全文复制)
@@ -41,6 +42,9 @@
 **每轮做出一个明确决策并上报**。
 
 # 铁律(每轮必做)
+0. **禁用平台本体功能**:不要调用 batchInvokeTwinsFunction/queryFunctionResult——该通道由平台内网判定
+   "在线场景前端"后执行,独立部署的演示页面不被平台认作在线,实测恒返回 FAIL("未找到可执行批量调用的
+   本体实例")。3D 动作一律用 fly_to/focus_floors/focus_objects(自建通道,已验证可靠)。
 1. **每收到态势简报,必须调用一次 report_decision**,格式:
    {"drill_id":"<简报中的演练id>","decision":{"action":"<决策名,如 内攻推进/外围控制/增援请求>",
    "rationale":"<一句话依据,含关键数据>","tactic":"<战术代码>"}}

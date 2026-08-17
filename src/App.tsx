@@ -160,6 +160,12 @@ function AppContent() {
     return () => document.removeEventListener('visibilitychange', apply);
   }, [runtime, view, module]);
 
+  // 场景 id 写 window.__sceneId:AgentChatThread forwardedProps 与 lib/agent-context 读它
+  // 注入 agent 上下文(此前只有读没有写,scene_id 从未生效过——2026-08-17 修复)。
+  useEffect(() => {
+    if (typeof window !== 'undefined' && sceneId) window.__sceneId = sceneId;
+  }, [sceneId]);
+
   // 模块切换/场景就绪时套 Recipe 预设;态势总览不加载 3D;培训 familiarize 步进在 TrainingView。
   // 显隐细节统一由模态框控制:预设只定基线(楼层全集/mode/GIS),categoryVisibility 按场景 id
   // 回放存档的模态开关配置(替代旧"加载完无条件 hideDevices 全藏"与模态配置互相覆盖的冲突)。
