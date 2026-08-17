@@ -68,11 +68,14 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
     const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
     // 经 Recipe 单一真相源(若 store 可用);空数组 = null 恢复全楼层。否则回退直调 sdk
     if (store) {
-      // 单层聚焦→完整细节+显设备;多层/恢复全楼层→主体骨架+藏设备减压
+      // 与 floor-focus/objectsOverview 基线保持一致:
+      // detailLevel 恒为 full——structure 的 hideWindowAndDoor 会触发 SDK 孤儿隐藏,
+      // 把草地/马路/周边底模藏掉(presets 注释明示)。
+      // 单层聚焦→显设备;多层/恢复全楼层→藏设备减压(仅配方层,模态显隐是唯一写入方不受影响)。
       const isFocusSingle = storyIds.length === 1;
       store.patchStructural({
         visibleStories: storyIds.length ? storyIds : null,
-        detailLevel: isFocusSingle ? 'full' : 'structure',
+        detailLevel: 'full',
         hideDevices: !isFocusSingle,
       });
       return;

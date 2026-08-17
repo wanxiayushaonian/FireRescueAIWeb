@@ -56,6 +56,34 @@ describe('focus_floors handler', () => {
     vi.unstubAllGlobals();
   });
 
+  it('有 store → 走 RecipeStore.patchStructural(单层 full+显设备,与 floor-focus 一致)', async () => {
+    __resetForTest();
+    const patchStructural = vi.fn();
+    const store = { patchStructural } as unknown as Parameters<typeof registerDefaultTools>[2];
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, undefined, store);
+    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
+    expect(patchStructural).toHaveBeenCalledWith({
+      visibleStories: ['s1'], detailLevel: 'full', hideDevices: false,
+    });
+  });
+
+  it('有 store → 多层/恢复全楼层 detailLevel 恒 full(避免 hideWindowAndDoor 孤儿隐藏藏掉周边底模)', async () => {
+    __resetForTest();
+    const patchStructural = vi.fn();
+    const store = { patchStructural } as unknown as Parameters<typeof registerDefaultTools>[2];
+    const sdk = {} as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, undefined, store);
+    await dispatch({ id: '2', tool: 'focus_floors', args: { story_ids: ['s1', 's2'] }, ts: 0 }, sdk);
+    expect(patchStructural).toHaveBeenLastCalledWith({
+      visibleStories: ['s1', 's2'], detailLevel: 'full', hideDevices: true,
+    });
+    await dispatch({ id: '3', tool: 'focus_floors', args: { story_ids: [] }, ts: 0 }, sdk);
+    expect(patchStructural).toHaveBeenLastCalledWith({
+      visibleStories: null, detailLevel: 'full', hideDevices: true,
+    });
+  });
+
   it('非空 story_ids → 拉 tree + setViewMode 传 storyIds', async () => {
     __resetForTest();
     const setViewMode = vi.fn().mockResolvedValue(undefined);
