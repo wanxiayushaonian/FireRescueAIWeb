@@ -155,6 +155,35 @@ export function subscribeNavPick(fn: () => void): () => void {
   return () => navPickListeners.delete(fn);
 }
 
+// 打点高亮跟踪:先清上一个再高亮新的(描边渲染常驻,累积会拖帧且视觉杂乱)
+let lastPickHighlight: string | null = null;
+
+export function highlightNavPick(runtime: SoonspaceRuntime, outId: string): void {
+  if (lastPickHighlight && lastPickHighlight !== outId) runtime.clearObjectHighlight(lastPickHighlight);
+  lastPickHighlight = outId;
+  runtime.highlightObject(outId, '#f97316');
+}
+
+export function clearNavPickHighlight(runtime: SoonspaceRuntime | null): void {
+  if (lastPickHighlight) runtime?.clearObjectHighlight(lastPickHighlight);
+  lastPickHighlight = null;
+}
+
+/** 轻量找消防车(首个 FireTruck 类型;避免为找一台车建全量设备搜索索引) */
+export function findFireTruckOutId(tree: SceneTreeNode | null): string | null {
+  let found: string | null = null;
+  const walk = (n: SceneTreeNode): void => {
+    if (found) return;
+    if (/FireTruck/i.test(String(n.type ?? ''))) {
+      found = nodeOutId(n) || null;
+      return;
+    }
+    for (const c of n.children ?? []) walk(c);
+  };
+  if (tree) walk(tree);
+  return found;
+}
+
 /** 拾取对象 → kgraph 图节点端点(Space 优先、Story 兜底;解析不到返回 null) */
 export function navNodeForOutId(tree: SceneTreeNode, outId: string): { name: string; nodeId: string } | null {
   const plan = planAttackRoute(tree, outId);

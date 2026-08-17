@@ -78,14 +78,22 @@ export default function TacticalOverlay({
   }, [incident?.id, incident?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => setGrowTick(0), [incident?.id]);
 
-  // 地图移动/缩放/尺寸变化 → 重投影(version 自增驱动重渲染)
+  // 地图移动/缩放/尺寸变化 → 重投影(rAF 合帧:平移时 move 事件逐帧连发,重算每帧最多一次)
   const [version, setVersion] = useState(0);
   useEffect(() => {
     if (!map) return;
-    const bump = (): void => setVersion((v) => v + 1);
+    let raf = 0;
+    const bump = (): void => {
+      if (raf) return; // 已排程,合并到本帧
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        setVersion((v) => v + 1);
+      });
+    };
     map.on('move zoom resize', bump);
     bump();
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       map.off('move zoom resize', bump);
     };
   }, [map]);
@@ -111,28 +119,31 @@ export default function TacticalOverlay({
 
   const active = incident != null && arrived(incident.status) && incident.status !== '熄灭';
 
-  // 警情绘制位置:坐标离地图中心过远(如 mock 南京警情落在九江底图)→ 以地图中心为演示位置
+  // 警情地理坐标(静态:不随地图平移失效——下游就近排序/半径 memo 依赖它,平移时零重算)
+  const posGeo = useMemo(
+    () => (incident ? { lng: incident.lng, lat: incident.lat } : null),
+    [incident],
+  );
+  // 演示绘制位置:mock 警情远离底图(>0.5°)时以地图中心为演示位(按警情判定一次)
   const pos = useMemo(() => {
-    if (!incident || !map) return null;
+    if (!posGeo || !map) return null;
     const c = map.getCenter();
-    const far = Math.abs(incident.lng - c.lng) > 0.5 || Math.abs(incident.lat - c.lat) > 0.5;
+    const far = Math.abs(posGeo.lng - c.lng) > 0.5 || Math.abs(posGeo.lat - c.lat) > 0.5;
     return {
-      lng: far ? c.lng + 0.004 : incident.lng,
-      lat: far ? c.lat - 0.003 : incident.lat,
+      lng: far ? c.lng + 0.004 : posGeo.lng,
+      lat: far ? c.lat - 0.003 : posGeo.lat,
       demo: far,
     };
-    // version 参与计算(地图平移后中心变化可能改变 far 判定)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incident, map, version]);
+  }, [posGeo, map]);
 
-  // 最近 2 个真实队站(确定性)
+  // 最近 2 个真实队站(确定性;依赖静态 posGeo,平移不重算)
   const attackStations = useMemo<AttackStation[]>(() => {
-    if (!incident || !active || !pos) return [];
+    if (!incident || !active || !posGeo) return [];
     return stations
-      .map((s) => ({ stationId: s.id, name: s.name, lng: s.lng, lat: s.lat, distanceKm: distKm(s, pos) }))
+      .map((s) => ({ stationId: s.id, name: s.name, lng: s.lng, lat: s.lat, distanceKm: distKm(s, posGeo) }))
       .sort((a, b) => a.distanceKm - b.distanceKm)
       .slice(0, 2);
-  }, [incident, active, pos, stations]);
+  }, [incident, active, posGeo, stations]);
 
   // 像素投影(容器坐标系,SVG 与地图容器同尺寸)
   const size = map ? map.getSize() : { x: 0, y: 0 };
@@ -159,9 +170,9 @@ export default function TacticalOverlay({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [incident, pos, map, vars, growTick, version]);
 
-  // 已采纳推荐 → 力量部署(按采纳序号环形分布;队站名优先从推荐内容匹配真实站点)
+  // 已采纳推荐 → 力量部署名称解析(静态:不依赖投影,平移零重算;位置在渲染时随 center 内联计算)
   const deployments = useMemo(() => {
-    if (!incident || !active || !center) return [];
+    if (!incident || !active) return [];
     const adopted = recommendations
       .filter((r) => r.incidentId === incident.id && r.adopted && !r.ignored)
       .slice()
@@ -169,21 +180,15 @@ export default function TacticalOverlay({
     return adopted.map((rec, i) => {
       const hit = stations.find((s) => rec.content.includes(s.name));
       const fallback = attackStations[i % Math.max(1, attackStations.length)];
-      const name = hit?.name ?? fallback?.name ?? `第 ${i + 1} 作战分队`;
-      const n = adopted.length;
-      const angle = -Math.PI / 2 + (i * 2 * Math.PI) / Math.max(1, n);
-      const ring = 108;
       return {
         recId: rec.id,
-        name,
+        name: hit?.name ?? fallback?.name ?? `第 ${i + 1} 作战分队`,
         kind: rec.type === 'force' ? 'truck' as const : 'crew' as const,
-        x: center.x + Math.cos(angle) * ring,
-        y: center.y + Math.sin(angle) * ring,
+        index: i,
+        total: adopted.length,
       };
     });
-    // center 随 version 变化(地图平移/缩放后部署环跟随)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [incident, active, recommendations, attackStations, stations, center?.x, center?.y]);
+  }, [incident, active, recommendations, attackStations, stations]);
 
   // ---- 场景日志（全部去重）----
   const loggedRef = useRef<Set<string>>(new Set());
@@ -323,28 +328,35 @@ export default function TacticalOverlay({
           })}
 
           {/* 力量部署标注：采纳序号环形分布（Truck/Users + 队站名） */}
-          {active && deployments.map((d) => (
-            <motion.g
-              key={d.recId}
-              initial={{ opacity: 0, scale: 0.6 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.35 }}
-              style={{ transformOrigin: `${d.x}px ${d.y}px` }}
-            >
-              <circle cx={d.x} cy={d.y} r="13" fill="#0a1420" stroke="#22d3ee" strokeWidth="1.2" opacity="0.95" />
-              {d.kind === 'truck' ? (
-                <Truck x={d.x - 8} y={d.y - 8} size={16} color="#22d3ee" />
-              ) : (
-                <Users x={d.x - 8} y={d.y - 8} size={16} color="#34d399" />
-              )}
-              <text
-                x={d.x} y={d.y + 26} textAnchor="middle" fill="#9db4c8" fontSize="11" fontWeight={600}
-                stroke="#070e18" strokeWidth="3" style={{ paintOrder: 'stroke' }}
+          {active && center && deployments.map((d) => {
+            // 环形分布位置随投影 center 内联计算(地图平移时跟随,零 memo 失效)
+            const angle = -Math.PI / 2 + (d.index * 2 * Math.PI) / Math.max(1, d.total);
+            const ring = 108;
+            const x = center.x + Math.cos(angle) * ring;
+            const y = center.y + Math.sin(angle) * ring;
+            return (
+              <motion.g
+                key={d.recId}
+                initial={{ opacity: 0, scale: 0.6 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.35 }}
+                style={{ transformOrigin: `${x}px ${y}px` }}
               >
-                {d.name}
-              </text>
-            </motion.g>
-          ))}
+                <circle cx={x} cy={y} r="13" fill="#0a1420" stroke="#22d3ee" strokeWidth="1.2" opacity="0.95" />
+                {d.kind === 'truck' ? (
+                  <Truck x={x - 8} y={y - 8} size={16} color="#22d3ee" />
+                ) : (
+                  <Users x={x - 8} y={y - 8} size={16} color="#34d399" />
+                )}
+                <text
+                  x={x} y={y + 26} textAnchor="middle" fill="#9db4c8" fontSize="11" fontWeight={600}
+                  stroke="#070e18" strokeWidth="3" style={{ paintOrder: 'stroke' }}
+                >
+                  {d.name}
+                </text>
+              </motion.g>
+            );
+          })}
         </svg>
       )}
 

@@ -22,9 +22,10 @@ import {
   getNavPickMode,
   setNavPickMode,
   subscribeNavPick,
+  clearNavPickHighlight,
+  findFireTruckOutId,
   type SceneRouteSummary,
 } from '@/lib/scene-navigation';
-import { buildDeviceSearchIndex } from '@/lib/scene-pick';
 import { showToast } from '@/components/Toast';
 
 export default function SceneViewBar() {
@@ -53,11 +54,8 @@ export default function SceneViewBar() {
     if (naming) inputRef.current?.focus();
   }, [naming]);
 
-  // 场景内消防车(平台补的排烟/远程供水车;type 含 FireTruck)
-  const truckOutId = useMemo(() => {
-    const truck = buildDeviceSearchIndex(tree).find((d) => /FireTruck/i.test(d.type));
-    return truck?.outId ?? null;
-  }, [tree]);
+  // 场景内消防车(平台补的排烟/远程供水车;轻量首个匹配,不建全量索引)
+  const truckOutId = useMemo(() => findFireTruckOutId(tree), [tree]);
 
   if (!runtime || view !== 'ready') return null;
 
@@ -210,7 +208,11 @@ export default function SceneViewBar() {
           </div>
         )}
         <button
-          onClick={() => setNavPickMode(navMode === 'off' ? 'start' : 'off')}
+          onClick={() => {
+            const next = navMode === 'off' ? 'start' : 'off';
+            setNavPickMode(next);
+            if (next === 'off') clearNavPickHighlight(runtime);
+          }}
           className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] transition ${
             navMode !== 'off' ? 'bg-orange/15 text-orange' : 'text-text-2 hover:text-cyan'
           }`}

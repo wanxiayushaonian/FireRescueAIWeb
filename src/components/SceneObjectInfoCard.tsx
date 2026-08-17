@@ -14,7 +14,7 @@ import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scen
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight } from '@/lib/scene-navigation';
 import { showToast } from '@/components/Toast';
 
 interface CardState {
@@ -57,11 +57,11 @@ export default function SceneObjectInfoCard() {
     return recipeStore.subscribe(sync);
   }, [recipeStore]);
 
-  /** 两点导航:消费一个打点(Space/Story 图节点;highlightOutId 可选高亮被点对象) */
+  /** 两点导航:消费一个打点(Space/Story 图节点;highlightOutId 可选高亮被点对象,先清旧防累积) */
   const consumeNavPoint = (pt: { name: string; nodeId: string }, highlightOutId?: string): void => {
     const scene = sceneRef.current;
     if (!scene.runtime) return;
-    if (highlightOutId) scene.runtime.highlightObject(highlightOutId, '#f97316');
+    if (highlightOutId) highlightNavPick(scene.runtime, highlightOutId);
     const mode = getNavPickMode();
     if (mode === 'start') {
       setNavStart(pt);
@@ -217,7 +217,10 @@ export default function SceneObjectInfoCard() {
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') {
         setCard(null);
-        if (getNavPickMode() !== 'off') setNavPickMode('off');
+        if (getNavPickMode() !== 'off') {
+          setNavPickMode('off');
+          clearNavPickHighlight(sceneRef.current.runtime);
+        }
       }
     };
     window.addEventListener('pointerdown', onDown);
