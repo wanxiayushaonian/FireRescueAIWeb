@@ -38,6 +38,7 @@ import type { StructuralRecipe } from '@/lib/scene-recipe/types';
 import { HIDABLE_CATEGORY_GROUPS, defaultVisibleByLevel } from '@/lib/scene-categories';
 import { saveSceneDisplayPrefs } from '@/lib/scene-display-prefs';
 import ScenePackPanel from '@/components/ScenePackPanel';
+import { showToast } from '@/components/Toast';
 
 type Level = 'whole' | 'single' | 'multi';
 
@@ -308,13 +309,41 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
               {zoneHeader('室 外')}
               {outdoorGroups.map((g) => renderGroup(g))}
 
-              {/* 区域多边形:平台标注区域(随场景包加载),SDK setVirtualPolygonVisible 控制 */}
+              {/* 区域多边形:平台标注区域,默认未绘制——开启=拉详情 drawVirtualPolygon 绘制,
+                  关闭=隐藏/清除(与场景路线同款"列表→详情→绘制"模式) */}
               {polygons.length > 0 && (() => {
-                const allOn = polygons.every((p) => polygonVis[p.polygon_id] ?? true);
-                const setAll = (visible: boolean): void => {
-                  for (const p of polygons) runtime?.setVirtualPolygonVisible(p.polygon_id, visible);
-                  setPolygonVis(Object.fromEntries(polygons.map((p) => [p.polygon_id, visible])));
+                const togglePolygon = (p: { polygon_id: string; polygon_name?: string }, on: boolean): void => {
+                  if (!runtime || !sceneId) return;
+                  if (on) {
+                    fetch(`/api/ustudio/polygons/detail?sceneId=${encodeURIComponent(sceneId)}&polygonId=${encodeURIComponent(p.polygon_id)}`)
+                      .then((res) => (res.ok ? res.json() : Promise.reject(new Error('详情加载失败'))))
+                      .then((detail: Record<string, unknown>) =>
+                        runtime.drawVirtualPolygon(
+                          { ...detail, polygon_id: p.polygon_id, polygon_name: p.polygon_name ?? detail.polygon_name },
+                          { id: p.polygon_id },
+                        ),
+                      )
+                      .then(() => {
+                        setPolygonVis((v) => ({ ...v, [p.polygon_id]: true }));
+                      })
+                      .catch(() => {
+                        showToast('多边形绘制失败(无顶点数据或引擎不支持)');
+                      });
+                    return;
+                  }
+                  // 关闭:虚拟多边形注册表里有则隐藏,没有(未绘制)静默
+                  try {
+                    runtime.setVirtualPolygonVisible(p.polygon_id, false);
+                  } catch {
+                    try {
+                      runtime.clearVirtualPolygon(p.polygon_id);
+                    } catch {
+                      /* 未绘制,无事可做 */
+                    }
+                  }
+                  setPolygonVis((v) => ({ ...v, [p.polygon_id]: false }));
                 };
+                const allOn = polygons.every((p) => polygonVis[p.polygon_id] ?? false);
                 return (
                   <div className="rounded-md border border-line/60 bg-bg-panel-2/40">
                     <div className="flex items-center gap-2 px-3 py-2">
@@ -322,30 +351,24 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
                       <Shapes className="h-3.5 w-3.5 text-text-3" />
                       <span className="text-[13px] font-medium text-text-1">区域多边形</span>
                       <span className="ml-auto">
-                        <Toggle on={allOn} onClick={() => setAll(!allOn)} />
+                        <Toggle on={allOn} onClick={() => polygons.forEach((p) => togglePolygon(p, !allOn))} />
                       </span>
                     </div>
                     <div className="border-t border-line/40 px-3 py-1.5">
                       {polygons.map((p) => {
-                        const on = polygonVis[p.polygon_id] ?? true;
+                        const on = polygonVis[p.polygon_id] ?? false;
                         return (
                           <div key={p.polygon_id} className="flex items-center gap-2 py-1 pl-5">
                             <span className={`text-[12px] ${on ? 'text-text-2' : 'text-text-3'}`}>
                               {p.polygon_name || p.polygon_id}
                             </span>
                             <span className="ml-auto">
-                              <Toggle
-                                on={on}
-                                onClick={() => {
-                                  runtime?.setVirtualPolygonVisible(p.polygon_id, !on);
-                                  setPolygonVis((v) => ({ ...v, [p.polygon_id]: !on }));
-                                }}
-                              />
+                              <Toggle on={on} onClick={() => togglePolygon(p, !on)} />
                             </span>
                           </div>
                         );
                       })}
-                      <div className="py-1 text-[9px] text-text-3/60">平台标注区域 · 显隐即时生效,场景重载恢复默认显示</div>
+                      <div className="py-1 text-[9px] text-text-3/60">平台标注区域 · 默认不绘制,开启时按详情绘制为覆盖层</div>
                     </div>
                   </div>
                 );
