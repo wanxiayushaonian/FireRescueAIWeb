@@ -113,4 +113,11 @@ describe('extractPathPoints(kgraph 返回容错解析)', () => {
     expect(extractPathPoints([1, 2, 3])).toBeNull(); // 单点不算路径
     expect(extractPathPoints([1, 2])).toBeNull();
   });
+
+  it('kgraph path_nodes 形态:{coordinate:{x,y,z}} 对象与 "x&y&z" 串', () => {
+    expect(extractPathPoints([{ coordinate: { x: 1, y: 2, z: 3 }, node_name: 'a' }, { coordinate: '4&5&6' }])).toEqual([
+      { x: 1, y: 2, z: 3 },
+      { x: 4, y: 5, z: 6 },
+    ]);
+  });
 });

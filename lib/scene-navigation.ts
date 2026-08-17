@@ -112,21 +112,16 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
 
 /** 已绘制导航路线 id 集(模块态;SceneViewBar「清除路线」用) */
 const drawnRoutes = new Set<string>();
-/** SDK 场内导航自动绘制的路线是否在场(clearSceneRoutes 统一清除) */
-let navPathDrawn = false;
 
 export function hasDrawnRoute(): boolean {
   return drawnRoutes.size > 0;
 }
 
-/** 清除全部导航路线(含 SDK 场内导航自动绘制的步行路线) */
+/** 清除全部导航路线(含 SDK 场内导航可能残留的内部线) */
 export function clearSceneRoutes(runtime: SoonspaceRuntime | null): void {
   for (const id of drawnRoutes) runtime?.clearVirtualRoute(id);
   drawnRoutes.clear();
-  if (navPathDrawn) {
-    runtime?.deleteNavigationRoutes();
-    navPathDrawn = false;
-  }
+  runtime?.deleteNavigationRoutes();
 }
 
 // ---- 两点导航拾取模式(SceneViewBar 按钮 / 信息卡点击拾取共用;模块态 + 订阅) ----
@@ -184,19 +179,59 @@ export function findNodeByOutId(tree: SceneTreeNode, outId: string): { name: str
   return found;
 }
 
-/** 两点导航:起点/终点图节点 → SDK 场内导航(SDK 自动绘制步行路线)。 */
+/** 两点导航:起点/终点图节点 → kgraph 路径 + drawVirtualRoute 自绘(线+起终点 POI+2D 抬升)。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
   start: { name: string; nodeId: string },
   end: { name: string; nodeId: string },
 ): Promise<DrawRouteResult> {
-  clearSceneRoutes(runtime);
-  const nav = await runtime.navigateWithinScene(start.nodeId, end.nodeId);
-  if (nav.reachable) {
-    navPathDrawn = true;
-    return { real: true, mode: 'full', distanceM: nav.totalDistance };
+  const r = await navigateAndDraw(runtime, start.nodeId, end.nodeId, `${start.name} → ${end.name}`);
+  return r ?? { error: '两点间不可达(连通图目前覆盖 3F-38F 的室内点)' };
+}
+
+/**
+ * kgraph 场内导航规划 + 自绘:BFF(navigate-within-scene)取 path_nodes 坐标,
+ * drawVirtualRoute 绘制——线 + 起终点 POI 标识 + 2D 平面图抬升(SDK internal
+ * 绘制只有线没有起终点标识,故统一自绘)。不可达/失败返回 null。
+ */
+async function navigateAndDraw(
+  runtime: SoonspaceRuntime,
+  sourceNodeId: string,
+  targetNodeId: string,
+  label: string,
+): Promise<DrawRouteResult | null> {
+  try {
+    const res = await fetch('/api/ustudio/navigate-within-scene', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        sceneId: runtime.getSceneId(),
+        source: { node_id: sourceNodeId },
+        target: { node_id: targetNodeId },
+      }),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { reachable?: boolean; total_distance?: number; path_nodes?: unknown; path?: unknown };
+    if (data?.reachable !== true) return null;
+    const pts = extractPathPoints(data.path_nodes ?? data.path);
+    if (!pts) return null;
+    clearSceneRoutes(runtime);
+    await runtime.drawVirtualRoute(
+      {
+        route_id: ATTACK_ROUTE_ID,
+        route_name: label,
+        route_color: '#f97316',
+        path: pts.map((p) => ({ position: p })),
+        start_coordinate: pts[0],
+        end_coordinate: pts[pts.length - 1],
+      } as Parameters<SoonspaceRuntime['drawVirtualRoute']>[0],
+      { id: ATTACK_ROUTE_ID },
+    );
+    drawnRoutes.add(ATTACK_ROUTE_ID);
+    return { real: true, mode: 'full', distanceM: data.total_distance };
+  } catch {
+    return null;
   }
-  return { error: '两点间不可达(连通图目前覆盖 3F-38F 的室内点)' };
 }
 
 /**
@@ -224,14 +259,18 @@ export function extractPathPoints(value: unknown): Array<{ x: number; y: number;
     }
     if (!item || typeof item !== 'object') return null;
     const obj = item as Record<string, unknown>;
-    const raw = typeof obj.position === 'object' && obj.position !== null
-      ? (obj.position as Record<string, unknown>)
-      : typeof obj.coordinate === 'string' ? obj.coordinate
-        : obj;
+    let raw: unknown = obj;
+    if (typeof obj.position === 'object' && obj.position !== null) {
+      raw = obj.position;
+    } else if (obj.coordinate !== undefined) {
+      // kgraph path_nodes 的 coordinate 可为 "x&y&z" 串或 {x,y,z} 对象
+      raw = typeof obj.coordinate === 'string' ? obj.coordinate : obj.coordinate;
+    }
     if (typeof raw === 'string') return parseOne(raw);
-    const x = Number(raw.x);
-    const y = Number(raw.y);
-    const z = Number(raw.z);
+    const r = (raw ?? {}) as Record<string, unknown>;
+    const x = Number(r.x);
+    const y = Number(r.y);
+    const z = Number(r.z);
     return Number.isFinite(x) && Number.isFinite(y) && Number.isFinite(z) ? { x, y, z } : null;
   };
   if (!Array.isArray(value)) return null;
@@ -356,26 +395,18 @@ export async function drawAttackRoute(
   runtime: SoonspaceRuntime,
   plan: AttackRoutePlan,
 ): Promise<DrawRouteResult> {
-  // 策略 1:大门层 → 目标(全程;依赖低区建图)
+  // 策略 1:大门层 → 目标(全程真实路径;依赖低区建图,建好自动生效)
   if (plan.gateStoryNodeId) {
     const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
     if (endNode) {
-      const nav = await runtime.navigateWithinScene(plan.gateStoryNodeId, endNode);
-      if (nav.reachable) {
-        clearSceneRoutes(runtime);
-        navPathDrawn = true;
-        return { real: true, mode: 'full', distanceM: nav.totalDistance };
-      }
+      const r = await navigateAndDraw(runtime, plan.gateStoryNodeId, endNode, `进攻路线 → ${plan.targetName}`);
+      if (r) return r;
     }
   }
-  // 策略 2:目标层 → 目标(同层真实路径,当前图覆盖范围内可用)
+  // 策略 2:目标层 → 目标(同层真实路径,当前图覆盖 3F-38F 内即刻可用)
   if (plan.targetStoryNodeId && plan.targetSpaceNodeId) {
-    const nav = await runtime.navigateWithinScene(plan.targetStoryNodeId, plan.targetSpaceNodeId);
-    if (nav.reachable) {
-      clearSceneRoutes(runtime);
-      navPathDrawn = true;
-      return { real: true, mode: 'floor', distanceM: nav.totalDistance };
-    }
+    const r = await navigateAndDraw(runtime, plan.targetStoryNodeId, plan.targetSpaceNodeId, `进攻路线(层内) → ${plan.targetName}`);
+    if (r) return { ...r, mode: 'floor' };
   }
 
   // 策略 3:启发式折线

@@ -685,34 +685,6 @@ export class SoonspaceRuntime {
     (this.sdk as unknown as { pathRestore?: (id: string) => unknown } | null)?.pathRestore?.(id);
   }
 
-  /**
-   * 场内导航(SDK navigateWithinScene,kgraph shortest-path-with-waypoints):
-   * 端点 node_id = Story/Space 节点的 twins_instance_id(门只能作中间点)。
-   * SDK 自动绘制步行路线(含起终点 POI/炸开跟随),返回 path_id 供清除。
-   */
-  async navigateWithinScene(
-    sourceNodeId: string,
-    targetNodeId: string,
-  ): Promise<{ reachable: boolean; pathId?: string; totalDistance?: number }> {
-    const sdk = this.sdk as unknown as
-      | { navigateWithinScene?: (params: unknown) => Promise<unknown> }
-      | null;
-    if (!sdk?.navigateWithinScene || !this.sceneId) return { reachable: false };
-    try {
-      const r = (await sdk.navigateWithinScene({
-        scene_id: this.sceneId,
-        source: { node_id: sourceNodeId },
-        target: { node_id: targetNodeId },
-      })) as { reachable?: boolean; path_id?: string; total_distance?: number } | null;
-      if (r?.reachable) {
-        return { reachable: true, pathId: r.path_id, totalDistance: r.total_distance };
-      }
-      return { reachable: false };
-    } catch {
-      return { reachable: false };
-    }
-  }
-
   /** 清除 SDK 场内导航已画路线(不传参 = 全部)。 */
   deleteNavigationRoutes(): void {
     (this.sdk as unknown as { deleteNavigationRoute?: (params?: unknown) => unknown } | null)?.deleteNavigationRoute?.({});
