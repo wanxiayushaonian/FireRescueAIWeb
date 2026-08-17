@@ -30,6 +30,7 @@ import {
   Flame as FlameIcon,
   Trees,
   MapPin,
+  Shapes,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useScene } from './SceneProvider';
@@ -80,7 +81,7 @@ function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
 }
 
 export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const { recipeStore, sceneId } = useScene();
+  const { recipeStore, sceneId, runtime } = useScene();
   const [structural, setStructural] = useState<StructuralRecipe | null>(
     recipeStore?.getCurrent().structural ?? null,
   );
@@ -90,6 +91,27 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
   const [fireDirOpen, setFireDirOpen] = useState(true);
   // 顶层页签:内容显隐(开关) / 场景包内容(数据解析展示)
   const [topTab, setTopTab] = useState<'visibility' | 'pack'>('visibility');
+  // 平台标注的区域多边形(随场景包加载):经 setVirtualPolygonVisible 控制显隐
+  const [polygons, setPolygons] = useState<Array<{ polygon_id: string; polygon_name?: string }>>([]);
+  const [polygonVis, setPolygonVis] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!open || !sceneId) return;
+    let alive = true;
+    fetch(`/api/ustudio/polygons?sceneId=${encodeURIComponent(sceneId)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows: unknown) => {
+        if (!alive || !Array.isArray(rows)) return;
+        setPolygons(
+          rows
+            .filter((r): r is { polygon_id: string; polygon_name?: string } => !!r && typeof (r as { polygon_id?: unknown }).polygon_id === 'string'),
+        );
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open, sceneId]);
 
   useEffect(() => {
     if (!recipeStore) return;
@@ -285,6 +307,49 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
 
               {zoneHeader('室 外')}
               {outdoorGroups.map((g) => renderGroup(g))}
+
+              {/* 区域多边形:平台标注区域(随场景包加载),SDK setVirtualPolygonVisible 控制 */}
+              {polygons.length > 0 && (() => {
+                const allOn = polygons.every((p) => polygonVis[p.polygon_id] ?? true);
+                const setAll = (visible: boolean): void => {
+                  for (const p of polygons) runtime?.setVirtualPolygonVisible(p.polygon_id, visible);
+                  setPolygonVis(Object.fromEntries(polygons.map((p) => [p.polygon_id, visible])));
+                };
+                return (
+                  <div className="rounded-md border border-line/60 bg-bg-panel-2/40">
+                    <div className="flex items-center gap-2 px-3 py-2">
+                      <span className="w-3.5" />
+                      <Shapes className="h-3.5 w-3.5 text-text-3" />
+                      <span className="text-[13px] font-medium text-text-1">区域多边形</span>
+                      <span className="ml-auto">
+                        <Toggle on={allOn} onClick={() => setAll(!allOn)} />
+                      </span>
+                    </div>
+                    <div className="border-t border-line/40 px-3 py-1.5">
+                      {polygons.map((p) => {
+                        const on = polygonVis[p.polygon_id] ?? true;
+                        return (
+                          <div key={p.polygon_id} className="flex items-center gap-2 py-1 pl-5">
+                            <span className={`text-[12px] ${on ? 'text-text-2' : 'text-text-3'}`}>
+                              {p.polygon_name || p.polygon_id}
+                            </span>
+                            <span className="ml-auto">
+                              <Toggle
+                                on={on}
+                                onClick={() => {
+                                  runtime?.setVirtualPolygonVisible(p.polygon_id, !on);
+                                  setPolygonVis((v) => ({ ...v, [p.polygon_id]: !on }));
+                                }}
+                              />
+                            </span>
+                          </div>
+                        );
+                      })}
+                      <div className="py-1 text-[9px] text-text-3/60">平台标注区域 · 显隐即时生效,场景重载恢复默认显示</div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 周边环境:不在语义树内,无独立开关 */}
               <div className="flex items-start gap-2 rounded-md border border-line/40 bg-bg-panel-2/20 px-3 py-2">
