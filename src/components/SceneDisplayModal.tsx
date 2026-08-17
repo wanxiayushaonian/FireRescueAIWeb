@@ -15,7 +15,14 @@ import {
   Layers,
   Box,
   Columns3,
-  Flame,
+  Droplets,
+  Droplet,
+  Bell,
+  Wind,
+  Flashlight,
+  FireExtinguisher,
+  Monitor,
+  Truck,
   DoorOpen,
   ArrowUp as StairsIcon,
   LayoutGrid,
@@ -37,10 +44,17 @@ const LEVEL_TABS: { level: Level; label: string; icon: LucideIcon }[] = [
 ];
 
 const GROUP_ICON: Record<string, LucideIcon> = {
-  fireDevices: Flame,
+  hydrantSupply: Droplets,
+  sprinkler: Droplet,
+  fireAlarm: Bell,
+  smokeControl: Wind,
+  evacuation: Flashlight,
+  extinguisher: FireExtinguisher,
+  controlRoom: Monitor,
   doors: DoorOpen,
   stairs: StairsIcon,
   spaces: LayoutGrid,
+  vehicles: Truck,
   buildingStructure: Building2,
 };
 
@@ -66,7 +80,7 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
     recipeStore?.getCurrent().structural ?? null,
   );
   const [activeLevel, setActiveLevel] = useState<Level>('whole');
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['fireDevices']));
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set(['hydrantSupply']));
   // 顶层页签:内容显隐(开关) / 场景包内容(数据解析展示)
   const [topTab, setTopTab] = useState<'visibility' | 'pack'>('visibility');
 

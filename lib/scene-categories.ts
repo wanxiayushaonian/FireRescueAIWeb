@@ -10,30 +10,72 @@ export interface CategoryTypeDef {
 }
 
 export interface CategoryGroup {
-  /** 大类 key(消防设施可展开细分;其余大类单 type) */
+  /** 大类 key */
   key: string;
   label: string;
-  /** 该大类下的细分类型(消防设施含多个,门/楼梯/空间各一个) */
+  /** 该大类下的细分类型 */
   types: CategoryTypeDef[];
+  /** 消防系统类(含消控室设备):whole/multi 层级默认隐藏(见 defaultVisibleByLevel);车辆等室外装备不标 */
+  fireSystem?: boolean;
 }
 
+/** 分组对齐平台本体分类树(实测 category_name:消火栓系统/火灾探测报警系统/防排烟系统/疏散逃生设施/消防载具…) */
 export const HIDABLE_CATEGORY_GROUPS: CategoryGroup[] = [
   {
-    key: 'fireDevices',
-    label: '消防设施',
+    key: 'hydrantSupply',
+    label: '消火栓供水系统',
+    fireSystem: true,
     types: [
-      { type: 'OpenSprinklerHead', label: '喷淋嘴' },
-      { type: 'PointSmokeDetector', label: '感烟探测器' },
-      { type: 'EmergencyLightingFixture', label: '应急照明' },
-      { type: 'EvacuationSignLight', label: '疏散标志' },
-      { type: 'ManualFireAlarmButton', label: '手动报警按钮' },
-      { type: 'ExtinguisherCabinet', label: '灭火器箱' },
       { type: 'IndoorFireHydrant', label: '室内消火栓' },
-      { type: 'PositivePressureFan', label: '正压送风机' },
-      { type: 'SmokeExhaustFan', label: '排烟风机' },
-      { type: 'OutdoorFireHydrant', label: '室外消火栓' },
       { type: 'PumpAdapter', label: '水泵接合器' },
       { type: 'Shuixiangshuibeng', label: '水箱水泵' },
+      { type: 'OutdoorFireHydrant', label: '室外消火栓' },
+    ],
+  },
+  {
+    key: 'sprinkler',
+    label: '自动喷水灭火',
+    fireSystem: true,
+    types: [{ type: 'OpenSprinklerHead', label: '喷淋嘴' }],
+  },
+  {
+    key: 'fireAlarm',
+    label: '火灾探测报警',
+    fireSystem: true,
+    types: [
+      { type: 'PointSmokeDetector', label: '感烟探测器' },
+      { type: 'ManualFireAlarmButton', label: '手动报警按钮' },
+    ],
+  },
+  {
+    key: 'smokeControl',
+    label: '防排烟系统',
+    fireSystem: true,
+    types: [
+      { type: 'PositivePressureFan', label: '正压送风机' },
+      { type: 'SmokeExhaustFan', label: '排烟风机' },
+    ],
+  },
+  {
+    key: 'evacuation',
+    label: '疏散逃生设施',
+    fireSystem: true,
+    types: [
+      { type: 'EmergencyLightingFixture', label: '应急照明' },
+      { type: 'EvacuationSignLight', label: '疏散标志' },
+    ],
+  },
+  {
+    key: 'extinguisher',
+    label: '灭火器',
+    fireSystem: true,
+    types: [{ type: 'ExtinguisherCabinet', label: '灭火器箱' }],
+  },
+  {
+    key: 'controlRoom',
+    label: '消控室设备',
+    fireSystem: true,
+    types: [
       { type: 'Kongzhitai', label: '消控室控制台' },
       { type: 'Gongzuozhan', label: '消控室工作站' },
       { type: 'Dianshijiankong', label: '电视监控' },
@@ -70,9 +112,9 @@ export const HIDABLE_TYPE_LABELS: Record<string, string> = Object.fromEntries(
 /** 所有可显隐 type 集合 */
 export const HIDABLE_TYPES = new Set(Object.keys(HIDABLE_TYPE_LABELS));
 
-/** 消防设施 type 集合(大类总开关聚合用) */
+/** 消防系统类 type 集合(大类总开关聚合 + whole/multi 默认隐藏用;消控室设备计入,车辆不计) */
 export const FIRE_DEVICE_TYPES = new Set(
-  HIDABLE_CATEGORY_GROUPS.find((g) => g.key === 'fireDevices')!.types.map((t) => t.type),
+  HIDABLE_CATEGORY_GROUPS.filter((g) => g.fireSystem).flatMap((g) => g.types.map((t) => t.type)),
 );
 
 /** 默认某层级的 categoryVisibility(全部可见) */
@@ -84,7 +126,8 @@ export function defaultCategoryVisibility(): Record<string, boolean> {
  * 各层级"未配置时"的默认可见性 —— 与 level-policy 推导的渲染实际对齐,
  * 供模态框 UI 兜底(开关显示值 = 实际渲染值,避免 UI 全 ON 而实际全藏的错觉):
  *  - single:完整细节 + 显设备 → 全显
- *  - whole/multi:hideDevices 基线藏非主体 → 消防设施/门/空间默认 OFF,楼梯/建筑结构保留 ON
+ *  - whole/multi:hideDevices 基线藏非主体 → 消防系统类(含消控室设备)/门/空间默认 OFF,
+ *    车辆(室外装备)/楼梯/建筑结构保留 ON
  */
 export function defaultVisibleByLevel(level: 'whole' | 'single' | 'multi'): Record<string, boolean> {
   const base = defaultCategoryVisibility();
