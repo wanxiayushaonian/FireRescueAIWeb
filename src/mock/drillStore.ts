@@ -84,7 +84,7 @@ export function finishEvaluate(r: EvaluationResult) {
   emit();
   // 预案评估归档闭环：合格（archived）即入预案库可查
   if (r.archived) {
-    addLibraryItem({
+    const item = addLibraryItem({
       kind: '演练预案',
       title: `${state.scenario?.buildingName ?? '未指定建筑'}火灾处置预案（演练版）`,
       buildingName: state.scenario?.buildingName,
@@ -93,6 +93,8 @@ export function finishEvaluate(r: EvaluationResult) {
       summary: r.opinions,
       sourceDetail: `来源：演练对抗 · 预案评估（评估分 ${r.score}/100，${state.scenario?.floor ?? ''} 情景） · 演示数据`,
     });
+    // 真实化：同步在正式预案库建档（21号楼；fire-and-forget）
+    void archiveDrillPlanToBackend(state.scenario, r, item.id);
   }
 }
 
@@ -102,7 +104,36 @@ export function finishEvaluate(r: EvaluationResult) {
 import { BUILDINGS, FIRE_MATERIALS } from './drill';
 import type { FetchState } from './types';
 import { addSceneAction } from './sceneLog';
-import { addLibraryItem } from './planLibrary';
+import { addLibraryItem, patchLibraryItem } from './planLibrary';
+import { createPlan } from '@/api/plans';
+import { DRILL_DEMO_BUILDING_ID } from '@/api/building-profile';
+
+/** 演练建筑 mock id → znya key_building_id 映射（仅 21号楼 有真实档案；其余演示建筑仅本地归档） */
+const MOCK_BUILDING_TO_ZNYA: Record<string, string> = { jm: DRILL_DEMO_BUILDING_ID };
+
+/**
+ * 归档真实化：评估通过后在正式预案库（emergency_plans）建档 draft 记录。
+ * fire-and-forget——成功后回写本地条目标记；后端不可达则保持本地归档（演示数据标注），不打扰用户。
+ */
+async function archiveDrillPlanToBackend(
+  scenario: ScenarioParams | null,
+  r: EvaluationResult,
+  localItemId: string,
+): Promise<void> {
+  if (!scenario) return;
+  const keyBuildingId = MOCK_BUILDING_TO_ZNYA[scenario.buildingId];
+  if (!keyBuildingId) return;
+  try {
+    const plan = await createPlan({
+      name: `${scenario.buildingName}火灾处置预案（演练版）`,
+      key_building_id: keyBuildingId,
+      plan_type: '演练预案',
+    });
+    if (plan?.id) patchLibraryItem(localItemId, { backendPlanId: plan.id });
+  } catch {
+    // 后端不通：仅本地归档
+  }
+}
 
 export interface ConfrontationEvent {
   id: string;

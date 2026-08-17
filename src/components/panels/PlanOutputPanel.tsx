@@ -6,6 +6,8 @@ import {
 } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { buildDrillPlan, evaluatePlan, pickEmergency, renderEmergency } from '@/mock/drill';
+import type { EmergencyEvent, EvaluationResult } from '@/mock/drill';
+import { evaluateViaAgent } from '@/lib/agent-evaluate';
 import {
   beginEvaluate, beginGenerate, finishEvaluate, finishGenerate,
   getConfrontationState, getDrillState, injectEmergency, reopenConfrontation,
@@ -174,14 +176,41 @@ export default function PlanOutputPanel() {
     showToast('已注入突发特情 · 演示数据');
   };
 
-  const handleEvaluate = () => {
+  const handleEvaluate = async () => {
     beginEvaluate();
-    window.setTimeout(() => {
-      const cur = getDrillState();
-      const result = evaluatePlan(cur.emergencies.length, cur.evaluatedCount);
-      finishEvaluate(result);
-      if (result.archived) showToast('预案已归档 · 演示数据');
-    }, 1500);
+    const cur = getDrillState();
+    // 评估智能体优先（未配置 / 失败自动降级 mock，保留评估节奏）
+    const agentData = await evaluateViaAgent({
+      kind: 'drill-plan',
+      subject: `${cur.scenario?.buildingName ?? '未指定建筑'} ${cur.scenario?.floor ?? ''} ${cur.scenario?.material ?? ''}火灾处置预案`,
+      process: {
+        scenario: {
+          buildingName: cur.scenario?.buildingName,
+          floor: cur.scenario?.floor,
+          material: cur.scenario?.material,
+          trapped: cur.scenario?.trapped,
+        },
+        plan: cur.plan,
+        emergencies: cur.emergencies.map((e: EmergencyEvent) => ({ text: e.text, location: e.location })),
+        evaluatedCount: cur.evaluatedCount,
+      },
+    });
+    let result: EvaluationResult | null = null;
+    if (agentData) {
+      const pass = agentData.score >= 70;
+      result = {
+        verdict: pass ? '合格' : '需修订',
+        score: agentData.score,
+        opinions: agentData.opinions.length > 0 ? agentData.opinions : [agentData.conclusion],
+        archived: pass,
+      };
+    }
+    if (!result) {
+      await new Promise((r) => window.setTimeout(r, 1200));
+      result = evaluatePlan(cur.emergencies.length, cur.evaluatedCount);
+    }
+    finishEvaluate(result);
+    if (result.archived) showToast('预案已归档 · 演示数据');
   };
 
   const handleRetry = () => {

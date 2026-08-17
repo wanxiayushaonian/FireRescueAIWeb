@@ -20,6 +20,8 @@ export interface LibraryItem {
   version?: number;
   /** 改进措施关联的同建筑演练预案 id（入库时自动关联最新一份） */
   linkedPlanId?: string;
+  /** 后端正式预案库 emergency_plans 建档 id（演练预案评估归档成功后回写） */
+  backendPlanId?: string;
 }
 
 let seq = 0;
@@ -131,6 +133,12 @@ export function subscribeLibrary(fn: Listener): () => void {
   listeners.add(fn);
   fn(items);
   return () => listeners.delete(fn);
+}
+
+/** 局部更新已入库条目（如后端建档成功后回写 backendPlanId），通知订阅者。 */
+export function patchLibraryItem(id: string, patch: Partial<LibraryItem>): void {
+  items = items.map((it) => (it.id === id ? { ...it, ...patch } : it));
+  listeners.forEach((fn) => fn(items));
 }
 
 export function getLibrary(): LibraryItem[] {

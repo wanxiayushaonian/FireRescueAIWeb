@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type * as L from 'leaflet';
 import dynamic from 'next/dynamic';
-import { Siren, GaugeCircle, Sparkles, Video } from 'lucide-react';
+import { Siren, GaugeCircle, Sparkles, Video, Library } from 'lucide-react';
 import DraggablePanel from '@/components/DraggablePanel';
 import IncidentListPanel from '@/components/command/IncidentListPanel';
 import DisasterVarsPanel from '@/components/command/DisasterVarsPanel';
@@ -12,6 +12,7 @@ import RecommendPanel from '@/components/command/RecommendPanel';
 import VideoPlaybackPanel from '@/components/command/VideoPlaybackPanel';
 import TacticalOverlay from '@/components/command/TacticalOverlay';
 import CommandIntelPanel from '@/components/command/CommandIntelPanel';
+import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
 import {
@@ -38,6 +39,7 @@ export default function CommandView() {
   const [varsPanelOpen, setVarsPanelOpen] = useState(true);
   const [recPanelOpen, setRecPanelOpen] = useState(true);
   const [videoOpen, setVideoOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const timersRef = useRef<number[]>([]);
   const selectedIdRef = useRef<string | null>(null);
   // 真实模式:fetchIncidents(incidents DB)→ adapter → 面板格式;mock 模式走 liveChannel 状态机
@@ -246,20 +248,30 @@ export default function CommandView() {
         >模拟演练</button>
       </div>
 
-      {/* 右上角悬浮：现场视频回传（选中警情后可用） */}
-      <button
-        onClick={() => selected && setVideoOpen(true)}
-        disabled={!selected}
-        title={selected ? '打开现场视频回传' : '请先选择警情'}
-        className={`absolute right-[420px] top-4 z-30 flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium backdrop-blur-[8px] transition ${
-          selected
-            ? 'border-red/60 bg-bg-panel/90 text-red hover:bg-red/10 hover:shadow-[0_0_10px_rgba(239,68,68,.3)]'
-            : 'cursor-not-allowed border-line bg-bg-panel/70 text-text-3 opacity-60'
-        }`}
-      >
-        <Video className="h-4 w-4" />
-        现场视频回传
-      </button>
+      {/* 右上角悬浮：预案库 + 现场视频回传（选中警情后视频可用） */}
+      <div className="absolute right-[420px] top-4 z-30 flex items-center gap-2">
+        <button
+          onClick={() => setLibraryOpen(true)}
+          title="预案库（战后评估回流 / 正式预案建档）"
+          className="flex items-center gap-2 rounded-md border border-violet/60 bg-bg-panel/90 px-3 py-1.5 text-[13px] font-medium text-violet backdrop-blur-[8px] transition hover:bg-violet/10 hover:shadow-[0_0_10px_rgba(167,139,250,.3)]"
+        >
+          <Library className="h-4 w-4" />
+          预案库
+        </button>
+        <button
+          onClick={() => selected && setVideoOpen(true)}
+          disabled={!selected}
+          title={selected ? '打开现场视频回传' : '请先选择警情'}
+          className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[13px] font-medium backdrop-blur-[8px] transition ${
+            selected
+              ? 'border-red/60 bg-bg-panel/90 text-red hover:bg-red/10 hover:shadow-[0_0_10px_rgba(239,68,68,.3)]'
+              : 'cursor-not-allowed border-line bg-bg-panel/70 text-text-3 opacity-60'
+          }`}
+        >
+          <Video className="h-4 w-4" />
+          现场视频回传
+        </button>
+      </div>
 
       {/* 现场视频回传弹窗（mock 播放器，FLV/HLS 接入区） */}
       <VideoPlaybackPanel
@@ -364,6 +376,21 @@ export default function CommandView() {
           onFlushImprovement={handleFlushImprovement}
           onExportReport={handleExportReport}
         />
+      </DraggablePanel>
+
+      {/* 预案库（默认关闭；战后评估改进措施回流 / 正式预案建档可查） */}
+      <DraggablePanel
+        panelId="command-library"
+        title="预案库"
+        icon={Library}
+        width={480}
+        dock="right"
+        defaultPos={{ x: 16, y: 16 }}
+        height="min(560px, 76dvh)"
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+      >
+        <PlanLibraryPanel />
       </DraggablePanel>
     </div>
   );

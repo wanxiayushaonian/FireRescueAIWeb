@@ -1,15 +1,17 @@
 // 预案库面板：演练评估归档 / 对抗评估归档 / 改进措施回流统一可查可回放，
 // 打通「归档物无处可查」业务断点（演练对抗模块第三个面板）。
-import { useEffect, useMemo, useState } from 'react';
+// 双页签：「归档库」（本地三分类）+「正式预案」（znya emergency_plans 真实列表，演练归档建档后可见）。
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  Archive, ChevronDown, FileText, Swords, Recycle, X, RotateCcw, Stamp, Database, CheckCircle2,
+  Archive, ChevronDown, FileText, Swords, Recycle, X, RotateCcw, Stamp, Database, CheckCircle2, RefreshCw,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { confirmImprovement, fetchLibrary, getLibrary, subscribeLibrary } from '@/mock/planLibrary';
 import type { LibraryItem, LibraryKind, LibraryStatus } from '@/mock/planLibrary';
 import { addSceneAction } from '@/mock/sceneLog';
+import { fetchPlans, type ZnyaPlan } from '@/api/plans';
 import { showToast } from '@/components/Toast';
 import PanelStateView from '@/components/PanelStateView';
 import DemoTag from '@/components/DemoTag';
@@ -26,6 +28,28 @@ const STATUS_CLS: Record<LibraryStatus, string> = {
   待落地: 'border-amber/70 bg-amber/10 text-amber',
   已落地: 'border-cyan/60 bg-cyan/10 text-cyan',
 };
+
+/** 正式预案状态（znya emergency_plans.status / review_status）中文映射与配色 */
+const PLAN_STATUS_LABEL: Record<string, string> = {
+  draft: '草稿', pending_review: '待审', published: '已发布',
+  pending: '待审', approved: '已批', rejected: '已驳回',
+};
+const PLAN_STATUS_CLS: Record<string, string> = {
+  draft: 'border-amber/70 bg-amber/10 text-amber',
+  pending_review: 'border-blue/60 bg-blue/10 text-blue',
+  published: 'border-green/60 bg-green/10 text-green',
+  pending: 'border-blue/60 bg-blue/10 text-blue',
+  approved: 'border-green/60 bg-green/10 text-green',
+  rejected: 'border-red/60 bg-red/10 text-red',
+};
+
+function formatPlanTime(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
 
 const FILTERS: Array<'全部' | LibraryKind> = ['全部', '演练预案', '对抗评估', '改进措施'];
 
@@ -56,9 +80,20 @@ function ItemCard({ item, onOpen }: { item: LibraryItem; onOpen: (it: LibraryIte
             v{item.version ?? 1}
           </span>
         )}
-        <span className={`ml-auto flex items-center gap-1 rounded-full border px-1.5 py-px text-[11px] leading-4 ${STATUS_CLS[item.status]}`}>
-          {item.status === '已归档' && <Stamp className="h-3 w-3" />}
-          {item.status}
+        <span className={`ml-auto flex items-center gap-1.5`}>
+          {item.backendPlanId && (
+            <span
+              className="flex items-center gap-1 rounded-full border border-cyan/60 bg-cyan/10 px-1.5 py-px text-[11px] leading-4 text-cyan"
+              title={`正式预案库记录 ${item.backendPlanId}`}
+            >
+              <Database className="h-3 w-3" />
+              已入正式预案库
+            </span>
+          )}
+          <span className={`flex items-center gap-1 rounded-full border px-1.5 py-px text-[11px] leading-4 ${STATUS_CLS[item.status]}`}>
+            {item.status === '已归档' && <Stamp className="h-3 w-3" />}
+            {item.status}
+          </span>
         </span>
       </div>
       <p className="mt-1.5 line-clamp-2 text-[13px] leading-5 text-text-1">{item.title}</p>
@@ -164,6 +199,12 @@ function DetailDialog({ item, onClose }: { item: LibraryItem; onClose: () => voi
             ))}
           </ul>
           {item.sourceDetail && <div className="text-[11px] text-text-3">{item.sourceDetail}</div>}
+          {item.backendPlanId && (
+            <div className="flex items-center gap-1.5 text-[11px] text-cyan">
+              <Database className="h-3 w-3" />
+              已入正式预案库（{item.backendPlanId.slice(0, 8)}… · draft 草稿）
+            </div>
+          )}
           {item.kind === '演练预案' && (
             <button
               onClick={handleReload}
@@ -201,6 +242,11 @@ export default function PlanLibraryPanel() {
   const [items, setItems] = useState<LibraryItem[]>(getLibrary());
   const [filter, setFilter] = useState<'全部' | LibraryKind>('全部');
   const [detail, setDetail] = useState<LibraryItem | null>(null);
+  // 正式预案页签：znya emergency_plans 列表（null=未加载，进入页签时懒拉取）
+  const [tab, setTab] = useState<'archive' | 'plans'>('archive');
+  const [plans, setPlans] = useState<ZnyaPlan[] | null>(null);
+  const [plansLoading, setPlansLoading] = useState(false);
+  const [plansError, setPlansError] = useState(false);
 
   // 订阅库内新增（评估归档 / 回流实时入列）
   useEffect(() => subscribeLibrary(setItems), []);
@@ -214,6 +260,24 @@ export default function PlanLibraryPanel() {
       .catch(() => { if (alive) setPhase('error'); });
     return () => { alive = false; };
   }, []);
+
+  // 正式预案列表拉取（可手动刷新）
+  const loadPlans = useCallback(async () => {
+    setPlansLoading(true);
+    setPlansError(false);
+    try {
+      setPlans(await fetchPlans());
+    } catch {
+      setPlansError(true);
+    } finally {
+      setPlansLoading(false);
+    }
+  }, []);
+
+  // 首次切入「正式预案」页签时懒拉取
+  useEffect(() => {
+    if (tab === 'plans' && plans === null && !plansError && !plansLoading) void loadPlans();
+  }, [tab, plans, plansError, plansLoading, loadPlans]);
 
   const filtered = useMemo(
     () => (filter === '全部' ? items : items.filter((it) => it.kind === filter)),
@@ -260,6 +324,45 @@ export default function PlanLibraryPanel() {
     );
   };
 
+  /** 正式预案页签：znya emergency_plans 只读列表（演练归档建档后在此可见） */
+  const renderPlansBody = () => {
+    if (plansLoading && plans === null) return <PanelStateView state="loading" skeletonRows={5} />;
+    if (plansError) return <PanelStateView state="error" onRetry={() => void loadPlans()} skeletonRows={5} />;
+    if (!plans || plans.length === 0) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
+          <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
+          <div className="text-[13px] text-text-2">正式预案库暂无预案</div>
+          <div className="max-w-[280px] text-center text-[12px] text-text-3">
+            完成演练预案评估归档后，将在此建档（draft 草稿，可继续走审批发布）
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {plans.map((p) => (
+          <div key={p.id} className="rounded-lg border border-line bg-bg-panel-2/50 p-2.5 transition hover:border-line-glow">
+            <div className="flex items-center gap-2">
+              <FileText className="h-3.5 w-3.5 shrink-0 text-text-2" />
+              <span className="min-w-0 truncate text-[13px] text-text-1">{p.name}</span>
+              <span className={`ml-auto shrink-0 rounded-full border px-1.5 py-px text-[11px] leading-4 ${PLAN_STATUS_CLS[p.status ?? ''] ?? 'border-line text-text-3'}`}>
+                {PLAN_STATUS_LABEL[p.status ?? ''] ?? p.status ?? '—'}
+              </span>
+            </div>
+            <div className="mt-1.5 flex items-center gap-2 text-[11px] text-text-3">
+              {p.key_building_name && <span className="truncate">{p.key_building_name}</span>}
+              {p.plan_type && <span className="shrink-0 rounded border border-line px-1 py-px">{p.plan_type}</span>}
+              <span className="shrink-0 font-num">v{p.version ?? 1}</span>
+              {p.completion_rate !== undefined && <span className="shrink-0">完成度 {p.completion_rate}%</span>}
+              <span className="ml-auto shrink-0 font-mono">{formatPlanTime(p.updated_at)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* 身份条 + 状态演示 */}
@@ -286,24 +389,68 @@ export default function PlanLibraryPanel() {
         </div>
       </div>
 
-      {/* kind 筛选 chips */}
-      <div className="flex shrink-0 gap-1.5 border-b border-line px-3 py-2">
-        {FILTERS.map((f) => (
+      {/* 双页签：归档库（本地三分类）/ 正式预案（znya emergency_plans） */}
+      <div className="flex shrink-0 items-center gap-1 border-b border-line px-3 pt-2">
+        {(
+          [
+            { key: 'archive', label: '归档库' },
+            { key: 'plans', label: '正式预案' },
+          ] as const
+        ).map((t) => (
           <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`rounded-full border px-2.5 py-1 text-[12px] transition ${
-              filter === f
-                ? 'border-cyan/60 bg-cyan/10 text-cyan shadow-[0_0_8px_rgba(34,211,238,.25)]'
-                : 'border-line text-text-3 hover:text-text-2'
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`relative rounded-t-md border border-b-0 px-3 py-1.5 text-[12px] transition ${
+              tab === t.key
+                ? 'border-cyan/40 bg-cyan/10 text-cyan'
+                : 'border-line bg-bg-panel-2/40 text-text-3 hover:text-text-2'
             }`}
           >
-            {f}
+            {t.label}
+            {t.key === 'plans' && plans !== null && (
+              <span className="ml-1 font-num text-[10px] opacity-70">{plans.length}</span>
+            )}
           </button>
         ))}
       </div>
 
-      {renderBody()}
+      {tab === 'plans' ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-1.5">
+            <span className="text-[11px] text-text-3">正式预案库（znya · 真实数据）</span>
+            <button
+              onClick={() => void loadPlans()}
+              disabled={plansLoading}
+              className="ml-auto flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[12px] text-text-3 transition hover:border-line-glow hover:text-cyan disabled:opacity-40"
+            >
+              <RefreshCw className={`h-3 w-3 ${plansLoading ? 'animate-spin' : ''}`} />
+              刷新
+            </button>
+          </div>
+          {renderPlansBody()}
+        </div>
+      ) : (
+        <>
+          {/* kind 筛选 chips */}
+          <div className="flex shrink-0 gap-1.5 border-b border-line px-3 py-2">
+            {FILTERS.map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`rounded-full border px-2.5 py-1 text-[12px] transition ${
+                  filter === f
+                    ? 'border-cyan/60 bg-cyan/10 text-cyan shadow-[0_0_8px_rgba(34,211,238,.25)]'
+                    : 'border-line text-text-3 hover:text-text-2'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          {renderBody()}
+        </>
+      )}
 
       {/* 归档详情 Dialog（从 items 派生，落地后即时刷新状态/版本） */}
       <AnimatePresence>

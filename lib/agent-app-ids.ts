@@ -19,6 +19,12 @@ export const COMMANDER_APP_ID = '2087535122373074946';
  */
 export const ADVERSARY_APP_ID = (process.env.NEXT_PUBLIC_ADVERSARY_APP_ID ?? '').trim();
 
+/**
+ * 评估智能体 app_id（演练预案评估 / 实战战后评估）。在 uagent 平台创建评估 agent 应用后,
+ * 以构建环境变量 NEXT_PUBLIC_EVALUATE_APP_ID 注入即可启用;未配置时评估自动降级 mock。
+ */
+export const EVALUATE_APP_ID = (process.env.NEXT_PUBLIC_EVALUATE_APP_ID ?? '').trim();
+
 export const AGENT_APP_IDS: Record<ModuleKey, string> = {
   overview: OVERVIEW_APP_ID,
   objects: COMMANDER_APP_ID,

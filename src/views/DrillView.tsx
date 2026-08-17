@@ -27,6 +27,9 @@ import { DisasterState, type DisasterStatus, type DisasterScenario } from '@/lib
 import { DrillRecorder } from '@/lib/drill/drill-recorder';
 import DrillScenarioPanel from '@/components/drill/DrillScenarioPanel';
 import type { ScenarioApplyResult } from '@/components/drill/DrillScenarioPanel';
+import DraggablePanel from '@/components/DraggablePanel';
+import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
+import { Library } from 'lucide-react';
 import {
   DEFAULT_SCENARIO_ID,
   getScenario,
@@ -138,6 +141,8 @@ export default function DrillView() {
   const [snapshot, setSnapshot] = useState<DisasterStatus | null>(null);
   /** 事件树悬浮面板开关(Ctrl+K 唤出/切换,ESC 关闭)。 */
   const [treeOpen, setTreeOpen] = useState(false);
+  /** 预案库面板开关（演练评估归档 / 正式预案建档可查）。 */
+  const [libraryOpen, setLibraryOpen] = useState(false);
   /** 上次处理过的 tick,防止 resume 时同 clock 重复处理。 */
   const lastTickRef = useRef(-1);
 
@@ -237,19 +242,30 @@ export default function DrillView() {
         {/* 左侧占位：3D 场景已在 App 层作为背景渲染，鼠标穿透 */}
         <div className="relative min-w-0 flex-1" />
 
-        {/* 右:事件树入口按钮 + 态势面板 */}
+        {/* 右:事件树入口按钮 + 预案库入口 + 态势面板 */}
         <aside className="pointer-events-auto relative z-30 flex w-[360px] shrink-0 flex-col gap-2 overflow-y-auto">
-          <button
-            type="button"
-            onClick={() => setTreeOpen(true)}
-            className="flex items-center justify-between rounded-lg border border-line bg-bg-panel/60 px-3 py-2 text-left transition hover:border-line-glow"
-            title="Ctrl+K 唤出事件树(实时增长 / 事后复盘)"
-          >
-            <span className="text-[13px] text-text-1">事件树(实时 / 复盘)</span>
-            <kbd className="rounded border border-line bg-bg-deep px-1.5 py-0.5 text-[10px] text-text-3">
-              Ctrl+K
-            </kbd>
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setTreeOpen(true)}
+              className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-line bg-bg-panel/60 px-3 py-2 text-left transition hover:border-line-glow"
+              title="Ctrl+K 唤出事件树(实时增长 / 事后复盘)"
+            >
+              <span className="text-[13px] text-text-1">事件树(实时 / 复盘)</span>
+              <kbd className="rounded border border-line bg-bg-deep px-1.5 py-0.5 text-[10px] text-text-3">
+                Ctrl+K
+              </kbd>
+            </button>
+            <button
+              type="button"
+              onClick={() => setLibraryOpen(true)}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border border-violet/50 bg-bg-panel/60 px-3 py-2 text-[13px] text-violet transition hover:border-violet hover:bg-violet/10"
+              title="预案库（演练评估归档 / 正式预案建档）"
+            >
+              <Library className="h-4 w-4" />
+              预案库
+            </button>
+          </div>
           <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-line bg-bg-panel/60">
             <div className="border-b border-line px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-2">
               态势
@@ -265,6 +281,21 @@ export default function DrillView() {
         open={treeOpen}
         onClose={() => setTreeOpen(false)}
       />
+
+      {/* 预案库悬浮面板（默认关闭；归档条目 / 正式预案页签） */}
+      <DraggablePanel
+        panelId="drill-library"
+        title="预案库"
+        icon={Library}
+        width={480}
+        dock="right"
+        defaultPos={{ x: 16, y: 16 }}
+        height="min(560px, 76dvh)"
+        open={libraryOpen}
+        onOpenChange={setLibraryOpen}
+      >
+        <PlanLibraryPanel />
+      </DraggablePanel>
     </div>
   );
 }

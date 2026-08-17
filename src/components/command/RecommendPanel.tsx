@@ -9,6 +9,7 @@ import type { FetchState } from '@/mock/types';
 import type { Incident, PostActionReview, Recommendation, RecommendType } from '@/mock/incidents';
 import { fetchPostActionReview } from '@/mock/incidents';
 import { addLibraryItem } from '@/mock/planLibrary';
+import { evaluateViaAgent } from '@/lib/agent-evaluate';
 import PanelStateView from '@/components/PanelStateView';
 
 const TYPE_META: Record<RecommendType, { label: string; icon: LucideIcon; bar: string; chip: string }> = {
@@ -304,9 +305,42 @@ export default function RecommendPanel({
     scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [recommendations.length]);
 
-  const startReview = () => {
+  const startReview = async () => {
     if (!incident) return;
     setReviewPhase('loading');
+    // 评估智能体优先（未配置 / 失败自动降级 mock，保留 1.5s 骨架节奏）
+    const agentData = await evaluateViaAgent({
+      kind: 'post-action',
+      subject: `警情 ${incident.id}（${incident.address}）处置过程战评`,
+      process: {
+        incident: {
+          id: incident.id,
+          address: incident.address,
+          type: incident.type,
+          status: incident.status,
+          statusHistory: incident.statusHistory,
+        },
+        adoptedRecommendations: recommendations
+          .filter((r) => r.adopted)
+          .map((r) => ({ type: r.type, content: r.content })),
+      },
+    });
+    if (agentData) {
+      setReview({
+        incidentId: incident.id,
+        totalScore: agentData.score,
+        conclusion: agentData.conclusion,
+        dimensions: agentData.dimensions,
+        improvements: agentData.improvements.map((imp, i) => ({
+          id: `imp-${Date.now().toString(36)}-${i}`,
+          content: imp.content,
+          target: imp.target,
+          flushed: false,
+        })),
+      });
+      setReviewPhase('done');
+      return;
+    }
     const t = window.setTimeout(async () => {
       try {
         const r = await fetchPostActionReview(incident.id);
