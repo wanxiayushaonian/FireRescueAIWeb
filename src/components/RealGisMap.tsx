@@ -956,6 +956,8 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
 
   return (
     <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
+      {/* 图层控制条(顶部居中,minimal chrome 隐藏——实战指挥顶部有自家模式切换条,避免两条堆叠) */}
+      {chrome === 'full' && (
       <MapLayerControl
         baseMap={baseMap}
         onBaseMapChange={setBaseMap}
@@ -982,6 +984,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
           window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: null } }));
         }}
       />
+      )}
       {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化)。
           居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称。
           minimal chrome(实战指挥等被面板占用的模块)隐藏,避免与左下/右下面板重合 */}
