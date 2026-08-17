@@ -33,6 +33,7 @@ import { storyIdsForFloorSpec } from '@/lib/floor-focus';
 import { showToast } from '@/components/Toast';
 import { presets } from '@/lib/scene-recipe/presets';
 import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
+import { loadSceneSkyPref } from '@/lib/scene-sky-prefs';
 
 export default function App() {
   return (
@@ -169,6 +170,12 @@ function AppContent() {
       recipeStore.setStructural({ ...presets.drillConfront.structural, categoryVisibility: display });
     }
   }, [recipeStore, module, sceneId]);
+
+  // 天空背景回放:长期开关按场景记忆;场景就绪后应用(runtime 重 init 会清掉背景)
+  useEffect(() => {
+    if (view !== 'ready' || !runtime || !sceneId) return;
+    if (loadSceneSkyPref(sceneId)) runtime.setSceneSky(true);
+  }, [view, sceneId, runtime]);
 
   // 智能体远程调起业务面板
   const handleAgentOpenPanel = (panelId: AgentPanelId) => {

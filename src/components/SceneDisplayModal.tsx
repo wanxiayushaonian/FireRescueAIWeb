@@ -31,12 +31,14 @@ import {
   Trees,
   MapPin,
   Shapes,
+  Sun,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useScene } from './SceneProvider';
 import type { StructuralRecipe } from '@/lib/scene-recipe/types';
 import { HIDABLE_CATEGORY_GROUPS, defaultVisibleByLevel } from '@/lib/scene-categories';
 import { saveSceneDisplayPrefs } from '@/lib/scene-display-prefs';
+import { loadSceneSkyPref, saveSceneSkyPref } from '@/lib/scene-sky-prefs';
 import ScenePackPanel from '@/components/ScenePackPanel';
 import { showToast } from '@/components/Toast';
 
@@ -95,6 +97,12 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
   // 平台标注的区域多边形(随场景包加载):经 setVirtualPolygonVisible 控制显隐
   const [polygons, setPolygons] = useState<Array<{ polygon_id: string; polygon_name?: string }>>([]);
   const [polygonVis, setPolygonVis] = useState<Record<string, boolean>>({});
+  // 天空背景:长期开关,按场景持久化;切换场景时同步存档
+  const [skyOn, setSkyOn] = useState(() => loadSceneSkyPref(sceneId));
+  useEffect(() => {
+    if (!sceneId) return;
+    setSkyOn(loadSceneSkyPref(sceneId));
+  }, [sceneId]);
 
   useEffect(() => {
     if (!open || !sceneId) return;
@@ -162,6 +170,14 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
       else n.add(key);
       return n;
     });
+  /** 天空背景:长期开关,立即应用 + 按场景持久化(场景重载后由 App 回放) */
+  const toggleSky = (): void => {
+    const next = !skyOn;
+    setSkyOn(next);
+    saveSceneSkyPref(sceneId, next);
+    runtime?.setSceneSky(next);
+    showToast(next ? '已开启天空背景(轻量渐变)' : '已关闭天空背景');
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -197,6 +213,16 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
           <ScenePackPanel onJumpVisibility={() => setTopTab('visibility')} />
         ) : (
           <>
+        {/* 场景级显示:天空背景(长期开关,按场景记忆;非层级配置) */}
+        <div className="mb-1.5 flex items-center gap-2 rounded-md border border-line/60 bg-bg-panel-2/40 px-3 py-2">
+          <Sun className="h-3.5 w-3.5 shrink-0 text-amber" />
+          <span className="text-[13px] font-medium text-text-1">天空背景</span>
+          <span className="hidden text-[10px] text-text-3 sm:inline">轻量渐变天空 · 按场景记忆</span>
+          <span className="ml-auto">
+            <Toggle on={skyOn} onClick={toggleSky} />
+          </span>
+        </div>
+
         {/* 层级 tab:整体 / 单楼层 / 多楼层(各 tab 独立) */}
         <div className="flex gap-1 rounded-md border border-line bg-bg-panel p-0.5">
           {LEVEL_TABS.map(({ level, label, icon: Icon }) => (

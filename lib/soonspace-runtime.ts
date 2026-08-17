@@ -130,6 +130,38 @@ function progressStage(progress: { status?: string; percent?: number; message?: 
   return 'setup';
 }
 
+/**
+ * 生成天空渐变 PNG dataURL(垂直:顶→地平线 + 右上太阳光晕)。
+ * 512×256 一次性生成;渲染时 scene.background 全屏贴图仅一次采样,零逐像素散射开销。
+ * 非浏览器环境(SSR/测试)返回空串,调用方忽略。
+ */
+function buildSkyGradientDataUrl(top: string, horizon: string, sunColor: string): string {
+  if (typeof document === 'undefined') return '';
+  const W = 512;
+  const H = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  const grad = ctx.createLinearGradient(0, 0, 0, H);
+  grad.addColorStop(0, top);
+  grad.addColorStop(0.55, '#60a5fa');
+  grad.addColorStop(1, horizon);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+  // 太阳光晕(右上;径向渐变,0 成本逐帧,只有一次绘制)
+  const sunX = W * 0.72;
+  const sunY = H * 0.2;
+  const sun = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, H * 0.45);
+  sun.addColorStop(0, sunColor);
+  sun.addColorStop(0.35, 'rgba(253, 230, 138, 0.35)');
+  sun.addColorStop(1, 'rgba(253, 230, 138, 0)');
+  ctx.fillStyle = sun;
+  ctx.fillRect(0, 0, W, H);
+  return canvas.toDataURL('image/png');
+}
+
 function mapProgress(progress: { status?: string; percent?: number; message?: string }): SoonspaceInitProgress {
   const stage = progressStage(progress);
   const message = stage === 'ready'
@@ -287,6 +319,28 @@ export class SoonspaceRuntime {
 
   getSsp(): AnyObject | null {
     return this.ssp ?? this.safeGetSoonSpace();
+  }
+
+  /**
+   * 天空背景 — 轻量方案:canvas 渐变贴图作为 scene.background。
+   *
+   * 对比 three.js Sky(逐像素大气散射 Shader + 场景大网格):
+   * - 渲染成本:仅一次全屏背景贴图绘制(纹理 512×256,一次性生成),无逐像素散射着色器;
+   * - 无场景对象:不占 BVH/不参与拾取/悬停 raycast(three Sky 盒体会被 raycast 命中,干扰点选);
+   * - 不动场景灯光,不增加 draw call 级负担。
+   *
+   * enabled=true 生成「顶→地平线」渐变 + 右上太阳光晕;enabled=false 恢复原深色背景(#0b1120)。
+   * 场景重建(runtime 重 init)后需重新调用,调用方在 view ready 时回放。
+   */
+  setSceneSky(enabled: boolean, options?: { top?: string; horizon?: string; sunColor?: string }): unknown {
+    const ssp = this.getSsp() as unknown as {
+      setBackgroundImage?: (file: string) => unknown;
+      setBackgroundColor?: (color: string) => unknown;
+    } | null;
+    if (!ssp?.setBackgroundImage || !ssp?.setBackgroundColor) return null;
+    if (!enabled) return ssp.setBackgroundColor('#0b1120'); // 恢复原深色背景
+    const { top = '#2563eb', horizon = '#bfdbfe', sunColor = '#fef3c7' } = options ?? {};
+    return ssp.setBackgroundImage(buildSkyGradientDataUrl(top, horizon, sunColor));
   }
 
   getCps(): AnyObject | null {
