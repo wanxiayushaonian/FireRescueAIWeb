@@ -138,30 +138,22 @@ export function defaultCategoryVisibility(): Record<string, boolean> {
 }
 
 /**
- * 各层级"未配置时"的默认可见性 —— **白名单语义(2026-08-17 用户定:只显示列出的,不是追加)**:
- *  - single:只显 室外消火栓/消防车辆/出入口(+建筑结构基底,楼体/墙/楼层不可藏)
- *  - multi:只显 消防设施(7 组)/门(+建筑结构基底)
- *  - whole:消防系统类(含消控室设备)/门/空间 OFF,室外装备/楼梯/建筑结构 ON(用户未提,保持)
- * 建筑结构(Wall/Story/Building/Site)作为场景基底始终保留——藏了没有楼体可看。
+ * 各层级"未配置时"的默认可见性 —— **白名单语义(2026-08-17 用户第三版定稿:只显示列出的,非追加)**:
+ *  - whole:只显 室外消火栓/消防车辆/出入口
+ *  - single:只显 消防设施(7 组)/门
+ *  - multi:只显 消防设施(7 组)
+ *  - **建筑结构(Wall/Story/Building/Site)默认不开启**(用户明示:整体建筑中结构被隐藏也没问题)
+ * 天空/底图/环境网格(CPS)不受本表影响。
  */
-/** 单层白名单:室外三件(室外消火栓/消防车辆/出入口)。 */
-const SINGLE_WHITELIST = new Set(['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut']);
-/** 多层白名单:消防设施(7 组)+ 门。 */
-const MULTI_WHITELIST = new Set<string>([...FIRE_DEVICE_TYPES, 'Door']);
-/** 场景基底:建筑结构类型恒显(各白名单共用)。 */
-const STRUCTURE_BASE = new Set(['Wall', 'Story', 'Building', 'Site']);
+const WHOLE_WHITELIST = new Set(['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut']);
+const SINGLE_WHITELIST = new Set<string>([...FIRE_DEVICE_TYPES, 'Door']);
+const MULTI_WHITELIST = new Set<string>([...FIRE_DEVICE_TYPES]);
 
 export function defaultVisibleByLevel(level: 'whole' | 'single' | 'multi'): Record<string, boolean> {
   const base = defaultCategoryVisibility(); // 全 true
-  if (level === 'whole') {
-    // 保持:藏消防系统类(含消控室设备)/门/空间;室外三件/楼梯/结构显
-    for (const t of [...FIRE_DEVICE_TYPES, 'Door', 'Space']) base[t] = false;
-    return base;
-  }
-  // 白名单:只显列表项 + 结构基底,其余全部藏
-  const keep = level === 'single' ? SINGLE_WHITELIST : MULTI_WHITELIST;
+  const keep = level === 'whole' ? WHOLE_WHITELIST : level === 'single' ? SINGLE_WHITELIST : MULTI_WHITELIST;
   for (const t of Object.keys(base)) {
-    if (!keep.has(t) && !STRUCTURE_BASE.has(t)) base[t] = false;
+    if (!keep.has(t)) base[t] = false;
   }
   return base;
 }

@@ -67,52 +67,45 @@ describe('scene-display-prefs 持久化', () => {
 });
 
 describe('defaultVisibleByLevel 层级默认(与 level-policy 渲染实际对齐)', () => {
-  it('single:白名单只显室外三件+结构基底(2026-08-17 用户定:只显示,非追加)', () => {
-    const d = defaultVisibleByLevel('single');
+  it('whole:白名单只显室外三件,结构/设施/门/楼梯/空间全藏(用户第三版定稿)', () => {
+    const d = defaultVisibleByLevel('whole');
     for (const t of ['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut']) {
       expect(d[t]).toBe(true);
     }
-    // 结构基底保留
-    for (const t of ['Wall', 'Story', 'Building', 'Site']) expect(d[t]).toBe(true);
-    // 其余全藏(室内设施/门/楼梯/空间)
-    for (const t of [...FIRE_DEVICE_TYPES, 'Door', 'Stairs', 'Space']) expect(d[t]).toBe(false);
-  });
-
-  it('whole:消防系统类(含消控室设备)/门/空间默认藏,室外区(消火栓/车辆/出入口)/楼梯/结构保留', () => {
-    const d = defaultVisibleByLevel('whole');
-    for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(false);
-    expect(d.Kongzhitai).toBe(false); // 消控室设备随消防系统默认藏
-    expect(d.Door).toBe(false);
-    expect(d.Space).toBe(false);
-    expect(d.Stairs).toBe(true);
-    expect(d.Wall).toBe(true);
-    expect(d.Story).toBe(true);
-    // 室外区:室外装备默认显
-    expect(d.OutdoorFireHydrant).toBe(true);
-    expect(d.SmokeExhaustFireTruck).toBe(true);
-    expect(d.RemoteWaterSupplyFireTruck).toBe(true);
-    expect(d.SceneInOut).toBe(true);
-  });
-
-  it('multi:白名单只显消防设施+门+结构基底(2026-08-17 用户定:只显示,非追加)', () => {
-    const d = defaultVisibleByLevel('multi');
-    for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(true);
-    expect(d.Door).toBe(true);
-    for (const t of ['Wall', 'Story', 'Building', 'Site']) expect(d[t]).toBe(true);
-    // 室外三件/楼梯/空间 不显
-    for (const t of ['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut', 'Stairs', 'Space']) {
+    for (const t of [...FIRE_DEVICE_TYPES, 'Door', 'Wall', 'Story', 'Building', 'Site', 'Stairs', 'Space']) {
       expect(d[t]).toBe(false);
     }
   });
 
-  it('defaultCategoryVisibilityByLevel:三层级完整表(single 室外三件/multi 设施+门/whole 藏设施+门+空间)', () => {
+  it('single:白名单只显消防设施+门,结构不显(用户第三版定稿)', () => {
+    const d = defaultVisibleByLevel('single');
+    for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(true);
+    expect(d.Door).toBe(true);
+    for (const t of ['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut', 'Wall', 'Story', 'Building', 'Site', 'Stairs', 'Space']) {
+      expect(d[t]).toBe(false);
+    }
+  });
+
+  it('multi:白名单只显消防设施(无门),结构不显(用户第三版定稿)', () => {
+    const d = defaultVisibleByLevel('multi');
+    for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(true);
+    for (const t of ['Door', 'OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut', 'Wall', 'Story', 'Building', 'Site', 'Stairs', 'Space']) {
+      expect(d[t]).toBe(false);
+    }
+  });
+
+  it('defaultCategoryVisibilityByLevel:三层级完整表(whole 室外三件/single 设施+门/multi 设施)', () => {
     const all = defaultCategoryVisibilityByLevel();
-    expect(all.single.Door).toBe(false);
-    expect(all.single.OutdoorFireHydrant).toBe(true);
-    expect(all.multi.OutdoorFireHydrant).toBe(false);
-    expect(all.multi.Door).toBe(true);
-    expect(all.multi.IndoorFireHydrant).toBe(true);
-    expect(all.whole.Door).toBe(false);
     expect(all.whole.OutdoorFireHydrant).toBe(true);
+    expect(all.whole.IndoorFireHydrant).toBe(false);
+    expect(all.single.IndoorFireHydrant).toBe(true);
+    expect(all.single.Door).toBe(true);
+    expect(all.single.OutdoorFireHydrant).toBe(false);
+    expect(all.multi.IndoorFireHydrant).toBe(true);
+    expect(all.multi.Door).toBe(false);
+    expect(all.multi.OutdoorFireHydrant).toBe(false);
+    for (const lvl of ['whole', 'single', 'multi'] as const) {
+      expect(all[lvl].Wall).toBe(false); // 结构默认不开启
+    }
   });
 });

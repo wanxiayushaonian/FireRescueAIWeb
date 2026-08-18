@@ -1187,9 +1187,8 @@ export class SoonspaceRuntime {
     this.loadMs = this.initStartedAt > 0 ? performance.now() - this.initStartedAt : null;
     this.sceneCounts = this.countScene();
     const dpr = typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
-    // 大模型场景（>2w mesh）初始即压低像素比，避免首帧全分辨率渲染导致长时间卡顿
-    const heavyScene = this.sceneCounts.meshes > 20000;
-    this.setPixelRatio(Math.min(dpr, heavyScene ? 1 : 1.5));
+    // 2026-08-17 用户定:像素比默认 2(画质优先;重场景自适应降级见 adaptPixelRatioByLoad)
+    this.setPixelRatio(Math.min(dpr, 2));
     // 默认关阴影：大场景阴影贴图渲染开销大，需时在设置里手动开
     this.setShadows(false);
     this.installRenderStats();
