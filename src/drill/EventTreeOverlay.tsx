@@ -27,9 +27,11 @@ export interface EventTreeOverlayProps {
   readonly onClose: () => void;
   /** 节点点击回调(DrillView:meta.location → 相机回溯到事件现场)。 */
   readonly onNodeClick?: (node: TreeNode) => void;
+  /** 导出回调(json/md;DrillView 组装内容并下载)。 */
+  readonly onExport?: (format: 'json' | 'md') => void;
 }
 
-export function EventTreeOverlay({ recorder, open, onClose, onNodeClick }: EventTreeOverlayProps) {
+export function EventTreeOverlay({ recorder, open, onClose, onNodeClick, onExport }: EventTreeOverlayProps) {
   // ESC 关闭(open 时才监听;Ctrl+K 切换由父组件 DrillView 处理)
   useEffect(() => {
     if (!open) return;
@@ -67,14 +69,36 @@ export function EventTreeOverlay({ recorder, open, onClose, onNodeClick }: Event
               实时增长 · 点节点回溯现场 · ESC 关闭
             </span>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded px-2 py-0.5 text-xs text-text-3 transition hover:bg-bg-panel hover:text-text-1"
-            aria-label="关闭推演过程"
-          >
-            关闭 ×
-          </button>
+          <div className="flex items-center gap-2">
+            {onExport && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onExport('json')}
+                  className="rounded border border-line px-2 py-0.5 text-xs text-text-3 transition hover:border-line-glow hover:text-cyan"
+                  title="导出全部事件 + 合理性指标(JSON,全保真)"
+                >
+                  导出 JSON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onExport('md')}
+                  className="rounded border border-line px-2 py-0.5 text-xs text-text-3 transition hover:border-line-glow hover:text-cyan"
+                  title="导出评估报告(Markdown:概要/指标/检验提示/事件时间线)"
+                >
+                  导出报告
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded px-2 py-0.5 text-xs text-text-3 transition hover:bg-bg-panel hover:text-text-1"
+              aria-label="关闭推演过程"
+            >
+              关闭 ×
+            </button>
+          </div>
         </div>
 
         {/* 事件流(卡流 + 时间轴,原型式)撑满剩余空间 */}

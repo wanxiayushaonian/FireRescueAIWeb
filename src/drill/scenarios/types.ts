@@ -39,6 +39,8 @@ export interface DrillScenarioDef {
   readonly adversaryAppId?: string;
   /** 指挥 agent 周期简报频率(每 N tick;缺省/0=仅启动时一次简报,无持续指挥)。 */
   readonly commanderEveryNTicks?: number;
+  /** 剧本最大时长(tick;到达自动暂停并提示评估——防"时间无限长",缺省不限)。 */
+  readonly maxTicks?: number;
   /** 灾情态势初始状态(DisasterState.init 入参)。 */
   readonly scenario: DisasterScenario;
   /**

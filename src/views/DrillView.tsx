@@ -31,6 +31,7 @@ import DrillScenarioPanel from '@/components/drill/DrillScenarioPanel';
 import type { ScenarioApplyResult } from '@/components/drill/DrillScenarioPanel';
 import { DrillEvaluationDialog } from '@/drill/DrillEvaluationDialog';
 import { evaluateViaAgent, type EvaluationData, type EvaluationImprovement } from '@/lib/agent-evaluate';
+import { buildDrillJson, buildDrillMarkdown } from '@/lib/drill/drill-export';
 import { addLibraryItem } from '@/mock/planLibrary';
 import DraggablePanel from '@/components/DraggablePanel';
 import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
@@ -163,6 +164,20 @@ export default function DrillView() {
   /** 上次联动过的火势等级(蔓延/熄灭视角切换去重)。 */
   const lastFireLevelRef = useRef(-1);
 
+  // ---- 面板关闭时的事件 toast(3D 场景上方推送,2026-08-19)----
+  // 面板开着时事件已可见,不重复打扰;只推灾情/特情/决策(状态类信息噪声大)
+  const treeOpenRef = useRef(treeOpen);
+  treeOpenRef.current = treeOpen;
+  useEffect(() => {
+    const TOAST_TYPES = new Set(['disaster', 'special', 'decision']);
+    return recorder.subscribe((node) => {
+      if (treeOpenRef.current) return;
+      if (!TOAST_TYPES.has(node.type)) return;
+      const tag = node.type === 'special' ? '特情' : node.type === 'decision' ? '决策' : '灾情';
+      showToast(`[演练·${tag}] ${node.label}${node.detail ? `:${node.detail.slice(0, 40)}` : ''}`);
+    });
+  }, [recorder]);
+
   // ---- 3D/相机联动(事件树整改:视角反馈)----
   // useScene 对象经 ref 读取,避免 tick effect 依赖抖动;场景未就绪时静默跳过
   const { runtime, tree, recipeStore } = useScene();
@@ -249,7 +264,15 @@ export default function DrillView() {
       }
       lastFireLevelRef.current = level;
     }
-  }, [clock, bus, state, recorder, runner, effectiveScenario]);
+
+    // 7. 剧本时长上限:到达自动暂停(防"时间无限长"——特情无限注入),
+    //    事件树/态势保留供评估;只提示一次(pause 后 clock 不再走,不会重复)
+    if (activeScenario.maxTicks && status === 'running' && clock >= activeScenario.maxTicks) {
+      pause();
+      setReportReady(true);
+      showToast(`剧本时长结束(T+${activeScenario.maxTicks}),可生成演练评估报告`);
+    }
+  }, [clock, bus, state, recorder, runner, effectiveScenario, activeScenario, status, pause]);
 
   // ---- 启动 ----
   const handleStart = (): void => {
@@ -327,6 +350,30 @@ export default function DrillView() {
     });
     setEvalArchived((prev) => new Set(prev).add(index));
     showToast('改进措施已回流预案库');
+  };
+
+  // ---- 演练事件导出(2026-08-19:检验演练合理性——时长/特情密度/结局) ----
+  const exportDrill = (format: 'json' | 'md'): void => {
+    const nodes = recorder.getAll();
+    if (nodes.length === 0) {
+      showToast('暂无演练事件可导出');
+      return;
+    }
+    const input = {
+      scenarioName: activeScenario.name,
+      drillId: activeScenario.drillId,
+      nodes,
+      status: state.getStatus(),
+    };
+    const content = format === 'json' ? buildDrillJson(input) : buildDrillMarkdown(input);
+    const blob = new Blob([content], { type: format === 'json' ? 'application/json' : 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `演练导出-${activeScenario.id}-${format === 'json' ? 'events.json' : 'report.md'}`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast(format === 'json' ? '已导出事件 JSON' : '已导出评估报告 Markdown');
   };
 
   // ---- 渲染 ----
@@ -412,6 +459,7 @@ export default function DrillView() {
         recorder={recorder}
         open={treeOpen}
         onClose={() => setTreeOpen(false)}
+        onExport={exportDrill}
         onNodeClick={(node) => {
           const spec = extractFloorSpec(
             typeof node.meta?.location === 'string' ? node.meta.location : undefined,

@@ -233,6 +233,9 @@ export const BUILDING_21_SCENARIO_DEF: DrillScenarioDef = {
   // 指挥官周期简报:每 5 tick 一次(空闲才触发,简报总带最新态势快照);
   // 特情注入时另有即时反应简报——实现「持续指挥」
   commanderEveryNTicks: 5,
+  // 剧本最大时长:seed 时间线 20 tick,留 25 tick 给对抗/指挥收尾;
+  // 到达自动暂停(防演练无限跑、特情无限注入)
+  maxTicks: 45,
   scenario: {
     firePoint: { x: 0, y: 0 },
     fireFloor: '5F', // 着火层(启动聚焦 + 火势蔓延视角联动)
