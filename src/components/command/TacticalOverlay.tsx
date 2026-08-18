@@ -360,8 +360,9 @@ export default function TacticalOverlay({
         </svg>
       )}
 
-      {/* 顶部中央：态势推演状态条 / 图例（演示数据 + 当前阶段 + 圈层图例） */}
-      <div className="absolute left-1/2 top-4 -translate-x-1/2 rounded-lg border border-line bg-bg-panel/90 px-3 py-1.5 backdrop-blur-[8px]">
+      {/* 顶部中央:态势推演状态条 / 图例(演示数据 + 当前阶段 + 圈层图例)。
+          top-[110px]:让开 GIS 图层控制条(top-3)与模式切换条(top-[60px]) */}
+      <div className="absolute left-1/2 top-[110px] -translate-x-1/2 rounded-lg border border-line bg-bg-panel/90 px-3 py-1.5 backdrop-blur-[8px]">
         <div className="flex items-center gap-3 whitespace-nowrap">
           <span className="flex items-center gap-1.5 text-[12px] font-medium text-text-1">
             <Flame className="h-3.5 w-3.5 text-orange" />
