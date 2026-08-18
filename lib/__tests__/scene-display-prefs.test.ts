@@ -67,9 +67,15 @@ describe('scene-display-prefs 持久化', () => {
 });
 
 describe('defaultVisibleByLevel 层级默认(与 level-policy 渲染实际对齐)', () => {
-  it('single:全显', () => {
+  it('single:白名单只显室外三件+结构基底(2026-08-17 用户定:只显示,非追加)', () => {
     const d = defaultVisibleByLevel('single');
-    expect(Object.values(d).every(Boolean)).toBe(true);
+    for (const t of ['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut']) {
+      expect(d[t]).toBe(true);
+    }
+    // 结构基底保留
+    for (const t of ['Wall', 'Story', 'Building', 'Site']) expect(d[t]).toBe(true);
+    // 其余全藏(室内设施/门/楼梯/空间)
+    for (const t of [...FIRE_DEVICE_TYPES, 'Door', 'Stairs', 'Space']) expect(d[t]).toBe(false);
   });
 
   it('whole:消防系统类(含消控室设备)/门/空间默认藏,室外区(消火栓/车辆/出入口)/楼梯/结构保留', () => {
@@ -88,21 +94,24 @@ describe('defaultVisibleByLevel 层级默认(与 level-policy 渲染实际对齐
     expect(d.SceneInOut).toBe(true);
   });
 
-  it('multi:消防设施/门默认显(2026-08-17 用户定),仅空间藏', () => {
+  it('multi:白名单只显消防设施+门+结构基底(2026-08-17 用户定:只显示,非追加)', () => {
     const d = defaultVisibleByLevel('multi');
     for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(true);
     expect(d.Door).toBe(true);
-    expect(d.Space).toBe(false);
-    expect(d.Stairs).toBe(true);
-    expect(d.OutdoorFireHydrant).toBe(true);
-    expect(d.SceneInOut).toBe(true);
+    for (const t of ['Wall', 'Story', 'Building', 'Site']) expect(d[t]).toBe(true);
+    // 室外三件/楼梯/空间 不显
+    for (const t of ['OutdoorFireHydrant', 'SmokeExhaustFireTruck', 'RemoteWaterSupplyFireTruck', 'SceneInOut', 'Stairs', 'Space']) {
+      expect(d[t]).toBe(false);
+    }
   });
 
-  it('defaultCategoryVisibilityByLevel:三层级完整表(single 全显/multi 仅藏空间/whole 藏设施+门+空间)', () => {
+  it('defaultCategoryVisibilityByLevel:三层级完整表(single 室外三件/multi 设施+门/whole 藏设施+门+空间)', () => {
     const all = defaultCategoryVisibilityByLevel();
-    expect(Object.values(all.single).every(Boolean)).toBe(true);
-    expect(all.multi.Space).toBe(false);
+    expect(all.single.Door).toBe(false);
+    expect(all.single.OutdoorFireHydrant).toBe(true);
+    expect(all.multi.OutdoorFireHydrant).toBe(false);
     expect(all.multi.Door).toBe(true);
+    expect(all.multi.IndoorFireHydrant).toBe(true);
     expect(all.whole.Door).toBe(false);
     expect(all.whole.OutdoorFireHydrant).toBe(true);
   });
