@@ -32,6 +32,12 @@ export const GLOBAL_ASSISTANT_APP_ID = (process.env.NEXT_PUBLIC_GLOBAL_AGENT_APP
 export const DRILL_COMMANDER_APP_ID = (process.env.NEXT_PUBLIC_DRILL_COMMANDER_APP_ID ?? '').trim() || COMMANDER_APP_ID;
 
 /**
+ * 实战指挥业务助手(辅助决策:力量调度/战术战法/处置要点 + GIS 派遣联动)。
+ * 平台建「实战指挥·辅助决策」应用后以 NEXT_PUBLIC_COMMAND_APP_ID 注入,未配回退通用。
+ */
+export const COMMAND_APP_ID = (process.env.NEXT_PUBLIC_COMMAND_APP_ID ?? '').trim() || COMMANDER_APP_ID;
+
+/**
  * 对抗 agent app_id(演练推演特情注入)。在 uagent 平台创建对抗 agent 应用后,
  * 以构建环境变量 NEXT_PUBLIC_ADVERSARY_APP_ID 注入即可启用——剧本侧按此值
  * 自动把 adversaryEveryNTicks 从 0 解禁,无需改代码。
@@ -59,5 +65,5 @@ export const AGENT_APP_IDS: Record<ModuleKey, ModuleAgentIds> = {
   objects: { business: OBJECTS_APP_ID, ...globalEntry() },
   drill: { business: COMMANDER_APP_ID, ...globalEntry() },
   training: { business: TRAINING_APP_ID, ...globalEntry() },
-  command: { business: COMMANDER_APP_ID, ...globalEntry() },
+  command: { business: COMMAND_APP_ID, ...globalEntry() },
 };
