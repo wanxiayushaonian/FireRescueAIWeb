@@ -22,6 +22,8 @@ interface Props {
   onToggleIncidents: () => void;
   /** 返回九江全景(默认中心/缩放) */
   onResetView: () => void;
+  /** 根容器定位类名(默认顶部居中;实战指挥等顶部已有自家工具条时传 top 偏移堆叠在其下) */
+  positionClassName?: string;
 }
 
 export default function MapLayerControl({
@@ -40,6 +42,7 @@ export default function MapLayerControl({
   showIncidents,
   onToggleIncidents,
   onResetView,
+  positionClassName = 'left-1/2 top-3 -translate-x-1/2',
 }: Props) {
   const layers = [
     { label: '边界', show: showBoundary, toggle: onToggleBoundary },
@@ -51,7 +54,7 @@ export default function MapLayerControl({
   ];
 
   return (
-    <div className="absolute left-1/2 top-3 z-[500] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur">
+    <div className={`absolute ${positionClassName} z-[500] flex items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur`}>
       {/* 底图 segmented(卫星在前,默认矢量) */}
       <div className="flex items-center gap-0.5">
         {(['satellite', 'vector'] as const).map((b) => (

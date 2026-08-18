@@ -58,7 +58,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; chrome?: 'full' | 'minimal' }) {
+export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', initialLayers }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; chrome?: 'full' | 'minimal'; /** 各模块初始图层显隐(未传 = 默认只开边界/消防站;实战指挥等按需覆盖,如警情默认开) */ initialLayers?: Partial<{ stations: boolean; water: boolean; boundary: boolean; keyUnits: boolean; incidents: boolean; buildings: boolean; regions: boolean }> }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
@@ -78,13 +78,14 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
   // 图层偏好(队站类型/水源区划显隐)来自共享 store,由执勤力量/水源面板维护
   const layerPrefs = useMapLayerPrefs();
   // 默认只启用边界、消防站;重点单位与重点建筑合并为一个开关(见 toggleKeyUnitLayers)
-  const [showStations, setShowStations] = useState(true);
-  const [showWater, setShowWater] = useState(false);
-  const [showBoundary, setShowBoundary] = useState(true);
-  const [showKeyUnits, setShowKeyUnits] = useState(false);
-  const [showIncidents, setShowIncidents] = useState(false);
-  const [showBuildings, setShowBuildings] = useState(false);
-  const [showRegions, setShowRegions] = useState(false);
+  // 模块可用 initialLayers 覆盖初始值(实战指挥:警情默认开——核心业务对象)
+  const [showStations, setShowStations] = useState(initialLayers?.stations ?? true);
+  const [showWater, setShowWater] = useState(initialLayers?.water ?? false);
+  const [showBoundary, setShowBoundary] = useState(initialLayers?.boundary ?? true);
+  const [showKeyUnits, setShowKeyUnits] = useState(initialLayers?.keyUnits ?? false);
+  const [showIncidents, setShowIncidents] = useState(initialLayers?.incidents ?? false);
+  const [showBuildings, setShowBuildings] = useState(initialLayers?.buildings ?? false);
+  const [showRegions, setShowRegions] = useState(initialLayers?.regions ?? false);
   const [showIncidentResponse, setShowIncidentResponse] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
@@ -966,9 +967,11 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
 
   return (
     <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
-      {/* 图层控制条(顶部居中,minimal chrome 隐藏——实战指挥顶部有自家模式切换条,避免两条堆叠) */}
-      {chrome === 'full' && (
+      {/* 图层控制条:full=顶部居中;minimal(实战指挥)顶部已有自家模式切换条,
+          控制条堆叠在其下(top-[60px])——图层操控两模块保持一致(2026-08-18 修复:
+          此前 minimal 直接隐藏,实战指挥无任何图层开关,agent 自动开的图层用户关不掉) */}
       <MapLayerControl
+        positionClassName={chrome === 'full' ? undefined : 'left-1/2 top-[60px] -translate-x-1/2'}
         baseMap={baseMap}
         onBaseMapChange={setBaseMap}
         showStations={showStations}
@@ -994,7 +997,6 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full' }
           window.dispatchEvent(new CustomEvent('gis:select-district', { detail: { districtCode: null } }));
         }}
       />
-      )}
       {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化)。
           居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称。
           minimal chrome(实战指挥等被面板占用的模块)隐藏,避免与左下/右下面板重合 */}

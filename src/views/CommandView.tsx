@@ -225,8 +225,9 @@ export default function CommandView() {
   return (
     <div className="relative h-full w-full">
       {/* 实战指挥落 GIS 底座(与模块一同一底图,minimal chrome 隐藏与面板重合的
-          底部区县条/水源状态条);地图实例交给战术推演层做容器坐标投影 */}
-      <RealGisMap chrome="minimal" onMapReady={setGisMap} />
+          底部区县条/水源状态条);地图实例交给战术推演层做容器坐标投影。
+          警情是本模块核心业务对象,图层默认开(其余沿用全局默认:边界+消防站) */}
+      <RealGisMap chrome="minimal" initialLayers={{ incidents: true }} onMapReady={setGisMap} />
 
       {/* 战术推演层：蔓延圈 / 力量部署 / 进攻路线（真实地图投影，跟随 pan/zoom，pointer-events-none 不影响底图交互） */}
       <TacticalOverlay
