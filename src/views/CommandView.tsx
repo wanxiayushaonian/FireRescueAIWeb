@@ -224,10 +224,13 @@ export default function CommandView() {
 
   return (
     <div className="relative h-full w-full">
-      {/* 实战指挥落 GIS 底座:与态势总览同一 RealGisMap 全量 chrome(图层控制条/区县统计条/
-          水源状态/圆圈菜单/派遣规划/响应分析全部复用);地图实例交给战术推演层做容器坐标投影。
-          警情是本模块核心业务对象,图层默认开(其余沿用全局默认:边界+消防站) */}
-      <RealGisMap initialLayers={{ incidents: true }} onMapReady={setGisMap} />
+      {/* GIS 底座：显式 pointer-events-auto 覆盖 App.tsx 内容层的 pointer-events-none
+          （非 overview 模块整层被设为 none 以让 3D 场景接收事件，但指挥模块的 GIS 地图
+          同在内容层，须自救恢复交互；TacticalOverlay 仍 pointer-events-none 不拦截底图）。
+          与态势总览同一 RealGisMap 全量 chrome；警情是本模块核心业务对象，图层默认开 */}
+      <div className="pointer-events-auto absolute inset-0">
+        <RealGisMap initialLayers={{ incidents: true }} onMapReady={setGisMap} />
+      </div>
 
       {/* 战术推演层：蔓延圈 / 力量部署 / 进攻路线（真实地图投影，跟随 pan/zoom，pointer-events-none 不影响底图交互） */}
       <TacticalOverlay
@@ -251,10 +254,20 @@ export default function CommandView() {
       </div>
 
       {/* 右上悬浮:预案库 + 现场视频回传(选中警情后视频可用)。
-          top-[170px]:依次让开图层控制条(top-3)/模式切换条(top-[60px])/态势推演条(top-[110px]) */}
-      <div className="absolute right-[420px] top-[170px] z-30 flex items-center gap-2">
+          right-[440px]:让开右侧 C 面板(vars,right:16 width:400 → 左边缘 right:416),
+          留 24px 间隙避免水平 bleed;top-[110px] 紧贴模式切换条(top-[60px])下方 */}
+      <div className="absolute right-[440px] top-[15px] z-30 flex items-center gap-2">
         <button
-          onClick={() => setLibraryOpen(true)}
+          onClick={() => {
+            // 预案库 480×560 浮层会完全遮挡右侧 vars/recommend 及左侧 intel(宽度 560 溢出到库面板区域),
+            // 打开时自动关闭冲突面板,避免用户看到被盖住的面板却不知如何操作;关闭后用户可手动重开。
+            if (!libraryOpen) {
+              setIntelOpen(false);
+              setVarsPanelOpen(false);
+              setRecPanelOpen(false);
+            }
+            setLibraryOpen((v) => !v);
+          }}
           title="预案库（战后评估回流 / 正式预案建档）"
           className="flex items-center gap-2 rounded-md border border-violet/60 bg-bg-panel/90 px-3 py-1.5 text-[13px] font-medium text-violet backdrop-blur-[8px] transition hover:bg-violet/10 hover:shadow-[0_0_10px_rgba(167,139,250,.3)]"
         >
@@ -283,7 +296,9 @@ export default function CommandView() {
         sourceName={selected?.address}
       />
 
-      {/* 左：实时警情接入(高度让位左下作战要素卡片区) */}
+      {/* 左：实时警情接入(高度让位左下作战要素卡片区)
+          预算:下方 intel 面板 330px + bottomOffset 16px + 30px 间距 = 376px,
+          故 height = calc(100% - 376px),确保 A 底边与 B 顶边有 30px 间隙 */}
       <DraggablePanel
         panelId="command-incidents"
         title="实时警情接入"
@@ -291,7 +306,7 @@ export default function CommandView() {
         width={380}
         dock="left"
         defaultPos={{ x: 16, y: 16 }}
-        height="calc(100% - 360px)"
+        height="calc(100% - 376px)"
         open={incidentPanelOpen}
         onOpenChange={setIncidentPanelOpen}
       >

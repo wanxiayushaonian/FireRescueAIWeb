@@ -148,27 +148,27 @@ export default function DisasterVarsPanel({
         <EmptyHint />
       ) : (
         <div className="flex min-h-0 flex-1 flex-col p-2.5">
-          <div className="grid min-h-0 flex-1 grid-cols-2 gap-2">
+          <div className="grid min-h-0 flex-1 grid-cols-2 gap-2 overflow-hidden">
             {buildGauges(vars).map((g, i) => (
               <motion.div
                 key={g.key}
                 initial={{ scale: 0.96, opacity: 0 }}
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ duration: 0.3, delay: i * 0.08 }}
-                className={`flex min-h-0 flex-col justify-between rounded-lg border bg-bg-panel-2/50 p-2 ${
+                className={`flex min-h-0 flex-col gap-2 overflow-hidden rounded-lg border bg-bg-panel-2/50 p-2 ${
                   TONE_BORDER[g.tone]
                 } ${g.over ? `${TONE_GLOW[g.tone]} animate-pulse [animation-duration:2s]` : ''}`}
               >
-                <div className="flex items-center gap-1.5">
-                  <g.icon className={`h-3.5 w-3.5 ${TONE_TEXT[g.tone]}`} />
-                  <span className="text-[12px] text-text-2">{g.name}</span>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <g.icon className={`h-3.5 w-3.5 shrink-0 ${TONE_TEXT[g.tone]}`} />
+                  <span className="min-w-0 truncate text-[12px] text-text-2">{g.name}</span>
                   {g.delta !== 0 && (
                     <motion.span
                       key={`${g.key}-${vars.sampledAt}`}
                       initial={{ opacity: 1 }}
                       animate={{ opacity: 0 }}
                       transition={{ duration: 1 }}
-                      className="ml-auto"
+                      className="ml-auto shrink-0"
                     >
                       {g.delta > 0 ? (
                         <ArrowUp className="h-3 w-3 text-red" />
@@ -178,19 +178,21 @@ export default function DisasterVarsPanel({
                     </motion.span>
                   )}
                 </div>
-                <div className="flex items-baseline gap-1">
+                <div className="flex shrink-0 items-baseline gap-1">
                   <motion.span
                     key={`${g.key}-v-${vars.sampledAt}`}
                     initial={{ opacity: 0.2 }}
                     animate={{ opacity: 1 }}
                     transition={{ duration: 0.15 }}
-                    className={`font-num text-[30px] font-bold leading-8 ${TONE_TEXT[g.tone]}`}
+                    className={`font-num min-w-0 truncate text-[30px] font-bold leading-8 ${TONE_TEXT[g.tone]}`}
                   >
                     {g.display}
                   </motion.span>
-                  <span className="text-[11px] text-text-3">{g.unit}</span>
+                  <span className="shrink-0 text-[11px] text-text-3">{g.unit}</span>
                 </div>
-                <Sparkline points={g.points} className={STROKE_CLS[g.tone]} />
+                <div className="min-h-0 flex-1">
+                  <Sparkline points={g.points} className={STROKE_CLS[g.tone]} />
+                </div>
               </motion.div>
             ))}
           </div>

@@ -362,8 +362,8 @@ function AppContent() {
               />
             </DraggablePanel>
           )}
-          {/* 3D 场景左上角场景切换(对象/培训/指挥模块显示;overview 用 GIS 无场景包,drill 场景固定) */}
-          {module !== 'overview' && module !== 'drill' && scenes.length > 0 && (
+          {/* 3D 场景左上角场景切换(对象/培训模块显示;overview 用 GIS 无场景包,drill 场景固定,command 用 GIS 无场景包) */}
+          {module !== 'overview' && module !== 'drill' && module !== 'command' && scenes.length > 0 && (
             <SceneSwitcher scenes={scenes} selectedSceneId={sceneId} onSelectScene={handleSelectScene} />
           )}
           <SceneCommandBridge />

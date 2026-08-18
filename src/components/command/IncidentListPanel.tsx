@@ -53,7 +53,7 @@ function IncidentCard({
       initial={{ y: -16, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       onClick={onSelect}
-      className={`relative block h-[88px] w-full shrink-0 cursor-pointer overflow-hidden rounded-lg border px-3 py-2 text-left transition hover:bg-bg-panel-2 ${
+      className={`relative block w-full shrink-0 cursor-pointer overflow-hidden rounded-lg border px-3 py-2 text-left transition hover:bg-bg-panel-2 ${
         selected
           ? 'border-cyan shadow-[0_0_0_1px_rgba(34,211,238,.25),0_0_16px_rgba(34,211,238,.12)]'
           : 'border-line bg-bg-panel-2/40'
@@ -68,20 +68,22 @@ function IncidentCard({
         transition={{ duration: 1.2 }}
         className="pointer-events-none absolute left-0 top-0 h-px w-full bg-gradient-to-r from-transparent via-cyan to-transparent"
       />
+      {/* 第一行：ID + 状态徽标 + 时间。ID 可截断(min-w-0 + truncate)，状态徽标不缩，时间靠右不缩 */}
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[12px] text-cyan">{incident.id}</span>
-        <span className={`flex items-center gap-1 rounded border px-1.5 py-px text-[11px] leading-4 ${st.cls}`}>
+        <span className="min-w-0 shrink font-mono text-[12px] text-cyan truncate">{incident.id}</span>
+        <span className={`flex shrink-0 items-center gap-1 rounded border px-1.5 py-px text-[11px] leading-4 ${st.cls}`}>
           <span className={`h-1.5 w-1.5 rounded-full ${st.dot} ${done ? '' : 'animate-pulse'}`} />
           {incident.status}
         </span>
-        <span className="ml-auto text-[11px] text-text-3">{relativeTime(incident.receivedAt)}</span>
+        <span className="ml-auto shrink-0 text-[11px] text-text-3">{relativeTime(incident.receivedAt)}</span>
       </div>
       <div className="mt-1 truncate text-[13px] text-text-1">{incident.address}</div>
+      {/* 第三行：类型徽标 + 报警人。报警人可截断 */}
       <div className="mt-1 flex items-center gap-2">
-        <span className={`rounded border px-1.5 py-px text-[11px] leading-4 ${TYPE_STYLE[incident.type]}`}>
+        <span className={`shrink-0 rounded border px-1.5 py-px text-[11px] leading-4 ${TYPE_STYLE[incident.type]}`}>
           {incident.type}
         </span>
-        <span className="text-[11px] text-text-3">报警人 {incident.caller}</span>
+        <span className="min-w-0 truncate text-[11px] text-text-3">报警人 {incident.caller}</span>
       </div>
     </motion.button>
   );

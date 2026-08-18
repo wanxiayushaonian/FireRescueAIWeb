@@ -1015,7 +1015,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
       {planned.length > 0 && (() => {
         const fastest = Math.min(...planned.map((x) => x.duration));
         return (
-          <div className="absolute left-3 top-3 z-[500] w-60 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur">
+          <div className="absolute left-1/2 top-[100px] z-[500] w-60 -translate-x-1/2 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur">
             <div className="mb-2 flex items-center gap-1.5">
               <Route className="h-4 w-4 text-cyan" />
               <span className="text-[13px] font-bold text-text-1">到场路线</span>
