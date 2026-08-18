@@ -35,7 +35,9 @@ export function DrillEvaluationDialog({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+          // pointer-events-auto:drill 内容层(App.tsx)整层 pointer-events-none 让 3D 接收事件,
+          // 固定浮层必须自救恢复交互,否则整个对话框点击全穿透到场景层
+          className="pointer-events-auto fixed inset-0 z-[90] flex items-center justify-center bg-black/50 backdrop-blur-sm"
           onClick={onClose}
         >
           <motion.div

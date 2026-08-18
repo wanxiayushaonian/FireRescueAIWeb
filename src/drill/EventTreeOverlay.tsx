@@ -45,7 +45,9 @@ export function EventTreeOverlay({ recorder, open, onClose }: EventTreeOverlayPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md"
+      // pointer-events-auto:drill 内容层(App.tsx)整层 pointer-events-none,浮层须自救恢复交互
+      // (此前关闭按钮/遮罩点击全穿透到 3D 场景层,ESC 是唯一可用关闭路径)
+      className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-md"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
