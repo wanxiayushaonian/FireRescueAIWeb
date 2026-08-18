@@ -77,11 +77,17 @@ function mediaToImageUrl(media: unknown): string | null {
   return null;
 }
 
-/** 平台消息 → ThreadMessageLike(USER 带 media 图片,ASSISTANT 纯文本 + complete)。 */
+/** 剥离 [系统上下文] 前缀:历史恢复时 USER 消息不显示上下文块(2026-08-18 用户反馈前缀泄漏到显示层)。 */
+export function stripSystemContextPrefix(text: string): string {
+  // 形态:[系统上下文|…] …[/系统上下文]\n<正文>(前缀只存在于 USER 消息开头)
+  return text.replace(/^\[系统上下文\|[\s\S]*?\/系统上下文\]\s*/, '');
+}
+
+/** 平台消息 → ThreadMessageLike(USER 带 media 图片,ASSISTANT 纯文本 + complete;USER 文本剥离上下文前缀)。 */
 export function platformMessagesToThread(msgs: PlatformMessage[]): ThreadMessageLike[] {
   const out: ThreadMessageLike[] = [];
   for (const m of msgs) {
-    const text = (m.text ?? '').trim();
+    const text = (m.messageType === 'USER' ? stripSystemContextPrefix(m.text ?? '') : (m.text ?? '')).trim();
     const mediaUrls = (m.media ?? []).map(mediaToImageUrl).filter((u): u is string => u !== null);
     if (m.messageType === 'USER') {
       const content: Exclude<ThreadMessageLike['content'][number], string>[] = [];

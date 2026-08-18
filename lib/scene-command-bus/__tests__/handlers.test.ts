@@ -68,6 +68,29 @@ describe('focus_floors handler', () => {
     });
   });
 
+  it('有 store → 默认 fly_to_first=true 飞向首个楼层;false 仅独显;恢复全楼层不飞', async () => {
+    __resetForTest();
+    const patchStructural = vi.fn();
+    const store = { patchStructural } as unknown as Parameters<typeof registerDefaultTools>[2];
+    const fly = vi.fn();
+    const sdk = { fly } as unknown as SceneSdkLike;
+    registerDefaultTools(sdk, undefined, store);
+
+    // 缺省(未传)→ 飞向首层
+    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
+    expect(fly).toHaveBeenCalledWith('s1');
+    fly.mockClear();
+
+    // 显式 false → 不飞
+    await dispatch({ id: '2', tool: 'focus_floors', args: { story_ids: ['s1'], fly_to_first: false }, ts: 0 }, sdk);
+    expect(fly).not.toHaveBeenCalled();
+    fly.mockClear();
+
+    // 恢复全楼层(空数组)→ 不飞(即使有 fly_to_first 也无目标)
+    await dispatch({ id: '3', tool: 'focus_floors', args: { story_ids: [] }, ts: 0 }, sdk);
+    expect(fly).not.toHaveBeenCalled();
+  });
+
   it('有 store → 多层/恢复全楼层 detailLevel 恒 full(避免 hideWindowAndDoor 孤儿隐藏藏掉周边底模)', async () => {
     __resetForTest();
     const patchStructural = vi.fn();

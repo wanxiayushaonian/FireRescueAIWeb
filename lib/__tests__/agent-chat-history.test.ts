@@ -158,3 +158,26 @@ describe('enrichSessionMessageCounts', () => {
     expect(enriched[1].messageCount).toBe(8);
   });
 });
+
+import { stripSystemContextPrefix } from '../agent-chat-history';
+
+describe('stripSystemContextPrefix(2026-08-18 前缀泄漏修复)', () => {
+  it('剥离 [系统上下文] 前缀,保留正文', () => {
+    const t = '[系统上下文|界面状态,非用户输入,不要复述] 3D场景=s1 [/系统上下文]你好';
+    expect(stripSystemContextPrefix(t)).toBe('你好');
+  });
+
+  it('无前缀消息原样返回', () => {
+    expect(stripSystemContextPrefix('普通消息')).toBe('普通消息');
+  });
+
+  it('前缀与正文无换行也剥离(空格分隔)', () => {
+    const t = '[系统上下文|x] 3D场景=s1 [/系统上下文] 帮我看看';
+    expect(stripSystemContextPrefix(t)).toBe('帮我看看');
+  });
+
+  it('空串/仅前缀', () => {
+    expect(stripSystemContextPrefix('')).toBe('');
+    expect(stripSystemContextPrefix('[系统上下文|x] [/系统上下文]')).toBe('');
+  });
+});

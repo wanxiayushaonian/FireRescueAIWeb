@@ -66,6 +66,8 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
 
   registerSceneTool('focus_floors', async (args, sdk) => {
     const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
+    // 视角聚焦到首个楼层(缺省 true;显式 fly_to_first=false 或恢复全楼层时不移动视角)
+    const flyToFirst = args.fly_to_first !== false && storyIds.length > 0;
     // 经 Recipe 单一真相源(若 store 可用);空数组 = null 恢复全楼层。否则回退直调 sdk
     if (store) {
       // 与 floor-focus/objectsOverview 基线保持一致:
@@ -78,6 +80,7 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
         detailLevel: 'full',
         hideDevices: !isFocusSingle,
       });
+      if (flyToFirst) await sdk.fly(storyIds[0]);
       return;
     }
     const sceneId = typeof window !== 'undefined' ? window.__sceneId : undefined;
@@ -90,6 +93,7 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
     // 注意:SDK setViewMode 的 mode 只接受 '2D'|'3D'|'YExtend',没有 'story' 模式;
     // 隔离楼层 = type:'3D' + ids:storyIds(showStory 同传)。
     await sdk.setViewMode([{ type: '3D', ids: storyIds }], tree, storyIds);
+    if (flyToFirst) await sdk.fly(storyIds[0]);
   });
 }
 

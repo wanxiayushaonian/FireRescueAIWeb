@@ -27,10 +27,13 @@ export const TOOLS = [
   },
   {
     name: 'focus_floors',
-    description: '隔离显示选中的楼层(其余层隐藏);楼层 id 来自 list_floors;空数组恢复全楼层',
+    description: '隔离显示选中的楼层(其余层隐藏)并聚焦视角到首个楼层;楼层 id 来自 list_floors;空数组恢复全楼层(不移动视角)。fly_to_first=false 仅独显不移动视角。',
     inputSchema: {
       type: 'object',
-      properties: { story_ids: { type: 'array', items: { type: 'string' }, description: '楼层 id 列表' } },
+      properties: {
+        story_ids: { type: 'array', items: { type: 'string' }, description: '楼层 id 列表' },
+        fly_to_first: { type: 'boolean', description: '是否飞向首个楼层(默认 true)' },
+      },
       required: ['story_ids'],
     },
   },
@@ -232,14 +235,15 @@ export async function handleToolCall(
 
   if (name === 'focus_floors') {
     const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
+    const flyToFirst = args.fly_to_first !== false; // 缺省/显式 true 均飞向;显式 false 仅独显
     const cmd: SceneCommand = {
       id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
       tool: 'focus_floors',
-      args: { story_ids: storyIds },
+      args: { story_ids: storyIds, fly_to_first: flyToFirst },
       ts: Date.now(),
     };
     publishCommand(cmd);
-    const floorAction = storyIds.length === 0 ? '已恢复全楼层' : `已隔离 ${storyIds.length} 层`;
+    const floorAction = storyIds.length === 0 ? '已恢复全楼层' : `已隔离 ${storyIds.length} 层${flyToFirst ? '并聚焦' : ''}`;
     return {
       content: [{
         type: 'text',
