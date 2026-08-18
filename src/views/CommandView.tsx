@@ -251,8 +251,8 @@ export default function CommandView() {
       </div>
 
       {/* 右上悬浮:预案库 + 现场视频回传(选中警情后视频可用)。
-          top-[110px]:让开 GIS 图层控制条(top-3)与模式切换条(top-[60px]) */}
-      <div className="absolute right-[420px] top-[110px] z-30 flex items-center gap-2">
+          top-[170px]:依次让开图层控制条(top-3)/模式切换条(top-[60px])/态势推演条(top-[110px]) */}
+      <div className="absolute right-[420px] top-[170px] z-30 flex items-center gap-2">
         <button
           onClick={() => setLibraryOpen(true)}
           title="预案库（战后评估回流 / 正式预案建档）"
