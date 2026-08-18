@@ -41,6 +41,8 @@ export function useDeployRoutes(deps: {
   openDeploy: (t: { name: string; lng: number; lat: number }) => void;
   closeDeploy: () => void;
   planned: PlannedRoute[];
+  /** 路线元数据(规划时间 + 来源 ai/manual;清除/重规划时置 null) */
+  plannedMeta: { plannedAt: Date; source: 'ai' | 'manual' } | null;
   setPlanned: React.Dispatch<React.SetStateAction<PlannedRoute[]>>;
   planning: boolean;
   planRoutes: (stationIds: string[]) => Promise<void>;

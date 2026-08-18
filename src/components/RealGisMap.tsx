@@ -50,7 +50,7 @@ import { useSceneBridge } from './gis/hooks/use-scene-bridge';
 import { useIncidentResponse } from './gis/hooks/use-incident-response';
 import { formatEta, etaColor } from '@/lib/gis/eta-render';
 import { type EntityKind } from '@/lib/entity-form';
-import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Siren, Boxes } from 'lucide-react';
+import { Route, MapPin, Info, Trash2, Building2, Navigation, Users, Droplets, Rocket, Pencil, Siren, Boxes, X } from 'lucide-react';
 
 // 本地市/区县边界 GeoJSON(DataV,GCJ02,离线)
 const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
