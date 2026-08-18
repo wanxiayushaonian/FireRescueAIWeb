@@ -971,7 +971,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', 
           控制条堆叠在其下(top-[60px])——图层操控两模块保持一致(2026-08-18 修复:
           此前 minimal 直接隐藏,实战指挥无任何图层开关,agent 自动开的图层用户关不掉) */}
       <MapLayerControl
-        positionClassName={chrome === 'full' ? undefined : 'left-1/2 top-[60px] -translate-x-1/2'}
+        positionClassName={chrome === 'full' ? undefined : 'left-1/2 top-[60px] -translate-x-1/2 z-[1000]'}
         compact={chrome !== 'full'}
         baseMap={baseMap}
         onBaseMapChange={setBaseMap}

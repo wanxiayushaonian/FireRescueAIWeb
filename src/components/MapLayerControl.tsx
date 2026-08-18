@@ -44,7 +44,7 @@ export default function MapLayerControl({
   showIncidents,
   onToggleIncidents,
   onResetView,
-  positionClassName = 'left-1/2 top-3 -translate-x-1/2',
+  positionClassName = 'left-1/2 top-3 -translate-x-1/2 z-[500]',
   compact = false,
 }: Props) {
   const layers = [
@@ -57,7 +57,7 @@ export default function MapLayerControl({
   ];
 
   return (
-    <div className={`absolute ${positionClassName} z-[500] flex items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur`}>
+    <div className={`absolute ${positionClassName} flex items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur`}>
       {/* 底图 segmented(卫星在前,默认矢量) */}
       <div className="flex items-center gap-0.5">
         {(['satellite', 'vector'] as const).map((b) => (
