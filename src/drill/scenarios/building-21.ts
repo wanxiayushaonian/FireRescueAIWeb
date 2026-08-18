@@ -108,6 +108,7 @@ export const BUILDING_21_SEED_EVENTS: readonly DrillEvent[] = [
     payload: {
       description: '电气线路短路复燃,火势突然加剧,引燃周边可燃物',
       fireLevelDelta: 1,
+      location: '5F',
     },
   },
   // ts=10:状态(信息性)
@@ -168,6 +169,7 @@ export const BUILDING_21_SEED_EVENTS: readonly DrillEvent[] = [
     payload: {
       description: '5层局部吊顶受热坍塌,3名被困人员转移至新区域',
       trappedDelta: 3,
+      location: '5F',
     },
   },
   // ts=15:预案决策——组织搜救(rescue 激活后每 tick 救出 rescuePerTick 人)
@@ -233,6 +235,7 @@ export const BUILDING_21_SCENARIO_DEF: DrillScenarioDef = {
   commanderEveryNTicks: 5,
   scenario: {
     firePoint: { x: 0, y: 0 },
+    fireFloor: '5F', // 着火层(启动聚焦 + 火势蔓延视角联动)
     material: '电气',
     trappedCount: 5,
     windDirection: 90,

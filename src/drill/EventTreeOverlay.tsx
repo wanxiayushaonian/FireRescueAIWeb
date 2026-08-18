@@ -16,7 +16,7 @@
  */
 import { useEffect } from 'react';
 import { EventTree } from './EventTree';
-import type { DrillRecorder } from '@/lib/drill/drill-recorder';
+import type { DrillRecorder, TreeNode } from '@/lib/drill/drill-recorder';
 
 export interface EventTreeOverlayProps {
   /** 事件树数据源(与 DrillView 同一 recorder 实例,实时增长)。 */
@@ -25,9 +25,11 @@ export interface EventTreeOverlayProps {
   readonly open: boolean;
   /** 关闭回调(ESC / 遮罩 / 关闭按钮触发)。 */
   readonly onClose: () => void;
+  /** 节点点击回调(DrillView:meta.location → 相机回溯到事件现场)。 */
+  readonly onNodeClick?: (node: TreeNode) => void;
 }
 
-export function EventTreeOverlay({ recorder, open, onClose }: EventTreeOverlayProps) {
+export function EventTreeOverlay({ recorder, open, onClose, onNodeClick }: EventTreeOverlayProps) {
   // ESC 关闭(open 时才监听;Ctrl+K 切换由父组件 DrillView 处理)
   useEffect(() => {
     if (!open) return;
@@ -77,7 +79,7 @@ export function EventTreeOverlay({ recorder, open, onClose }: EventTreeOverlayPr
 
         {/* EventTree 撑满剩余空间 */}
         <div className="min-h-0 flex-1 p-3">
-          <EventTree recorder={recorder} height="100%" />
+          <EventTree recorder={recorder} height="100%" onNodeClick={onNodeClick} />
         </div>
       </div>
     </div>

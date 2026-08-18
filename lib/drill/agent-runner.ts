@@ -198,7 +198,10 @@ export class AgentRunner {
 
   /**
    * 指挥官周期/特情简报触发:内容 = buildCommanderBriefing(最新态势快照注入 content,
-   * 不赌 forwarded_props 透传)。causeEventId = 特情事件 id(即时反应时挂因果链)。
+   * 不赌 forwarded_props 透传)。
+   * 因果挂接:causeEventId 缺省 = 触发时刻事件树最新节点——agent 的输入就是
+   * 「截至当前的态势快照」,挂到最新节点即"由当前局面引发",事件树因此分叉成树
+   * (此前全为根节点,React Flow 排成一条直线)。
    */
   private triggerCommanderBriefing(causeEventId?: string): Promise<void> {
     const status = this.options.state.getStatus();
@@ -211,7 +214,13 @@ export class AgentRunner {
       { drillId: this.options.drillId, buildingId: this.options.buildingId, sceneId: this.options.sceneId, recentEvents: recent },
       causeEventId ? '特情反应' : undefined,
     );
-    return this.triggerCommander(text, causeEventId);
+    return this.triggerCommander(text, causeEventId ?? this.latestNodeId());
+  }
+
+  /** 事件树当前最新节点 id(无节点时 undefined)——agent 动作缺省因果父。 */
+  private latestNodeId(): string | undefined {
+    const all = this.options.recorder.getAll();
+    return all.length > 0 ? all[all.length - 1].id : undefined;
   }
 
   /**
@@ -233,7 +242,7 @@ export class AgentRunner {
       sceneId: this.options.sceneId,
     });
     const run = this.adversaryChain.then(() =>
-      this.runAgent(appId, text, 'adversary', causeEventId),
+      this.runAgent(appId, text, 'adversary', causeEventId ?? this.latestNodeId()),
     );
     this.adversaryChain = run.catch(() => {});
     return run;
@@ -384,6 +393,8 @@ export class AgentRunner {
     const fireLevelDelta = toOptFinite(eventPayload?.fireLevelDelta);
     const trappedDelta = toOptFinite(eventPayload?.trappedDelta);
     const damageDelta = toOptFinite(eventPayload?.damageDelta);
+    // 特情位置(对抗提示词引导 payload.location;供事件树 meta + 相机联动)
+    const location = toOptStrictStr(eventPayload?.location);
 
     // 记事件树
     this.options.recorder.record({
@@ -394,6 +405,7 @@ export class AgentRunner {
       parentId: causeEventId,
       agentName: ev.agent,
       toolCallId: ev.toolCallId,
+      ...(location ? { meta: { location } } : {}),
     });
 
     // inject EventBus special 事件(payload 契约见 disaster-state SpecialPayload)
@@ -401,6 +413,7 @@ export class AgentRunner {
     if (fireLevelDelta !== undefined) payload.fireLevelDelta = fireLevelDelta;
     if (trappedDelta !== undefined) payload.trappedDelta = trappedDelta;
     if (damageDelta !== undefined) payload.damageDelta = damageDelta;
+    if (location) payload.location = location;
     this.options.bus.inject({
       id: genEventId('spec'),
       ts: clock,

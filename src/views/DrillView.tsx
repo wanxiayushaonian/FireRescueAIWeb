@@ -25,6 +25,8 @@ import { useAgentRunner } from '@/drill/hooks/use-agent-runner';
 import { EventBus, type DrillEvent } from '@/lib/drill/event-bus';
 import { DisasterState, type DisasterStatus, type DisasterScenario } from '@/lib/drill/disaster-state';
 import { DrillRecorder } from '@/lib/drill/drill-recorder';
+import { storyIdsForFloorSpec } from '@/lib/floor-focus';
+import { extractFloorSpec, floorSpecFromEvent, spreadFloorSpecs } from '@/lib/drill/drill-camera';
 import DrillScenarioPanel from '@/components/drill/DrillScenarioPanel';
 import type { ScenarioApplyResult } from '@/components/drill/DrillScenarioPanel';
 import { DrillEvaluationDialog } from '@/drill/DrillEvaluationDialog';
@@ -73,14 +75,17 @@ function eventDetail(ev: DrillEvent): string | undefined {
   return typeof desc === 'string' ? desc : undefined;
 }
 
-/** 将种子/剧本事件记录到 DrillRecorder(事件树展示用)。 */
+/** 将种子/剧本事件记录到 DrillRecorder(事件树展示用)。
+ *  meta.location 保留楼层信息(如 seed disaster 的 '5F')——事件树点节点相机回溯用。 */
 function recordSeedEvents(recorder: DrillRecorder, events: readonly DrillEvent[]): void {
   for (const ev of events) {
+    const location = typeof ev.payload.location === 'string' ? ev.payload.location : undefined;
     recorder.record({
       ts: ev.ts,
       type: ev.type,
       label: eventLabel(ev),
       detail: eventDetail(ev),
+      ...(location ? { meta: { location } } : {}),
     });
   }
 }
@@ -155,6 +160,40 @@ export default function DrillView() {
   const [evalArchived, setEvalArchived] = useState<ReadonlySet<number>>(new Set());
   /** 上次处理过的 tick,防止 resume 时同 clock 重复处理。 */
   const lastTickRef = useRef(-1);
+  /** 上次联动过的火势等级(蔓延/熄灭视角切换去重)。 */
+  const lastFireLevelRef = useRef(-1);
+
+  // ---- 3D/相机联动(事件树整改:视角反馈)----
+  // useScene 对象经 ref 读取,避免 tick effect 依赖抖动;场景未就绪时静默跳过
+  const { runtime, tree, recipeStore } = useScene();
+  const sceneRef = useRef({ runtime, tree, recipeStore });
+  sceneRef.current = { runtime, tree, recipeStore };
+
+  /** 聚焦楼层集合 + 相机飞向首个楼层(与 focus_floors/BuildingProfilePanel 同机制)。 */
+  const focusFloors = (specs: string[]): void => {
+    const { runtime: rt, tree: tr, recipeStore: store } = sceneRef.current;
+    if (!rt || !tr || !store || specs.length === 0) return;
+    const storyIds = [...new Set(specs.flatMap((s) => storyIdsForFloorSpec(tr, s)))];
+    if (storyIds.length === 0) return;
+    const single = storyIds.length === 1;
+    store.patchStructural({
+      visibleStories: storyIds,
+      detailLevel: 'full',
+      yExtend: !single,
+      hideDevices: !single,
+    });
+    void rt.flyToObject(storyIds[0]);
+  };
+  const focusFloorsRef = useRef(focusFloors);
+  focusFloorsRef.current = focusFloors;
+
+  /** 熄灭/结束:恢复全楼视角。 */
+  const restoreFullView = (): void => {
+    const { recipeStore: store } = sceneRef.current;
+    store?.patchStructural({ visibleStories: null, detailLevel: 'full' });
+  };
+  const restoreFullViewRef = useRef(restoreFullView);
+  restoreFullViewRef.current = restoreFullView;
 
   // ---- Ctrl+K 唤出事件树悬浮面板(演练模块局部,不冲突态势总览 overview 的 Ctrl+K)----
   useEffect(() => {
@@ -185,7 +224,32 @@ export default function DrillView() {
     runner.onTick(clock, specialId ? { specialEventId: specialId } : undefined);
     // 5. 刷新态势面板
     setSnapshot(state.getStatus());
-  }, [clock, bus, state, recorder, runner]);
+
+    // 6. 3D/相机联动(视角反馈):
+    //    a. disaster/special 事件带楼层(location 或可解析 description)→ 聚焦+飞向
+    //    b. 火势等级变化 → 蔓延近似(3级炸开+1层,4级+2层);熄灭 → 恢复全楼
+    let cameraMoved = false;
+    for (const ev of evs) {
+      if (ev.type === 'disaster' || ev.type === 'special') {
+        const spec = floorSpecFromEvent(ev.payload);
+        if (spec) {
+          focusFloorsRef.current([spec]);
+          cameraMoved = true;
+          break; // 一 tick 最多一次相机动作(多事件同 tick 取首个)
+        }
+      }
+    }
+    if (!cameraMoved) {
+      const level = state.getStatus().fireLevel;
+      const fireFloor = effectiveScenario.fireFloor;
+      if (fireFloor && level !== lastFireLevelRef.current) {
+        const specs = spreadFloorSpecs(fireFloor, level);
+        if (specs) focusFloorsRef.current(specs);
+        else restoreFullViewRef.current();
+      }
+      lastFireLevelRef.current = level;
+    }
+  }, [clock, bus, state, recorder, runner, effectiveScenario]);
 
   // ---- 启动 ----
   const handleStart = (): void => {
@@ -207,6 +271,12 @@ export default function DrillView() {
 
     // 初始快照
     setSnapshot(state.getStatus());
+
+    // 开场视角:聚焦着火层 + 相机飞去(场景未就绪时静默跳过)
+    lastFireLevelRef.current = effectiveScenario.initialFireLevel ?? 1;
+    if (effectiveScenario.fireFloor) {
+      focusFloorsRef.current([effectiveScenario.fireFloor]);
+    }
 
     // 启动时间轴(1× 起步)
     start();
@@ -336,11 +406,18 @@ export default function DrillView() {
         </aside>
       </div>
 
-      {/* 事件树悬浮面板(Ctrl+K 唤出,大尺寸;演练中实时增长 + 结束后复盘)*/}
+      {/* 事件树悬浮面板(Ctrl+K 唤出,大尺寸;演练中实时增长 + 结束后复盘)。
+          点节点:meta.location → 相机回溯到事件现场(设计文档「回溯」的视角版) */}
       <EventTreeOverlay
         recorder={recorder}
         open={treeOpen}
         onClose={() => setTreeOpen(false)}
+        onNodeClick={(node) => {
+          const spec = extractFloorSpec(
+            typeof node.meta?.location === 'string' ? node.meta.location : undefined,
+          );
+          if (spec) focusFloorsRef.current([spec]);
+        }}
       />
 
       {/* 演练评估报告(停止后「生成演练评估报告」唤出;改进措施可回流预案库) */}

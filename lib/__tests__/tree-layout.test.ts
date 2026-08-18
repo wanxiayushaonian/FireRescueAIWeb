@@ -56,9 +56,10 @@ describe('buildFlowGraph · 单根 + 子链(parentId 因果)', () => {
     ]);
     expect(result.nodes).toHaveLength(3);
     expect(result.edges).toHaveLength(2);
+    // x = 全局 ts 序(整树共享时间轴):root idx0 / child idx1 / gc idx2
     expect(posOf(result, 'root')).toEqual({ x: 0, y: 0 });
-    expect(posOf(result, 'child')).toEqual({ x: 0, y: LAYOUT_ROW_HEIGHT });
-    expect(posOf(result, 'gc')).toEqual({ x: 0, y: 2 * LAYOUT_ROW_HEIGHT });
+    expect(posOf(result, 'child')).toEqual({ x: LAYOUT_COL_WIDTH, y: LAYOUT_ROW_HEIGHT });
+    expect(posOf(result, 'gc')).toEqual({ x: 2 * LAYOUT_COL_WIDTH, y: 2 * LAYOUT_ROW_HEIGHT });
   });
 
   it('边 source=parentId, target=id', () => {
@@ -112,10 +113,11 @@ describe('buildFlowGraph · 同层多子节点水平排列 + ts 升序', () => {
       makeNode('c2', 20, 'decision', '二', 'root'),
     ]);
     const y1 = LAYOUT_ROW_HEIGHT;
+    // x = 全局 ts 序:root idx0,c1/c2/c3 依次 idx1/2/3(不再每层独立从 0 起)
     expect(posOf(result, 'root')).toEqual({ x: 0, y: 0 });
-    expect(posOf(result, 'c1')).toEqual({ x: 0, y: y1 });
-    expect(posOf(result, 'c2')).toEqual({ x: LAYOUT_COL_WIDTH, y: y1 });
-    expect(posOf(result, 'c3')).toEqual({ x: 2 * LAYOUT_COL_WIDTH, y: y1 });
+    expect(posOf(result, 'c1')).toEqual({ x: LAYOUT_COL_WIDTH, y: y1 });
+    expect(posOf(result, 'c2')).toEqual({ x: 2 * LAYOUT_COL_WIDTH, y: y1 });
+    expect(posOf(result, 'c3')).toEqual({ x: 3 * LAYOUT_COL_WIDTH, y: y1 });
   });
 
   it('同 ts 时按 id 字典序(确定性 tiebreaker)', () => {
@@ -124,8 +126,9 @@ describe('buildFlowGraph · 同层多子节点水平排列 + ts 升序', () => {
       makeNode('z', 10, 'decision', 'Z', 'root'),
       makeNode('a', 10, 'decision', 'A', 'root'),
     ]);
-    expect(posOf(result, 'a').x).toBe(0);
-    expect(posOf(result, 'z').x).toBe(LAYOUT_COL_WIDTH);
+    // x = 全局 ts 序:root idx0,a/z 依次 idx1/2
+    expect(posOf(result, 'a').x).toBe(LAYOUT_COL_WIDTH);
+    expect(posOf(result, 'z').x).toBe(2 * LAYOUT_COL_WIDTH);
   });
 
   it('不同父的子节点混在同层:仍按 ts 全局升序排 x', () => {
@@ -135,9 +138,9 @@ describe('buildFlowGraph · 同层多子节点水平排列 + ts 升序', () => {
       makeNode('b', 5, 'decision', 'B', 'r1'),
       makeNode('a', 3, 'decision', 'A', 'r2'),
     ]);
-    // layer 1:a(ts=3) 在前,b(ts=5) 在后
-    expect(posOf(result, 'a').x).toBe(0);
-    expect(posOf(result, 'b').x).toBe(LAYOUT_COL_WIDTH);
+    // x = 全局 ts 序:r1 idx0,r2 idx1,a(ts=3) idx2,b(ts=5) idx3
+    expect(posOf(result, 'a').x).toBe(2 * LAYOUT_COL_WIDTH);
+    expect(posOf(result, 'b').x).toBe(3 * LAYOUT_COL_WIDTH);
     expect(posOf(result, 'a').y).toBe(LAYOUT_ROW_HEIGHT);
     expect(posOf(result, 'b').y).toBe(LAYOUT_ROW_HEIGHT);
   });

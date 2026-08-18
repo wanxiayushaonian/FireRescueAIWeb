@@ -861,3 +861,78 @@ describe('AgentRunner:对抗触发内容(buildAdversaryTrigger)', () => {
     expect(contents[0]).toContain('注入一个特情');
   });
 });
+
+// ============================================================
+// 因果挂接 + 特情 location(2026-08-18 事件树分叉整改)
+// ============================================================
+
+describe('AgentRunner:因果挂接(缺省挂最新节点)', () => {
+  it('对抗特情节点 parentId = 触发时事件树最新节点 id', async () => {
+    const deps = makeRunnerDeps();
+    deps.recorder.record({ ts: 0, type: 'disaster', label: '起火' });
+    const latest = deps.recorder.record({ ts: 2, type: 'status', label: '蔓延' });
+    const recSpy = vi.fn();
+    deps.recorder.subscribe(recSpy);
+
+    const sseText = sse({
+      type: 'tool-call',
+      toolCallId: 'adv-1',
+      toolName: 'inject_event',
+      args: JSON.stringify({ drill_id: 'drill-1', event: { type: 'wind_shift', payload: {} } }),
+    });
+    const postChat: PostChatFn = async () => streamFrom(sseText);
+    const runner = buildRunner(deps, { postChat, adversaryAppId: 'adv-app' });
+
+    await runner.triggerAdversary();
+    expect(recSpy).toHaveBeenCalledTimes(1);
+    expect(recSpy.mock.calls[0][0].parentId).toBe(latest.id);
+  });
+
+  it('指挥官周期简报决策 parentId = 触发时最新节点 id', async () => {
+    const deps = makeRunnerDeps();
+    const latest = deps.recorder.record({ ts: 1, type: 'status', label: '态势' });
+    const recSpy = vi.fn();
+    deps.recorder.subscribe(recSpy);
+
+    const sseText = sse({
+      type: 'tool-call',
+      toolCallId: 'cmd-1',
+      toolName: 'report_decision',
+      args: JSON.stringify({ decision: { action: '维持部署', rationale: '态势平稳' } }),
+    });
+    const postChat: PostChatFn = async () => streamFrom(sseText);
+    const runner = buildRunner(deps, { postChat, commanderEveryNTicks: 5 });
+
+    runner.onTick(5);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(recSpy).toHaveBeenCalledTimes(1);
+    expect(recSpy.mock.calls[0][0].parentId).toBe(latest.id);
+  });
+});
+
+describe('AgentRunner:inject_event location 进 meta 与 bus payload', () => {
+  it('event.payload.location → special 节点 meta.location + bus 事件 payload.location', async () => {
+    const deps = makeRunnerDeps();
+    const recSpy = vi.fn();
+    deps.recorder.subscribe(recSpy);
+    const busSpy = vi.fn();
+    deps.bus.subscribe(busSpy);
+
+    const sseText = sse({
+      type: 'tool-call',
+      toolCallId: 'adv-2',
+      toolName: 'inject_event',
+      args: JSON.stringify({
+        drill_id: 'drill-1',
+        event: { type: 'explosion', payload: { location: '5F', fireLevelDelta: 1 } },
+      }),
+    });
+    const postChat: PostChatFn = async () => streamFrom(sseText);
+    const runner = buildRunner(deps, { postChat, adversaryAppId: 'adv-app' });
+
+    await runner.triggerAdversary();
+    expect(recSpy.mock.calls[0][0].meta).toEqual({ location: '5F' });
+    const injected = busSpy.mock.calls.find((c) => c[0].type === 'special');
+    expect(injected?.[0].payload.location).toBe('5F');
+  });
+});

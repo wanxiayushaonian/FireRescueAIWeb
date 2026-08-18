@@ -133,11 +133,12 @@ export interface FlowGraph {
 /**
  * 构建因果图:TreeNode[] → React Flow { nodes, edges }。
  *
- * 布局规则:
+ * 布局规则(2026-08-18 整改:时间轴共享 x,因果支链垂直分叉):
  * 1. 根节点(parentId undefined / parentId 不在节点集 / parentId 自引用)→ depth 0
  * 2. 子节点 depth = 父 depth + 1(BFS 逐层);防环:入队前标记 depth
- * 3. 同层节点按 ts 升序(同 ts 按 id 字典序)→ x = index × COL_WIDTH
- * 4. y = depth × ROW_HEIGHT
+ * 3. **x = 全局 ts 序 index × COL_WIDTH**(整棵树共享一根时间轴:同 ts 按 id 字典序;
+ *    此前每层独立 index 导致父子对不齐、全根时一条无尽直线)
+ * 4. y = depth × ROW_HEIGHT(主干 depth0 按时间横排,因果支链从父节点向下分叉)
  * 5. 边:parentId → id(仅 parentId 在集中且非自引用)
  *
  * 确定性:稳定排序 + 纯函数;相同输入 → 相同输出。
@@ -168,11 +169,14 @@ export function buildFlowGraph(nodes: readonly TreeNode[]): FlowGraph {
   // BFS 分层
   const depthMap = computeDepths(sorted, childrenOf, roots);
 
-  // 按 layer 分组(保持 sorted 顺序 → 同层已按 ts 升序)
-  const layers = groupByLayer(sorted, depthMap);
-
-  // 分配坐标
-  const positionMap = assignPositions(layers);
+  // 分配坐标:x = 全局 ts 序(整树共享时间轴),y = depth(因果层)
+  const positionMap = new Map<string, { x: number; y: number }>();
+  sorted.forEach((n, i) => {
+    positionMap.set(n.id, {
+      x: i * LAYOUT_COL_WIDTH,
+      y: (depthMap.get(n.id) ?? 0) * LAYOUT_ROW_HEIGHT,
+    });
+  });
 
   // 构建 Flow 节点
   const flowNodes: FlowNode[] = sorted.map((n) => ({
@@ -267,40 +271,6 @@ function computeDepths(
     if (!depthMap.has(n.id)) depthMap.set(n.id, 0);
   }
   return depthMap;
-}
-
-/** 按 depth 分组,组内保持 sorted 顺序(ts 升序)。 */
-function groupByLayer(
-  sorted: readonly TreeNode[],
-  depthMap: Map<string, number>,
-): Map<number, TreeNode[]> {
-  const layers = new Map<number, TreeNode[]>();
-  for (const n of sorted) {
-    const d = depthMap.get(n.id) ?? 0;
-    const arr = layers.get(d);
-    if (arr) {
-      arr.push(n);
-    } else {
-      layers.set(d, [n]);
-    }
-  }
-  return layers;
-}
-
-/** 按 layer × index 分配坐标(x = index × COL_WIDTH, y = depth × ROW_HEIGHT)。 */
-function assignPositions(
-  layers: Map<number, TreeNode[]>,
-): Map<string, { x: number; y: number }> {
-  const positionMap = new Map<string, { x: number; y: number }>();
-  for (const [depth, layerNodes] of layers) {
-    layerNodes.forEach((n, i) => {
-      positionMap.set(n.id, {
-        x: i * LAYOUT_COL_WIDTH,
-        y: depth * LAYOUT_ROW_HEIGHT,
-      });
-    });
-  }
-  return positionMap;
 }
 
 /** TreeNode → EventNodeData(显式字段拷贝,隔离内外 mutation)。 */
