@@ -140,14 +140,26 @@ export function defaultCategoryVisibility(): Record<string, boolean> {
 /**
  * 各层级"未配置时"的默认可见性 —— 与 level-policy 推导的渲染实际对齐,
  * 供模态框 UI 兜底(开关显示值 = 实际渲染值,避免 UI 全 ON 而实际全藏的错觉):
- *  - single:完整细节 + 显设备 → 全显
- *  - whole/multi:hideDevices 基线藏非主体 → 消防系统类(含消控室设备)/门/空间默认 OFF,
+ *  - single:完整细节 + 显设备 → 全显(含室外三件:室外消火栓/消防车辆/出入口)
+ *  - multi:消防设施/门默认显(2026-08-17 用户定:多层看设施与门),仅空间藏
+ *  - whole:消防系统类(含消控室设备)/门/空间默认 OFF,
  *    车辆(室外装备)/楼梯/建筑结构保留 ON
  */
 export function defaultVisibleByLevel(level: 'whole' | 'single' | 'multi'): Record<string, boolean> {
   const base = defaultCategoryVisibility();
   if (level === 'single') return base;
-  const hidden = new Set<string>([...FIRE_DEVICE_TYPES, 'Door', 'Space']);
+  const hidden = level === 'multi'
+    ? new Set<string>(['Space'])
+    : new Set<string>([...FIRE_DEVICE_TYPES, 'Door', 'Space']);
   for (const t of hidden) base[t] = false;
   return base;
+}
+
+/** 三层级默认表(whole/single/multi):App 预设应用、无存档时初始化 categoryVisibility 用。 */
+export function defaultCategoryVisibilityByLevel(): Record<'whole' | 'single' | 'multi', Record<string, boolean>> {
+  return {
+    whole: defaultVisibleByLevel('whole'),
+    single: defaultVisibleByLevel('single'),
+    multi: defaultVisibleByLevel('multi'),
+  };
 }

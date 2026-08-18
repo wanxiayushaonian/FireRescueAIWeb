@@ -4,7 +4,7 @@ import {
   saveSceneDisplayPrefs,
   sceneDisplayKey,
 } from '../scene-display-prefs';
-import { defaultVisibleByLevel, FIRE_DEVICE_TYPES } from '../scene-categories';
+import { defaultVisibleByLevel, defaultCategoryVisibilityByLevel, FIRE_DEVICE_TYPES } from '../scene-categories';
 
 /** node 环境无 localStorage:装一个内存版(window + localStorage) */
 function installMemoryStorage() {
@@ -72,21 +72,38 @@ describe('defaultVisibleByLevel 层级默认(与 level-policy 渲染实际对齐
     expect(Object.values(d).every(Boolean)).toBe(true);
   });
 
-  it('whole/multi:消防系统类(含消控室设备)/门/空间默认藏,室外区(消火栓/车辆/出入口)/楼梯/结构保留', () => {
-    for (const lvl of ['whole', 'multi'] as const) {
-      const d = defaultVisibleByLevel(lvl);
-      for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(false);
-      expect(d.Kongzhitai).toBe(false); // 消控室设备随消防系统默认藏
-      expect(d.Door).toBe(false);
-      expect(d.Space).toBe(false);
-      expect(d.Stairs).toBe(true);
-      expect(d.Wall).toBe(true);
-      expect(d.Story).toBe(true);
-      // 室外区:室外装备默认显
-      expect(d.OutdoorFireHydrant).toBe(true);
-      expect(d.SmokeExhaustFireTruck).toBe(true);
-      expect(d.RemoteWaterSupplyFireTruck).toBe(true);
-      expect(d.SceneInOut).toBe(true);
-    }
+  it('whole:消防系统类(含消控室设备)/门/空间默认藏,室外区(消火栓/车辆/出入口)/楼梯/结构保留', () => {
+    const d = defaultVisibleByLevel('whole');
+    for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(false);
+    expect(d.Kongzhitai).toBe(false); // 消控室设备随消防系统默认藏
+    expect(d.Door).toBe(false);
+    expect(d.Space).toBe(false);
+    expect(d.Stairs).toBe(true);
+    expect(d.Wall).toBe(true);
+    expect(d.Story).toBe(true);
+    // 室外区:室外装备默认显
+    expect(d.OutdoorFireHydrant).toBe(true);
+    expect(d.SmokeExhaustFireTruck).toBe(true);
+    expect(d.RemoteWaterSupplyFireTruck).toBe(true);
+    expect(d.SceneInOut).toBe(true);
+  });
+
+  it('multi:消防设施/门默认显(2026-08-17 用户定),仅空间藏', () => {
+    const d = defaultVisibleByLevel('multi');
+    for (const t of FIRE_DEVICE_TYPES) expect(d[t]).toBe(true);
+    expect(d.Door).toBe(true);
+    expect(d.Space).toBe(false);
+    expect(d.Stairs).toBe(true);
+    expect(d.OutdoorFireHydrant).toBe(true);
+    expect(d.SceneInOut).toBe(true);
+  });
+
+  it('defaultCategoryVisibilityByLevel:三层级完整表(single 全显/multi 仅藏空间/whole 藏设施+门+空间)', () => {
+    const all = defaultCategoryVisibilityByLevel();
+    expect(Object.values(all.single).every(Boolean)).toBe(true);
+    expect(all.multi.Space).toBe(false);
+    expect(all.multi.Door).toBe(true);
+    expect(all.whole.Door).toBe(false);
+    expect(all.whole.OutdoorFireHydrant).toBe(true);
   });
 });
