@@ -167,7 +167,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
   // 派遣面板 + 多站路线规划(见 gis/hooks/use-deploy-routes)
   const {
     deploy, openDeploy, closeDeploy,
-    planned, setPlanned,
+    planned, plannedMeta, setPlanned,
     planning, planRoutes, aiDispatch, clearRoutes, highlightNearbyWater,
   } = useDeployRoutes({
     mapRef,
@@ -918,6 +918,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
     keyUnitMarkers: keyUnitMarkersRef,
     setPlanned,
     onFlyToLayer: handleFlyToLayer,
+    onAnalyzeResponse: analyze,
   });
 
   // 地图拾取模式:点击地图 → 回填 draft 坐标(GCJ02,高德瓦片原生坐标系)
@@ -1011,29 +1012,78 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
           <span>单位 <b className="text-text-1">{districtStats.keyUnits.toLocaleString()}</b></span>
         </div>
       </div>
-      {/* 到场路线图例:planned 时显示,颜色↔站名↔距离/ETA 对应,最快路线高亮 */}
-      {planned.length > 0 && (() => {
+      {/* 到场路线图例:planned 时显示,颜色↔站名↔距离/ETA 对应,最快路线高亮。
+          顶部状态条:路线来源(AI 智能派遣/手动选站)+ 规划时间 + 总览(站数/最快 ETA) */}
+      {planned.length > 0 && plannedMeta && (() => {
         const fastest = Math.min(...planned.map((x) => x.duration));
+        const slowest = Math.max(...planned.map((x) => x.duration));
+        const totalDistance = planned.reduce((sum, p) => sum + p.distance, 0);
+        const totalTrafficLights = planned.reduce((sum, p) => sum + p.trafficLights, 0);
+        const plannedTime = plannedMeta.plannedAt.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         return (
-          <div className="absolute left-1/2 top-[100px] z-[500] w-60 -translate-x-1/2 rounded-lg border border-cyan/40 bg-bg-panel/95 p-3 shadow-xl backdrop-blur">
-            <div className="mb-2 flex items-center gap-1.5">
-              <Route className="h-4 w-4 text-cyan" />
-              <span className="text-[13px] font-bold text-text-1">到场路线</span>
-              <span className="ml-auto text-[12px] text-cyan">{planned.length} 条</span>
+          <div className="absolute left-1/2 top-[100px] z-[500] w-72 -translate-x-1/2 rounded-lg border border-cyan/40 bg-bg-panel/95 shadow-xl backdrop-blur">
+            {/* 状态条:来源徽标 + 规划时间 + 关闭按钮 */}
+            <div className="flex items-center gap-2 border-b border-cyan/20 px-3 py-1.5">
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold ${
+                plannedMeta.source === 'ai'
+                  ? 'bg-violet/20 text-violet'
+                  : 'bg-blue/20 text-blue'
+              }`}>
+                {plannedMeta.source === 'ai' ? 'AI 派遣' : '手动选站'}
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[11px] text-text-3">
+                {plannedTime}
+              </span>
+              <button
+                onClick={clearRoutes}
+                className="shrink-0 rounded p-0.5 text-text-3 transition hover:bg-red/20 hover:text-red"
+                title="清除路线"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
             </div>
-            <div className="space-y-1">
-              {planned.map((p, idx) => {
-                const color = routeColor(idx);
-                const isFastest = p.duration === fastest;
-                return (
-                  <div key={p.stationId} className={`flex items-center gap-2 rounded px-1.5 py-1 text-[12px] ${isFastest ? 'bg-cyan/10 ring-1 ring-cyan/30' : ''}`}>
-                    <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 0 2px ${color}55` }} />
-                    <span className="min-w-0 flex-1 truncate text-text-1">{p.stationName}</span>
-                    <span className="shrink-0 font-mono text-[11px] text-text-3">{(p.distance / 1000).toFixed(1)}km</span>
-                    <span className={`shrink-0 font-mono text-[11px] ${isFastest ? 'font-bold text-cyan' : 'text-text-2'}`}>{Math.round(p.duration / 60)}分</span>
-                  </div>
-                );
-              })}
+            {/* 总览信息 */}
+            <div className="grid grid-cols-3 gap-1 border-b border-line/40 px-3 py-2 text-center">
+              <div>
+                <div className="text-[10px] text-text-3">到场时间</div>
+                <div className="font-num text-[13px] font-bold text-cyan">
+                  {Math.round(fastest / 60)}-{Math.round(slowest / 60)}分
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-text-3">总距离</div>
+                <div className="font-num text-[13px] font-bold text-text-1">
+                  {(totalDistance / 1000).toFixed(1)}km
+                </div>
+              </div>
+              <div>
+                <div className="text-[10px] text-text-3">红绿灯</div>
+                <div className="font-num text-[13px] font-bold text-text-1">
+                  {totalTrafficLights}个
+                </div>
+              </div>
+            </div>
+            {/* 路线列表 */}
+            <div className="max-h-60 overflow-y-auto p-3 [scrollbar-width:thin]">
+              <div className="mb-2 flex items-center gap-1.5">
+                <Route className="h-4 w-4 text-cyan" />
+                <span className="text-[13px] font-bold text-text-1">到场路线</span>
+                <span className="ml-auto text-[11px] text-text-3">{planned.length} 站</span>
+              </div>
+              <div className="space-y-1">
+                {planned.map((p, idx) => {
+                  const color = routeColor(idx);
+                  const isFastest = p.duration === fastest;
+                  return (
+                    <div key={p.stationId} className={`flex items-center gap-2 rounded px-1.5 py-1 text-[12px] ${isFastest ? 'bg-cyan/10 ring-1 ring-cyan/30' : ''}`}>
+                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: color, boxShadow: `0 0 0 2px ${color}55` }} />
+                      <span className="min-w-0 flex-1 truncate text-text-1">{p.stationName}</span>
+                      <span className="shrink-0 font-mono text-[11px] text-text-3">{(p.distance / 1000).toFixed(1)}km</span>
+                      <span className={`shrink-0 font-mono text-[11px] ${isFastest ? 'font-bold text-cyan' : 'text-text-2'}`}>{Math.round(p.duration / 60)}分</span>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         );

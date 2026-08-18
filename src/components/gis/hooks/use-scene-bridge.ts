@@ -27,10 +27,12 @@ export function useSceneBridge(deps: {
   setPlanned: React.Dispatch<React.SetStateAction<PlannedRoute[]>>;
   /** flyTo 携带 layer 时回调(RealGisMap 据此自动打开未开启的图层;agent gis_fly_to 联动)。 */
   onFlyToLayer?: (layer: string) => void;
+  /** 响应分析回调(实战指挥模块选中警情时触发,画分层响应圈+ETA)。 */
+  onAnalyzeResponse?: (target: { name: string; lng: number; lat: number }) => void;
 }): void {
   const {
     mapRef, routeLayer, defaultCenter, defaultZoom,
-    stationsRef, waterRef, stationMarkers, waterMarkers, keyUnitMarkers, setPlanned, onFlyToLayer,
+    stationsRef, waterRef, stationMarkers, waterMarkers, keyUnitMarkers, setPlanned, onFlyToLayer, onAnalyzeResponse,
   } = deps;
 
   // sceneLog 联动
@@ -101,6 +103,14 @@ export function useSceneBridge(deps: {
         }
         }
       }
+      if (latest.action === 'addMarker') {
+        // 实战指挥模块选中警情:params 携带 incidentId → 触发响应分析(分层响应圈+ETA)
+        // 其他模块的 addMarker(水源/站等)不带 incidentId,不受影响
+        const p = latest.params as { incidentId?: string; lng?: number; lat?: number } | undefined;
+        if (p?.incidentId && typeof p.lng === 'number' && typeof p.lat === 'number') {
+          onAnalyzeResponse?.({ name: latest.target, lng: p.lng, lat: p.lat });
+        }
+      }
       if (latest.action === 'resetView') {
         mapRef.current?.setView(defaultCenter, defaultZoom);
         const m = mapRef.current;
@@ -123,5 +133,5 @@ export function useSceneBridge(deps: {
     return () => {
       unsub();
     };
-  }, [routeLayer, defaultCenter, defaultZoom, setPlanned, onFlyToLayer]);
+  }, [routeLayer, defaultCenter, defaultZoom, setPlanned, onFlyToLayer, onAnalyzeResponse]);
 }

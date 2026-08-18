@@ -11,6 +11,16 @@ export interface AgentContextDeps {
   objectsBuildingId?: string;
   /** training:目标建筑名(默认 21号楼演示口径)。 */
   trainingBuildingName?: string;
+  /** command:当前选中警情(实战指挥模块选中警情后注入,agent 据此定位事发点/查周边)。 */
+  commandIncident?: {
+    id: string;
+    address: string;
+    type: string;
+    status: string;
+    lng: number;
+    lat: number;
+    caller?: string;
+  } | null;
 }
 
 /** 低熟悉度阈值(<60% 视为薄弱),与考核错题画像并列作为兜底信号。 */
@@ -49,6 +59,14 @@ export function buildAgentContext(module: ModuleKey, deps: AgentContextDeps = {}
     if (low.length) {
       parts.push(`低熟悉度=${low.map((n) => `${n.name}[${n.floor ?? '?'}]${n.familiarity}%`).join('、')}`);
     }
+  }
+
+  if (module === 'command' && deps.commandIncident) {
+    const inc = deps.commandIncident;
+    parts.push(`当前警情=${inc.id}/${inc.type}/${inc.status}`);
+    parts.push(`地址=${inc.address}`);
+    parts.push(`坐标=${inc.lng.toFixed(4)},${inc.lat.toFixed(4)}`);
+    if (inc.caller) parts.push(`报警人=${inc.caller}`);
   }
 
   if (!parts.length) return null;

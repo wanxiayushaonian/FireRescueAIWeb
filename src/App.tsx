@@ -105,6 +105,11 @@ function AppContent() {
   // 对象总览当前建筑 ID(由 GIS 信息窗「查看档案」或内部下拉切换)。
   const [objectsBuildingId, setObjectsBuildingId] = useState<string>('');
 
+  // 实战指挥当前选中警情(注入 agent 上下文,让 agent 知道用户在看哪起警情)。
+  const [commandSelectedIncident, setCommandSelectedIncident] = useState<{
+    id: string; address: string; type: string; status: string; lng: number; lat: number; caller?: string;
+  } | null>(null);
+
   // 六熟悉/考核「问智能体」预填消息(ts 变化触发 AgentSidebar 展开并发送)
   const [hintPrefill, setHintPrefill] = useState<{ text: string; ts: number } | null>(null);
 
@@ -310,7 +315,9 @@ function AppContent() {
                     }
                   />
                 ) : module === 'command' ? (
-                  <CommandView />
+                  <CommandView
+                    onIncidentSelect={(inc) => setCommandSelectedIncident(inc)}
+                  />
                 ) : module === 'drill' ? (
                   <DrillView />
                 ) : module === 'overview' ? (
@@ -371,7 +378,10 @@ function AppContent() {
         <AgentSidebar
           module={module}
           onOpenPanel={handleAgentOpenPanel}
-          contextDeps={{ objectsBuildingId: objectsBuildingId || undefined }}
+          contextDeps={{
+            objectsBuildingId: objectsBuildingId || undefined,
+            commandIncident: commandSelectedIncident,
+          }}
           prefillText={hintPrefill}
         />
       </div>

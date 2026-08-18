@@ -31,7 +31,9 @@ const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
   loading: () => null,
 });
 
-export default function CommandView() {
+export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (inc: {
+  id: string; address: string; type: string; status: string; lng: number; lat: number; caller?: string;
+}) => void }) {
   const [snap, setSnap] = useState<LiveSnapshot>(() => getSnapshot());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [incidentPanelOpen, setIncidentPanelOpen] = useState(true);
@@ -138,6 +140,16 @@ export default function CommandView() {
     const list = mode === 'real' ? realIncidents : getSnapshot().incidents;
     const inc = list.find((i) => i.id === id);
     if (!inc) return;
+    // 注入 agent 上下文：让 agent 知道当前选中的警情
+    onIncidentSelect?.({
+      id: inc.id,
+      address: inc.address,
+      type: inc.type,
+      status: inc.status,
+      lng: inc.lng,
+      lat: inc.lat,
+      caller: inc.caller,
+    });
     addSceneAction({
       action: 'flyTo', target: inc.address,
       params: { lng: inc.lng, lat: inc.lat, incidentId: inc.id }, source: '面板',
@@ -165,7 +177,7 @@ export default function CommandView() {
         }
       });
     }
-  }, [mode, realIncidents]);
+  }, [mode, realIncidents, onIncidentSelect]);
 
   // 模拟新警情接入：1s 内顶部插入（先 toast，再入列）
   const handleInject = useCallback(() => {

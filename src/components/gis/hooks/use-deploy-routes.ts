@@ -53,6 +53,8 @@ export function useDeployRoutes(deps: {
   const [deploy, setDeploy] = useState<DeployState | null>(null);
   const [planned, setPlanned] = useState<PlannedRoute[]>([]);
   const [planning, setPlanning] = useState(false);
+  // 路线元数据:规划时间 + 来源(AI 智能派遣 / 手动选站),供到场路线面板展示状态信息
+  const [plannedMeta, setPlannedMeta] = useState<{ plannedAt: Date; source: 'ai' | 'manual' } | null>(null);
 
   // 周边水源高亮:目标点 500m 外部圈 + 圈内水源画青色点 + 适窗到水源逐点可见层级
   // (zoom>=15 水源才逐点渲染;低于此级别是聚合气泡,看不到具体水源点位)
@@ -143,6 +145,7 @@ export function useDeployRoutes(deps: {
       if (!map || !routeLayer || !deploy) return;
       setPlanning(true);
       setPlanned([]);
+      setPlannedMeta(null);
       // 进入路线规划后,视口会缩放到路线整体尺度,此时周边水源高亮圈(500m 外圈+点位)
       // 已脱离当前比例尺语境,清掉避免在路线视图上残留干扰
       highlightLayer?.clearLayers();
@@ -163,6 +166,7 @@ export function useDeployRoutes(deps: {
       ).filter((x): x is RouteRenderItem => x !== null);
       const { bounds, summary } = renderRoutes(routeLayer, items);
       setPlanned(summary);
+      setPlannedMeta({ plannedAt: new Date(), source: 'manual' });
       setPlanning(false);
       if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
       addSceneAction({
@@ -189,6 +193,7 @@ export function useDeployRoutes(deps: {
     if (!map || !routeLayer || !deploy) return;
     setPlanning(true);
     setPlanned([]);
+    setPlannedMeta(null);
     highlightLayer?.clearLayers();
     try {
       const { routes } = await fetchAiDispatch({
@@ -196,6 +201,7 @@ export function useDeployRoutes(deps: {
       });
       const { bounds, summary } = renderRoutes(routeLayer, routes);
       setPlanned(summary);
+      setPlannedMeta({ plannedAt: new Date(), source: 'ai' });
       if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
       addSceneAction({
         action: 'showRoute',
@@ -235,6 +241,7 @@ export function useDeployRoutes(deps: {
     openDeploy,
     closeDeploy,
     planned,
+    plannedMeta,
     setPlanned,
     planning,
     planRoutes,
