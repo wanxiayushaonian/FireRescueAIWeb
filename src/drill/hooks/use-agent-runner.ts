@@ -31,6 +31,8 @@ export interface UseAgentRunnerParams {
   readonly drillId: string;
   readonly postChat?: AgentRunnerOptions['postChat'];
   readonly adversaryEveryNTicks?: number;
+  /** 指挥 agent 周期简报频率(每 N tick;0/缺省=仅启动时一次)。 */
+  readonly commanderEveryNTicks?: number;
   readonly logger?: DrillLogger;
   /**
    * 场景身份 key(通常 = 剧本 id)。变化时重建 runner,确保切换剧本后
@@ -70,6 +72,7 @@ export function useAgentRunner(params: UseAgentRunnerParams): UseAgentRunnerResu
       recorder: p.recorder,
       postChat: p.postChat,
       adversaryEveryNTicks: p.adversaryEveryNTicks,
+      commanderEveryNTicks: p.commanderEveryNTicks,
       logger: p.logger,
     });
     // scenarioKey 变化(切换剧本)时重建 runner;Toolbar 锁定非 idle 选择器,

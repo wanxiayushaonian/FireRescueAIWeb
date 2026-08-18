@@ -85,6 +85,7 @@ function buildRunner(
   overrides: {
     postChat?: PostChatFn;
     adversaryEveryNTicks?: number;
+    commanderEveryNTicks?: number;
     adversaryAppId?: string;
     logger?: DrillLogger;
   } = {},
@@ -100,6 +101,7 @@ function buildRunner(
     recorder: deps.recorder,
     postChat: overrides.postChat ?? fakePostChatReturning(''),
     adversaryEveryNTicks: overrides.adversaryEveryNTicks,
+    commanderEveryNTicks: overrides.commanderEveryNTicks,
     logger: overrides.logger,
   });
 }
@@ -741,5 +743,121 @@ describe('AgentRunner:忽略类与未知 toolName', () => {
     await runner.triggerCommander('x');
 
     expect(recSpy).not.toHaveBeenCalled();
+  });
+});
+
+// ============================================================
+// onTick 指挥官周期简报 + 特情即时反应(2026-08-18 持续指挥)
+// ============================================================
+
+describe('AgentRunner:onTick 指挥官周期简报', () => {
+  it('commanderEveryNTicks:clock%N===0 触发简报,content 携带 drill_id 与最新态势快照', async () => {
+    const deps = makeRunnerDeps();
+    const contents: string[] = [];
+    const postChat: PostChatFn = async (params: PostAgentChatParams) => {
+      if (params.app_id === 'cmd-app-001') contents.push(params.content);
+      return streamFrom(sse({ type: 'finish', finishReason: 'stop' }));
+    };
+    const runner = buildRunner(deps, { postChat, commanderEveryNTicks: 5 });
+
+    runner.onTick(4); // 不到周期
+    runner.onTick(5); // 触发
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toContain('drill_id=drill-1');
+    expect(contents[0]).toContain('[演练简报|T+0]'); // state.init 后 clock=0
+    expect(contents[0]).toContain('火势=');
+    expect(contents[0]).toContain('report_decision');
+  });
+
+  it('指挥官在答时跳过本周期简报(互斥,不堆旧简报),完成后恢复', async () => {
+    const deps = makeRunnerDeps();
+    let calls = 0;
+    let release: () => void = () => {};
+    const postChat: PostChatFn = async (params: PostAgentChatParams) => {
+      if (params.app_id !== 'cmd-app-001') return streamFrom('');
+      calls += 1;
+      if (calls === 1) {
+        // 首个调用挂起,直到 release()
+        return new Promise((resolve) => {
+          release = () => resolve(streamFrom(sse({ type: 'finish', finishReason: 'stop' })));
+        });
+      }
+      return streamFrom(sse({ type: 'finish', finishReason: 'stop' }));
+    };
+    const runner = buildRunner(deps, { postChat, commanderEveryNTicks: 5 });
+
+    runner.onTick(5); // 触发并挂起(commanderInFlight=true)
+    await new Promise((r) => setTimeout(r, 20)); // 等 postChat 被调用(commanderChain 微任务)
+    runner.onTick(10); // 互斥跳过
+    expect(calls).toBe(1);
+
+    release();
+    await new Promise((r) => setTimeout(r, 50));
+
+    runner.onTick(15); // 已释放,再次触发
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toBe(2);
+  });
+
+  it('特情注入即时反应简报(不在周期也触发),content 标注"特情反应",decision 挂因果链', async () => {
+    const deps = makeRunnerDeps();
+    const contents: string[] = [];
+    const sseText = sse({
+      type: 'tool-call',
+      toolCallId: 'c-react',
+      toolName: 'report_decision',
+      args: JSON.stringify({ decision: { action: '紧急增援', tactic: 'water', rationale: '特情处置' } }),
+    });
+    const postChat: PostChatFn = async (params: PostAgentChatParams) => {
+      if (params.app_id === 'cmd-app-001') contents.push(params.content);
+      return streamFrom(sseText);
+    };
+    const recSpy = vi.fn();
+    deps.recorder.subscribe(recSpy);
+    const runner = buildRunner(deps, { postChat }); // 无周期配置
+
+    runner.onTick(7, { specialEventId: 'seed-b21-special-9' });
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toContain('特情反应');
+    // 因果链:decision 节点 parentId = 特情事件 id
+    expect(recSpy.mock.calls[0][0].parentId).toBe('seed-b21-special-9');
+  });
+
+  it('commanderEveryNTicks 缺省=仅启动时一次,onTick 不触发周期简报', async () => {
+    const deps = makeRunnerDeps();
+    let calls = 0;
+    const postChat: PostChatFn = async () => {
+      calls += 1;
+      return streamFrom('');
+    };
+    const runner = buildRunner(deps, { postChat });
+    runner.onTick(5);
+    runner.onTick(10);
+    await new Promise((r) => setTimeout(r, 50));
+    expect(calls).toBe(0);
+  });
+});
+
+describe('AgentRunner:对抗触发内容(buildAdversaryTrigger)', () => {
+  it('对抗 content 携带 drill_id 与态势快照(不再赌 forwarded_props 透传)', async () => {
+    const deps = makeRunnerDeps();
+    const contents: string[] = [];
+    const postChat: PostChatFn = async (params: PostAgentChatParams) => {
+      if (params.app_id === 'adv-app') contents.push(params.content);
+      return streamFrom(sse({ type: 'finish', finishReason: 'stop' }));
+    };
+    const runner = buildRunner(deps, { postChat, adversaryAppId: 'adv-app', adversaryEveryNTicks: 1 });
+
+    runner.onTick(1);
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(contents).toHaveLength(1);
+    expect(contents[0]).toContain('drill_id=drill-1');
+    expect(contents[0]).toContain('态势快照:');
+    expect(contents[0]).toContain('注入一个特情');
   });
 });

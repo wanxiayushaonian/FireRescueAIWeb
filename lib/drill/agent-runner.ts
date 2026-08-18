@@ -27,6 +27,7 @@ import {
 import { EventBus, genEventId } from './event-bus';
 import type { DisasterState, Tactic } from './disaster-state';
 import type { DrillRecorder } from './drill-recorder';
+import { buildAdversaryTrigger, buildCommanderBriefing } from './briefing';
 
 // ============================================================
 // 类型定义
@@ -64,6 +65,9 @@ export interface AgentRunnerOptions {
   readonly postChat?: PostChatFn;
   /** 对抗 agent 触发频率(每 N tick;0=禁用,默认 0)。 */
   readonly adversaryEveryNTicks?: number;
+  /** 指挥 agent 周期简报频率(每 N tick;0=禁用周期简报,仅启动时一次,默认 0)。
+      空闲才触发(in-flight 跳过)——简报总是携带最新快照,旧简报无保留价值。 */
+  readonly commanderEveryNTicks?: number;
   /** 日志器(默认 console)。 */
   readonly logger?: DrillLogger;
 }
@@ -136,6 +140,9 @@ export class AgentRunner {
   /** 对抗 agent 互斥标记:onTick 触发时若上一个对抗未完成则跳过,防队列无界堆积(建议-3)。 */
   private adversaryInFlight = false;
 
+  /** 指挥 agent 周期简报互斥标记:指挥官在答时跳过本次简报(简报总带最新快照,旧的没保留价值)。 */
+  private commanderInFlight = false;
+
   constructor(options: AgentRunnerOptions) {
     this.options = options;
     this.logger = options.logger ?? console;
@@ -143,16 +150,28 @@ export class AgentRunner {
   }
 
   /**
-   * TimelineEngine.onTick 回调:每 tick 检查是否触发对抗 agent。
-   * clock>0 且 adversaryEveryNTicks>0 且 clock%N===0 时,fire-and-forget 触发(不 await)。
+   * TimelineEngine.onTick 回调:每 tick 检查两个 agent 的触发。
+   * - commander:commanderEveryNTicks>0 且 clock%N===0 → 周期简报;opts.specialEventId
+   *   存在(本 tick 有特情注入)→ 即时反应简报。均空闲才触发(互斥跳过)。
+   * - adversary:adversaryEveryNTicks>0 且 clock%N===0 → 互斥触发。
+   * 全部 fire-and-forget(不 await),时间轴永不等待 agent。
    */
-  onTick(clock: number): void {
+  onTick(clock: number, opts?: { specialEventId?: string }): void {
     if (clock <= 0) return;
+
+    // 指挥官:周期简报 + 特情即时反应(空闲才触发;队列不堆旧简报)
+    const cn = this.options.commanderEveryNTicks ?? 0;
+    const commanderDue = cn > 0 && clock % cn === 0;
+    if ((commanderDue || opts?.specialEventId) && !this.commanderInFlight) {
+      this.commanderInFlight = true;
+      void this.triggerCommanderBriefing(opts?.specialEventId).finally(() => {
+        this.commanderInFlight = false;
+      });
+    }
+
+    // 对抗:互斥触发(上一个未完成则跳过,防队列无界堆积)
     const n = this.options.adversaryEveryNTicks ?? 0;
-    if (n <= 0) return;
-    if (clock % n !== 0) return;
-    // 互斥:上一个对抗 agent 未完成则跳过本 tick 触发(对抗 POST 30-100s,
-    // 若每 tick 都 fire-and-forget 会导致 adversaryChain 无界堆积)。
+    if (n <= 0 || clock % n !== 0) return;
     if (this.adversaryInFlight) return;
     this.adversaryInFlight = true;
     void this.triggerAdversary().finally(() => {
@@ -178,7 +197,26 @@ export class AgentRunner {
   }
 
   /**
-   * 触发对抗 agent:固定 content "根据当前态势,注入一个特情"。
+   * 指挥官周期/特情简报触发:内容 = buildCommanderBriefing(最新态势快照注入 content,
+   * 不赌 forwarded_props 透传)。causeEventId = 特情事件 id(即时反应时挂因果链)。
+   */
+  private triggerCommanderBriefing(causeEventId?: string): Promise<void> {
+    const status = this.options.state.getStatus();
+    const recent = this.options.recorder
+      .getAll()
+      .slice(-3)
+      .map((n) => n.label);
+    const text = buildCommanderBriefing(
+      status,
+      { drillId: this.options.drillId, buildingId: this.options.buildingId, sceneId: this.options.sceneId, recentEvents: recent },
+      causeEventId ? '特情反应' : undefined,
+    );
+    return this.triggerCommander(text, causeEventId);
+  }
+
+  /**
+   * 触发对抗 agent:content = buildAdversaryTrigger(固定指令 + drill_id + 态势快照,
+   * 不再赌 forwarded_props 透传——inject_event 必填 drill_id)。
    * adversaryAppId 未配置时 no-op。串行排队。
    *
    * @param causeEventId 同 triggerCommander,上游逻辑 id,挂接 parentId 与 event.cause。
@@ -189,8 +227,13 @@ export class AgentRunner {
       this.logger.debug('[agent-runner] adversaryAppId 未配置,跳过对抗触发');
       return Promise.resolve();
     }
+    const text = buildAdversaryTrigger(this.options.state.getStatus(), {
+      drillId: this.options.drillId,
+      buildingId: this.options.buildingId,
+      sceneId: this.options.sceneId,
+    });
     const run = this.adversaryChain.then(() =>
-      this.runAgent(appId, '根据当前态势,注入一个特情', 'adversary', causeEventId),
+      this.runAgent(appId, text, 'adversary', causeEventId),
     );
     this.adversaryChain = run.catch(() => {});
     return run;

@@ -37,6 +37,8 @@ export interface DrillScenarioDef {
   readonly adversaryEveryNTicks: number;
   /** 对抗 agent app_id(未配置时 triggerAdversary no-op;由 ADVERSARY_APP_ID 环境变量注入)。 */
   readonly adversaryAppId?: string;
+  /** 指挥 agent 周期简报频率(每 N tick;缺省/0=仅启动时一次简报,无持续指挥)。 */
+  readonly commanderEveryNTicks?: number;
   /** 灾情态势初始状态(DisasterState.init 入参)。 */
   readonly scenario: DisasterScenario;
   /**

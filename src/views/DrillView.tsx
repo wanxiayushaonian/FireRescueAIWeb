@@ -27,9 +27,12 @@ import { DisasterState, type DisasterStatus, type DisasterScenario } from '@/lib
 import { DrillRecorder } from '@/lib/drill/drill-recorder';
 import DrillScenarioPanel from '@/components/drill/DrillScenarioPanel';
 import type { ScenarioApplyResult } from '@/components/drill/DrillScenarioPanel';
+import { DrillEvaluationDialog } from '@/drill/DrillEvaluationDialog';
+import { evaluateViaAgent, type EvaluationData, type EvaluationImprovement } from '@/lib/agent-evaluate';
+import { addLibraryItem } from '@/mock/planLibrary';
 import DraggablePanel from '@/components/DraggablePanel';
 import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
-import { Library } from 'lucide-react';
+import { Library, Star } from 'lucide-react';
 import {
   DEFAULT_SCENARIO_ID,
   getScenario,
@@ -134,6 +137,7 @@ export default function DrillView() {
     drillId: activeScenario.drillId,
     adversaryEveryNTicks: activeScenario.adversaryEveryNTicks, // 未配置对抗 appId 时为 0(no-op)
     adversaryAppId: activeScenario.adversaryAppId,
+    commanderEveryNTicks: activeScenario.commanderEveryNTicks, // 周期简报(持续指挥)
     scenarioKey: activeScenario.id, // 切换剧本时重建 runner,确保新 appId/sceneId 生效
   });
 
@@ -143,6 +147,12 @@ export default function DrillView() {
   const [treeOpen, setTreeOpen] = useState(false);
   /** 预案库面板开关（演练评估归档 / 正式预案建档可查）。 */
   const [libraryOpen, setLibraryOpen] = useState(false);
+  /** 演练评估:停止后可生成报告(事件树保留);agent 结果/加载/已回流标记。 */
+  const [reportReady, setReportReady] = useState(false);
+  const [evalOpen, setEvalOpen] = useState(false);
+  const [evalLoading, setEvalLoading] = useState(false);
+  const [evalData, setEvalData] = useState<EvaluationData | null>(null);
+  const [evalArchived, setEvalArchived] = useState<ReadonlySet<number>>(new Set());
   /** 上次处理过的 tick,防止 resume 时同 clock 重复处理。 */
   const lastTickRef = useRef(-1);
 
@@ -169,8 +179,10 @@ export default function DrillView() {
     state.tick(evs);
     // 3. 记录事件树(种子事件;agent 决策/特情由 AgentRunner 直接 record)
     recordSeedEvents(recorder, evs);
-    // 4. 对抗 agent 触发检查(adversaryEveryNTicks=0 时 no-op)
-    runner.onTick(clock);
+    // 4. agent 触发检查(指挥官周期简报/特情即时反应 + 对抗互斥触发;
+    //    本 tick 有特情时把首个特情 id 传入,指挥官简报挂因果链)
+    const specialId = evs.find((e) => e.type === 'special')?.id;
+    runner.onTick(clock, specialId ? { specialEventId: specialId } : undefined);
     // 5. 刷新态势面板
     setSnapshot(state.getStatus());
   }, [clock, bus, state, recorder, runner]);
@@ -185,6 +197,10 @@ export default function DrillView() {
     state.init(effectiveScenario);
     bus.seed(activeScenario.seedEvents);
     lastTickRef.current = -1;
+    setReportReady(false);
+    setEvalOpen(false);
+    setEvalData(null);
+    setEvalArchived(new Set());
 
     // ts=0 事件(engine 首 tick clock=1,ts=0 不会被 effect 捕获,在此显式记录)
     recordSeedEvents(recorder, bus.getEvents(0, 0));
@@ -202,12 +218,45 @@ export default function DrillView() {
   };
 
   // ---- 停止 ----
+  // 保留 recorder/snapshot:事件树供复盘,态势供评估报告(此前 stop 即清空,
+  // 「结束后复盘整树」实际不可用;下一场 handleStart 会重新清空,不影响反复演练)。
   const handleStop = (): void => {
     stop();
-    bus.clear();
-    recorder.clear();
     lastTickRef.current = -1;
-    setSnapshot(null);
+    setReportReady(recorder.getAll().length > 0);
+  };
+
+  // ---- 演练评估(评估 agent:事件树 + 最终态势 → 报告;失败可重试) ----
+  const runEvaluation = async (): Promise<void> => {
+    setEvalOpen(true);
+    setEvalLoading(true);
+    setEvalData(null);
+    const data = await evaluateViaAgent({
+      kind: 'drill-plan',
+      subject: `${activeScenario.name} 演练处置过程评估`,
+      process: {
+        scenario: { name: activeScenario.name, briefing: effectiveBriefing },
+        finalStatus: state.getStatus(),
+        events: recorder
+          .getAll()
+          .slice(0, 60)
+          .map((n) => ({ ts: n.ts, type: n.type, label: n.label, detail: n.detail })),
+      },
+    });
+    setEvalData(data);
+    setEvalLoading(false);
+  };
+
+  const archiveImprovement = (imp: EvaluationImprovement, index: number): void => {
+    addLibraryItem({
+      kind: '改进措施',
+      title: imp.content.length > 28 ? `${imp.content.slice(0, 28)}…` : imp.content,
+      status: '待落地',
+      summary: [imp.content],
+      sourceDetail: `来源:演练对抗 · 演练评估(${activeScenario.name})→ ${imp.target}`,
+    });
+    setEvalArchived((prev) => new Set(prev).add(index));
+    showToast('改进措施已回流预案库');
   };
 
   // ---- 渲染 ----
@@ -266,6 +315,18 @@ export default function DrillView() {
               预案库
             </button>
           </div>
+          {/* 演练评估入口:停止后可用(事件树+最终态势喂评估 agent) */}
+          {reportReady && status === 'idle' && (
+            <button
+              type="button"
+              onClick={() => void runEvaluation()}
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-300/50 bg-amber-300/10 px-3 py-2 text-[13px] font-medium text-amber-300 transition hover:bg-amber-300/20"
+              title="由评估智能体对本场演练打分(响应/编成/战术/协同等维度)"
+            >
+              <Star className="h-4 w-4" />
+              生成演练评估报告
+            </button>
+          )}
           <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-line bg-bg-panel/60">
             <div className="border-b border-line px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-2">
               态势
@@ -280,6 +341,18 @@ export default function DrillView() {
         recorder={recorder}
         open={treeOpen}
         onClose={() => setTreeOpen(false)}
+      />
+
+      {/* 演练评估报告(停止后「生成演练评估报告」唤出;改进措施可回流预案库) */}
+      <DrillEvaluationDialog
+        open={evalOpen}
+        loading={evalLoading}
+        data={evalData}
+        scenarioName={activeScenario.name}
+        onClose={() => setEvalOpen(false)}
+        onRetry={() => void runEvaluation()}
+        onArchive={archiveImprovement}
+        archived={evalArchived}
       />
 
       {/* 预案库悬浮面板（默认关闭；归档条目 / 正式预案页签） */}

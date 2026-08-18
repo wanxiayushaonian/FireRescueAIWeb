@@ -228,6 +228,9 @@ export const BUILDING_21_SCENARIO_DEF: DrillScenarioDef = {
   // 未配置时保持 0 禁用(triggerAdversary 对空 appId 也是 no-op,双保险)
   adversaryEveryNTicks: ADVERSARY_APP_ID ? 5 : 0,
   adversaryAppId: ADVERSARY_APP_ID || undefined,
+  // 指挥官周期简报:每 5 tick 一次(空闲才触发,简报总带最新态势快照);
+  // 特情注入时另有即时反应简报——实现「持续指挥」
+  commanderEveryNTicks: 5,
   scenario: {
     firePoint: { x: 0, y: 0 },
     material: '电气',
