@@ -224,10 +224,10 @@ export default function CommandView() {
 
   return (
     <div className="relative h-full w-full">
-      {/* 实战指挥落 GIS 底座(与模块一同一底图,minimal chrome 隐藏与面板重合的
-          底部区县条/水源状态条);地图实例交给战术推演层做容器坐标投影。
+      {/* 实战指挥落 GIS 底座:与态势总览同一 RealGisMap 全量 chrome(图层控制条/区县统计条/
+          水源状态/圆圈菜单/派遣规划/响应分析全部复用);地图实例交给战术推演层做容器坐标投影。
           警情是本模块核心业务对象,图层默认开(其余沿用全局默认:边界+消防站) */}
-      <RealGisMap chrome="minimal" initialLayers={{ incidents: true }} onMapReady={setGisMap} />
+      <RealGisMap initialLayers={{ incidents: true }} onMapReady={setGisMap} />
 
       {/* 战术推演层：蔓延圈 / 力量部署 / 进攻路线（真实地图投影，跟随 pan/zoom，pointer-events-none 不影响底图交互） */}
       <TacticalOverlay
@@ -237,8 +237,9 @@ export default function CommandView() {
         recommendations={snap.recommendations}
       />
 
-      {/* 顶部居中:真实/模拟模式切换(真实=incidents DB;模拟=liveChannel 状态机演示) */}
-      <div className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 items-center gap-1 rounded-md border border-line bg-bg-panel/90 p-1 backdrop-blur-[8px]">
+      {/* 顶部居中:真实/模拟模式切换(真实=incidents DB;模拟=liveChannel 状态机演示)。
+          top-[60px] 堆叠在 GIS 图层控制条(top-3)之下,避免两条重叠 */}
+      <div className="absolute left-1/2 top-[60px] z-30 flex -translate-x-1/2 items-center gap-1 rounded-md border border-line bg-bg-panel/90 p-1 backdrop-blur-[8px]">
         <button
           onClick={() => setMode('real')}
           className={`rounded px-3 py-1 text-[12px] transition ${mode === 'real' ? 'bg-cyan/15 text-cyan' : 'text-text-3 hover:text-text-1'}`}

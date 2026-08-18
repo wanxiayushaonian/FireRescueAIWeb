@@ -22,10 +22,6 @@ interface Props {
   onToggleIncidents: () => void;
   /** 返回九江全景(默认中心/缩放) */
   onResetView: () => void;
-  /** 根容器定位类名(默认顶部居中;实战指挥等顶部已有自家工具条时传 top 偏移堆叠在其下) */
-  positionClassName?: string;
-  /** 紧凑模式(minimal chrome 两侧被面板占用时):隐藏「区域」开关,九江全景仅图标,避免控制条被面板遮挡 */
-  compact?: boolean;
 }
 
 export default function MapLayerControl({
@@ -44,8 +40,6 @@ export default function MapLayerControl({
   showIncidents,
   onToggleIncidents,
   onResetView,
-  positionClassName = 'left-1/2 top-3 -translate-x-1/2 z-[500]',
-  compact = false,
 }: Props) {
   const layers = [
     { label: '边界', show: showBoundary, toggle: onToggleBoundary },
@@ -53,11 +47,11 @@ export default function MapLayerControl({
     { label: '重点对象', show: showKeyUnits, toggle: onToggleKeyUnits },
     { label: '水源', show: showWater, toggle: onToggleWater },
     { label: '警情', show: showIncidents, toggle: onToggleIncidents },
-    ...(compact ? [] : [{ label: '区域', show: showRegions, toggle: onToggleRegions }]),
+    { label: '区域', show: showRegions, toggle: onToggleRegions },
   ];
 
   return (
-    <div className={`absolute ${positionClassName} flex items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur`}>
+    <div className="absolute left-1/2 top-3 z-[500] flex -translate-x-1/2 items-center gap-2 rounded-full border border-line bg-bg-panel/90 px-3 py-1.5 text-[12px] shadow-lg backdrop-blur">
       {/* 底图 segmented(卫星在前,默认矢量) */}
       <div className="flex items-center gap-0.5">
         {(['satellite', 'vector'] as const).map((b) => (
@@ -96,7 +90,7 @@ export default function MapLayerControl({
         title="返回九江市全景"
       >
         <Maximize className="h-3 w-3" />
-        {compact ? null : '九江全景'}
+        九江全景
       </button>
     </div>
   );

@@ -58,7 +58,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', initialLayers }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; chrome?: 'full' | 'minimal'; /** 各模块初始图层显隐(未传 = 默认只开边界/消防站;实战指挥等按需覆盖,如警情默认开) */ initialLayers?: Partial<{ stations: boolean; water: boolean; boundary: boolean; keyUnits: boolean; incidents: boolean; buildings: boolean; regions: boolean }> }) {
+export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; /** 各模块初始图层显隐(未传 = 默认只开边界/消防站;实战指挥等按需覆盖,如警情默认开) */ initialLayers?: Partial<{ stations: boolean; water: boolean; boundary: boolean; keyUnits: boolean; incidents: boolean; buildings: boolean; regions: boolean }> }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
@@ -967,12 +967,8 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', 
 
   return (
     <div ref={rootRef} className="relative isolate h-full w-full overflow-hidden bg-bg-grid">
-      {/* 图层控制条:full=顶部居中;minimal(实战指挥)顶部已有自家模式切换条,
-          控制条堆叠在其下(top-[60px])——图层操控两模块保持一致(2026-08-18 修复:
-          此前 minimal 直接隐藏,实战指挥无任何图层开关,agent 自动开的图层用户关不掉) */}
+      {/* 图层控制条(顶部居中;各模块一致——2026-08-18 起实战指挥复用全量 chrome) */}
       <MapLayerControl
-        positionClassName={chrome === 'full' ? undefined : 'left-1/2 top-[60px] -translate-x-1/2 z-[1000]'}
-        compact={chrome !== 'full'}
         baseMap={baseMap}
         onBaseMapChange={setBaseMap}
         showStations={showStations}
@@ -999,9 +995,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', 
         }}
       />
       {/* 当前区县信息条:区县名 + 6 项统计快照(随鼠标移动实时变化)。
-          居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称。
-          minimal chrome(实战指挥等被面板占用的模块)隐藏,避免与左下/右下面板重合 */}
-      {chrome === 'full' && (
+          居中底部:避开左侧 dock 的资源总览面板(500px 宽),与顶部图层控制对称 */}
       <div className="absolute bottom-3 left-1/2 z-[450] flex -translate-x-1/2 items-center gap-3 rounded-lg border border-line bg-bg-panel/90 px-3 py-2 shadow-lg backdrop-blur">
         <div className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 text-cyan" />
@@ -1017,7 +1011,6 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', 
           <span>单位 <b className="text-text-1">{districtStats.keyUnits.toLocaleString()}</b></span>
         </div>
       </div>
-      )}
       {/* 到场路线图例:planned 时显示,颜色↔站名↔距离/ETA 对应,最快路线高亮 */}
       {planned.length > 0 && (() => {
         const fastest = Math.min(...planned.map((x) => x.duration));
@@ -1208,7 +1201,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, chrome = 'full', 
           底图瓦片加载失败(高德不可达)——显示占位底图
         </div>
       )}
-      {chrome === 'full' && showWater && (waterLoading || waterDense || waterEmpty) && (
+      {showWater && (waterLoading || waterDense || waterEmpty) && (
         <div className="absolute bottom-3 right-14 z-[500] flex items-center rounded border border-line bg-bg-panel/90 px-2.5 py-1 text-[11px] text-text-2">
           {waterLoading ? (
             <>
