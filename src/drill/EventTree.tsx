@@ -132,7 +132,8 @@ export function EventTree({ recorder, height = 480, onNodeClick }: EventTreeProp
         nodeTypes={nodeTypes}
         onNodeClick={handleNodeClick}
         fitView
-        fitViewOptions={{ padding: 0.2 }}
+        fitViewOptions={{ padding: 0.2, minZoom: 0.08 }}
+        minZoom={0.08}
         nodesConnectable={false}
         nodesDraggable={false}
         proOptions={{ hideAttribution: true }}
