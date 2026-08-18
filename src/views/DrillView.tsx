@@ -432,8 +432,8 @@ export default function DrillView() {
               预案库
             </button>
           </div>
-          {/* 演练评估入口:停止后可用(事件树+最终态势喂评估 agent) */}
-          {reportReady && status === 'idle' && (
+          {/* 演练评估入口:停止/自动暂停后可用(事件树+最终态势喂评估 agent) */}
+          {reportReady && status !== 'running' && (
             <button
               type="button"
               onClick={() => void runEvaluation()}
