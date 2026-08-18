@@ -54,6 +54,12 @@ docker build -f deploy/Dockerfile.bff \
   --build-arg NEXT_PUBLIC_USTUDIO_BASE="${NEXT_PUBLIC_USTUDIO_BASE-}" \
   --build-arg NEXT_PUBLIC_SCENE_EVENTS_URL="${NEXT_PUBLIC_SCENE_EVENTS_URL-}" \
   --build-arg NEXT_PUBLIC_LOCALE="${NEXT_PUBLIC_LOCALE-}" \
+  --build-arg NEXT_PUBLIC_OBJECTS_APP_ID="${NEXT_PUBLIC_OBJECTS_APP_ID-}" \
+  --build-arg NEXT_PUBLIC_TRAINING_APP_ID="${NEXT_PUBLIC_TRAINING_APP_ID-}" \
+  --build-arg NEXT_PUBLIC_DRILL_COMMANDER_APP_ID="${NEXT_PUBLIC_DRILL_COMMANDER_APP_ID-}" \
+  --build-arg NEXT_PUBLIC_ADVERSARY_APP_ID="${NEXT_PUBLIC_ADVERSARY_APP_ID-}" \
+  --build-arg NEXT_PUBLIC_EVALUATE_APP_ID="${NEXT_PUBLIC_EVALUATE_APP_ID-}" \
+  --build-arg NEXT_PUBLIC_GLOBAL_AGENT_APP_ID="${NEXT_PUBLIC_GLOBAL_AGENT_APP_ID-}" \
   -t firerescue-bff:local .
 echo "==> 构建 MCP 镜像..."
 docker build -f deploy/Dockerfile.mcp -t firerescue-mcp:local mcp-server
