@@ -82,6 +82,13 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview', context
     if (!expanded) setUnread(0);
   };
 
+  /** 折叠栏快捷入口:展开并直接落到指定 tab(业务助手/全局助手)。 */
+  const expandTo = (tab: AgentTab) => {
+    setAgentTab(tab);
+    setExpanded(true);
+    setUnread(0);
+  };
+
   // 切模块时重置会话(历史按模块隔离);tab 切换同理(业务/全局助手会话不同)
   useEffect(() => {
     setActiveSessionId(undefined);
@@ -100,6 +107,8 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview', context
   }, [prefillText?.ts]);
 
   const Icon = identity.Icon;
+  // 折叠栏业务入口固定用模块图标(不随 agentTab 变化——收起后看到的是本模块业务助手入口)
+  const ModuleIcon = AGENT_IDENTITIES[module].Icon;
 
   // 左缘拖拽调宽:pointerdown 记录起点 → pointermove 算 delta → clamp 260~560
   const startResize = (e: React.PointerEvent) => {
@@ -139,21 +148,31 @@ export default function AgentSidebar({ onOpenPanel, module = 'overview', context
         transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
         className="flex h-full shrink-0 flex-col overflow-hidden border-l border-line bg-bg-panel/95"
       >
-      {/* 折叠态:图标栏 */}
+      {/* 折叠态:图标栏——业务助手/全局助手双快捷入口(点击直接展开到对应 tab) */}
       {!expanded && (
-        <div className="flex h-full flex-col items-center py-3">
+        <div className="flex h-full flex-col items-center gap-2 py-3">
           <button
-            onClick={handleToggle}
+            onClick={() => expandTo('business')}
             className="relative flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-violet/30 to-cyan/20 shadow-[0_0_12px_rgba(167,139,250,.25)] transition hover:from-violet/50 hover:to-cyan/40"
-            title="展开智能体"
+            title={`展开${AGENT_IDENTITIES[module].title}`}
           >
-            <Icon className="h-5 w-5 text-text-1" />
+            <ModuleIcon className="h-5 w-5 text-text-1" />
             {unread > 0 && (
               <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-red text-[10px] font-bold text-white">
                 {unread > 9 ? '9+' : unread}
               </span>
             )}
           </button>
+
+          {hasGlobal && (
+            <button
+              onClick={() => expandTo('global')}
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-cyan/25 bg-cyan/8 transition hover:border-cyan/50 hover:bg-cyan/15"
+              title="展开全局助手"
+            >
+              <Sparkles className="h-5 w-5 text-cyan" />
+            </button>
+          )}
 
           <button
             onClick={handleToggle}
