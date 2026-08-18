@@ -368,9 +368,9 @@ export default function DrillView() {
               type="button"
               onClick={() => setTreeOpen(true)}
               className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-line bg-bg-panel/60 px-3 py-2 text-left transition hover:border-line-glow"
-              title="Ctrl+K 唤出事件树(实时增长 / 事后复盘)"
+              title="Ctrl+K 唤出推演过程(实时增长 / 事后复盘)"
             >
-              <span className="text-[13px] text-text-1">事件树(实时 / 复盘)</span>
+              <span className="text-[13px] text-text-1">推演过程(实时 / 复盘)</span>
               <kbd className="rounded border border-line bg-bg-deep px-1.5 py-0.5 text-[10px] text-text-3">
                 Ctrl+K
               </kbd>
