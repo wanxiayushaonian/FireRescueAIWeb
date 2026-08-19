@@ -46,6 +46,11 @@ export class ConfrontDriver {
     this.timers = [];
   }
 
+  /** 公开延迟:hook 串行链用(上一条特情落定后再排下一条,避免一次调度全挤在同一时间窗)。 */
+  after(ms: number, fn: () => void): void {
+    this.later(ms, fn);
+  }
+
   private ctx(appId: string) {
     if (!this.deps.seed) throw new Error('ConfrontDriver ctx: seed required');
     return {

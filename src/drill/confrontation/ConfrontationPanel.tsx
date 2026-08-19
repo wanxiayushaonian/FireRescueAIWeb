@@ -1,6 +1,6 @@
 // 演练对抗 · 对抗模式（二级界面全屏视图）
 // 由 ScenarioPanel 挂载（Portal 到 body），confront-store + ConfrontDriver 驱动。
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -8,6 +8,8 @@ import {
   Check, PencilLine, Stamp, ClipboardCheck, Timer,
 } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
+import { useScene } from '@/components/SceneProvider';
+import { storyIdsForFloorSpec } from '@/lib/floor-focus';
 import {
   beginConfrontation,
   exitConfrontation,
@@ -63,12 +65,32 @@ export default function ConfrontationPanel() {
     [],
   );
 
+  // ---- 3D 联动:特情注入 → 楼层聚焦 + 飞向(经 ref 取最新句柄,回调保持稳定引用) ----
+  const { tree: sceneTree, recipeStore, runtime: sceneRuntime } = useScene();
+  const sceneRef = useRef({ tree: sceneTree, recipeStore, runtime: sceneRuntime });
+  sceneRef.current = { tree: sceneTree, recipeStore, runtime: sceneRuntime };
+  const onInjectScene = useCallback((evt: { emergency: string; location?: string }): void => {
+    const { tree, recipeStore: store, runtime: rt } = sceneRef.current;
+    if (!tree || !store || !rt || !evt.location) return;
+    const storyIds = storyIdsForFloorSpec(tree, evt.location);
+    if (storyIds.length === 0) return; // 楼层未命中(如特情在场景外)静默,不打断对抗
+    const single = storyIds.length === 1;
+    store.patchStructural({
+      visibleStories: storyIds,
+      detailLevel: 'full',
+      yExtend: !single,
+      hideDevices: !single,
+    });
+    void rt.flyToObject(storyIds[0]).catch(() => {});
+  }, []);
+
   useConfrontationDriver({
     adapter,
     appIds,
     buildingId: BUILDING_21_ID,
     sceneId: BUILDING_21_SCENE_ID,
     drillId: BUILDING_21_DRILL_ID,
+    onInjectScene,
   });
 
   useEffect(() => subscribeConfrontation(setConf), []);
@@ -316,7 +338,7 @@ export default function ConfrontationPanel() {
                   className="mt-1 rounded-md border border-line bg-bg-panel-2/60 p-2"
                 >
                   <div className="mb-1 text-[12px] font-bold text-text-2">初步部署</div>
-                  {deployLines(conf.seedScenario).map((l) => (
+                  {(conf.deploy ?? deployLines(conf.seedScenario)).map((l) => (
                     <div key={l} className="text-[12px] leading-5 text-text-2">· {l}</div>
                   ))}
                 </motion.div>
@@ -554,19 +576,30 @@ export default function ConfrontationPanel() {
                       <span className="ml-auto font-mono text-[11px] text-text-3">T+00:00</span>
                     </div>
                     <ul className="flex flex-col gap-1">
-                      {deployLines(conf.seedScenario).map((l) => (
+                      {(conf.deploy ?? deployLines(conf.seedScenario)).map((l) => (
                         <li key={l} className="flex gap-1.5 text-[13px] leading-5 text-text-2">
                           <span className="text-violet">·</span>{l}
                         </li>
                       ))}
-                      <li className="flex gap-1.5 text-[13px] leading-5 text-text-2">
-                        <span className="text-violet">·</span>
-                        {`处置要点：到场即设前沿指挥部，先行侦察 ${conf.seedScenario.floor} 火点与被困人员（${conf.seedScenario.trapped} 人），出 2 支水枪堵截蔓延`}
-                      </li>
-                      <li className="flex gap-1.5 text-[13px] leading-5 text-text-2">
-                        <span className="text-violet">·</span>
-                        安全管控：设立安全员全程监测，内攻每 15 分钟轮换
-                      </li>
+                      {/* agent 部署未回时补充静态处置要点;真实输出已含动作与依据,不重复追加 */}
+                      {!conf.deploy && conf.status === 'running' && (
+                        <li className="flex gap-1.5 text-[12px] leading-5 text-violet/80">
+                          <span className="text-violet">·</span>
+                          预案输出智能体生成中<Dots className="text-violet" />
+                        </li>
+                      )}
+                      {!conf.deploy && (
+                        <>
+                          <li className="flex gap-1.5 text-[13px] leading-5 text-text-2">
+                            <span className="text-violet">·</span>
+                            {`处置要点：到场即设前沿指挥部，先行侦察 ${conf.seedScenario.floor} 火点与被困人员（${conf.seedScenario.trapped} 人），出 2 支水枪堵截蔓延`}
+                          </li>
+                          <li className="flex gap-1.5 text-[13px] leading-5 text-text-2">
+                            <span className="text-violet">·</span>
+                            安全管控：设立安全员全程监测，内攻每 15 分钟轮换
+                          </li>
+                        </>
+                      )}
                     </ul>
                   </motion.div>
                 )}

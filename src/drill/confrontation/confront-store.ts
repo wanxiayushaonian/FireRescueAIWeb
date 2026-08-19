@@ -45,6 +45,8 @@ export interface ConfrontationState {
   readonly startedAt: number;
   readonly plannedTotal: number;
   readonly lastRound: { readonly score: number; readonly archived: boolean } | null;
+  /** 初步部署行(预案输出 agent 真实输出;null=未生成,UI 回落静态摘要) */
+  readonly deploy: readonly string[] | null;
 }
 
 let conf: ConfrontationState = {
@@ -61,6 +63,7 @@ let conf: ConfrontationState = {
   startedAt: 0,
   plannedTotal: 0,
   lastRound: null,
+  deploy: null,
 };
 
 let seqCounter = 0;
@@ -115,6 +118,7 @@ export function resetConfrontation(): void {
     startedAt: 0,
     plannedTotal: 0,
     lastRound: null,
+    deploy: null,
   };
   seqCounter = 0;
   emit();
@@ -142,7 +146,14 @@ export function beginConfrontation(opts?: {
     startedAt: Date.now(),
     plannedTotal: opts?.plannedTotal ?? 3,
     lastRound: null,
+    deploy: null,
   };
+  emit();
+}
+
+/** 初步部署行(预案输出 agent 返回时写入;开局重置为 null)。 */
+export function setDeployLines(lines: readonly string[]): void {
+  conf = { ...conf, deploy: [...lines] };
   emit();
 }
 

@@ -7,6 +7,7 @@ import {
   appendAdjust,
   respondAdjustment,
   setThinking,
+  setDeployLines,
   finishConfrontationLocal,
   exitConfrontation,
 } from '../confront-store';
@@ -80,5 +81,19 @@ describe('confront-store', () => {
     beginConfrontation({ seedScenario: { building: 'b', floor: 'f', material: 'm', trapped: 1, seed: 's' } });
     exitConfrontation();
     expect(getConfrontationState().active).toBe(false);
+  });
+});
+
+describe('deploy(初步部署 agent 真实输出)', () => {
+  beforeEach(() => resetConfrontation());
+
+  it('setDeployLines 写入;beginConfrontation 开局重置为 null', () => {
+    expect(getConfrontationState().deploy).toBeNull();
+    beginConfrontation({ seedScenario: { building: 'b', floor: '5F', material: '电气', trapped: 3, seed: 's' } });
+    setDeployLines(['首调:城东站 5 车', '主战:5F 内攻一组']);
+    expect(getConfrontationState().deploy).toEqual(['首调:城东站 5 车', '主战:5F 内攻一组']);
+    // 重新开局(重新随机)→ 旧部署清空
+    beginConfrontation({ seedScenario: { building: 'b', floor: '6F', material: '油气', trapped: 2, seed: 's2' } });
+    expect(getConfrontationState().deploy).toBeNull();
   });
 });
