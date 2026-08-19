@@ -41,6 +41,7 @@ import {
 } from '@/drill/scenarios';
 import { storyIdsForFloorSpec } from '@/lib/floor-focus';
 import ConfrontationPanel from '@/drill/confrontation/ConfrontationPanel';
+import { beginConfrontation } from '@/drill/confrontation/confront-store';
 import type { Speed } from '@/lib/drill/timeline-engine';
 
 // ============================================================
@@ -248,6 +249,16 @@ export default function DrillView() {
             <button
               type="button"
               onClick={() => {
+                beginConfrontation({
+                  seedScenario: {
+                    building: '21号楼',
+                    floor: activeScenario.scenario.fireFloor ?? '5F',
+                    material: activeScenario.scenario.material,
+                    trapped: activeScenario.scenario.trappedCount,
+                    seed: `#${Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`,
+                  },
+                  plannedTotal: 3 + Math.floor(Math.random() * 3),
+                });
                 setConfOpen(true);
               }}
               className="flex items-center justify-center gap-1.5 rounded-lg border border-orange/60 bg-orange/10 px-3 py-2 text-[13px] font-medium text-orange transition hover:bg-orange/20"
