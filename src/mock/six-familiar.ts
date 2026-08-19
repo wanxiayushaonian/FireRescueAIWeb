@@ -9,7 +9,7 @@ export interface GuideStep {
   title: string;
   /** 引导词段落(每段一行) */
   narration: string[];
-  /** 楼层段("B1"/"3-5F"/"13F/25F")→ 3D 聚焦该层(多层段炸开) */
+  /** 楼层段("B1"/"1-5F"/"13F/25F")→ 3D 聚焦该层(多层段炸开) */
   floorSpec?: string;
   /** 恢复整体视角(章节收尾/总体介绍) */
   whole?: boolean;
@@ -144,7 +144,7 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
         id: 'ch4-s1',
         title: '建筑总体概况',
         narration: [
-          '乐盈广场21号楼：地上 40 层、地下 1 层的综合体建筑，集商业、办公、观光于一体。',
+          '乐盈广场21号楼：地上 40 层、地下 1 层的综合体建筑，集商业、影院、办公于一体。',
           '按竖向分区掌握：地下设备区 → 首层大堂 → 低区商业 → 中高区办公 → 避难层 → 屋顶。',
         ],
         whole: true,
@@ -162,10 +162,10 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
       },
       {
         id: 'ch4-s3',
-        title: '首层大堂与消防控制室（1F）',
+        title: '首层大堂（1F）与消防控制室（B1）',
         narration: [
           '首层大堂净空高、人流密集，设多个直通室外的安全出口。',
-          '消防控制室位于 1F 东侧，疏散门直通室外，实行 24h 双人持证值班——到场侦察的第一站通常就是消控室。',
+          '消防控制室位于 B1 设备区，疏散门直通室外，实行 24h 双人持证值班——到场侦察的第一站通常就是消控室（经大堂下至 B1）。',
         ],
         floorSpec: '1F',
         relatedNodeId: 'kp-control-room',
