@@ -21,6 +21,7 @@
 | `2026-08-09-drill-simulation-plan.md` | 演练对抗智能推演实施 | 🟡 大部分完成(AgentRunner/事件树已落地) |
 | `2026-08-12-scene-recipe-plan.md` | 3D 显隐 Recipe 编排架构实施(12 Task) | 🟡 已实施(Task 0 双体系裁定与 Task 12 并归**未执行**,见蓝图 §4.4) |
 | `znya-deploy-mcp.md` | znya 后端 + Python MCP(:8788)部署规划 | 🟡 6 项待办未完成,业务查询工具生产不可用 |
+| `2026-08-19-drill-confrontation-cabin-plan.md` | 演练对抗对抗舱实施(照抄原型+接 agent) | 🟡 已实施(待手动对抗验证) |
 
 ## 设计文档(设计意图,供改版参考)
 
@@ -31,6 +32,7 @@
 | `2026-08-08-gis-perf-design.md` | GIS 性能与加载设计 | 🟡 已实施 |
 | `2026-08-08-gis-analytics-design.md` | GIS 灾情响应 ETA 设计 | 🟡 已实施 |
 | `2026-08-09-drill-simulation-design.md` | 演练对抗智能推演设计(v2) | 🟡 已实施 |
+| `2026-08-19-drill-confrontation-cabin-design.md` | 演练对抗对抗舱设计(照抄原型+接 agent) | 🟡 已实施 |
 | `situation-overview-roadmap.md` | 态势总览增强与 Agent 智能化路线图 | 🟡 规划参考 |
 
 ## 协议实证 / 配置指南(现行有效)
