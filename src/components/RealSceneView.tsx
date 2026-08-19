@@ -12,10 +12,8 @@ import { useScene } from '@/components/SceneProvider';
  * 包含 3D 场景容器和 UI 覆盖层。
  */
 export function RealSceneView() {
-  const { runtime, view, error, containerRef, tree, initialView, recipeStore } = useScene();
-  const treeRef = useRef(tree);
+  const { runtime, view, error, containerRef, initialView, recipeStore } = useScene();
   const initialViewRef = useRef(initialView);
-  treeRef.current = tree;
   initialViewRef.current = initialView;
 
   // 订阅场景动作（flyTo、highlight 等）
@@ -31,16 +29,6 @@ export function RealSceneView() {
       },
       clearObjectHighlight: (id) => {
         runtime.clearObjectHighlight(id);
-      },
-      switchFloor: (storyIds) => {
-        const t = treeRef.current;
-        if (!t) {
-          console.warn('[real-scene] switchFloor: 场景树未就绪,跳过');
-          return;
-        }
-        // 注意:SDK setViewMode 的 mode 只接受 '2D'|'3D'|'YExtend'(ViewModeParams.type),
-        // 没有 'story' 模式;隔离显示选中楼层 = type:'3D' + ids:storyIds(showStory 同传)。
-        void runtime.setViewMode([{ type: '3D', ids: storyIds }], t, storyIds);
       },
       resetCamera: () => {
         const vp = initialViewRef.current;

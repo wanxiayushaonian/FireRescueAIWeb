@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { registerDefaultTools } from '../handlers';
 import { dispatch, __resetForTest } from '../registry';
+import { setGlobalRecipeStore } from '@/lib/scene-recipe/global-store';
+import type { RecipeStore } from '@/lib/scene-recipe/store';
 import type { SceneSdkLike } from '../types';
 
 describe('fly_to handler', () => {
@@ -54,6 +56,7 @@ describe('focus_objects handler', () => {
 describe('focus_floors handler', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    setGlobalRecipeStore(null);
   });
 
   it('有 store → 走 RecipeStore.patchStructural(单层 full+显设备,与 floor-focus 一致)', async () => {
@@ -107,42 +110,29 @@ describe('focus_floors handler', () => {
     });
   });
 
-  it('非空 story_ids → 拉 tree + setViewMode 传 storyIds', async () => {
+  it('无注入 store 且无全局引用 → 拒绝,不调 setViewMode(不绕过显隐真相源)', async () => {
     __resetForTest();
     const setViewMode = vi.fn().mockResolvedValue(undefined);
-    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as unknown as SceneSdkLike;
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(
-      new Response(
-        JSON.stringify({ type: 'Building', id: 'b', name: '楼', children: [{ type: 'Story', id: 's1', name: '一层' }] }),
-        { headers: { 'content-type': 'application/json' } },
-      ),
-    ));
-    vi.stubGlobal('window', { __sceneId: 'scene1' });
-    registerDefaultTools(sdk);
-    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
-    expect(setViewMode).toHaveBeenCalled();
-    expect(setViewMode.mock.calls[0][2]).toEqual(['s1']);
-  });
-
-  it('空 story_ids → setViewMode 传空数组(恢复全楼层)', async () => {
-    __resetForTest();
-    const setViewMode = vi.fn().mockResolvedValue(undefined);
-    const sdk = { fly: vi.fn(), heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as unknown as SceneSdkLike;
-    vi.stubGlobal('window', { __sceneId: 'scene1' });
-    registerDefaultTools(sdk);
-    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: [] }, ts: 0 }, sdk);
-    expect(setViewMode).toHaveBeenCalled();
-    expect(setViewMode.mock.calls[0][2]).toEqual([]);
-  });
-
-  it('场景未就绪(无 window.__sceneId)→ 跳过,不调 setViewMode', async () => {
-    __resetForTest();
-    const setViewMode = vi.fn().mockResolvedValue(undefined);
-    const sdk = { fly: vi.fn(), setViewMode } as unknown as SceneSdkLike;
-    vi.stubGlobal('window', {});
+    const fly = vi.fn();
+    const sdk = { fly, heighLight: vi.fn(), cancelHeighLight: vi.fn(), setViewMode } as unknown as SceneSdkLike;
     registerDefaultTools(sdk);
     await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
     expect(setViewMode).not.toHaveBeenCalled();
+    expect(fly).not.toHaveBeenCalled();
+  });
+
+  it('全局引用兜底:未注入 store 但全局有(场景就绪事件先于 React commit 的窗口)→ 走 patchStructural', async () => {
+    __resetForTest();
+    const patchStructural = vi.fn();
+    setGlobalRecipeStore({ patchStructural } as unknown as RecipeStore);
+    const fly = vi.fn().mockResolvedValue(undefined);
+    const sdk = { fly } as unknown as SceneSdkLike;
+    registerDefaultTools(sdk);
+    await dispatch({ id: '1', tool: 'focus_floors', args: { story_ids: ['s1'] }, ts: 0 }, sdk);
+    expect(patchStructural).toHaveBeenCalledWith({
+      visibleStories: ['s1'], detailLevel: 'full', hideDevices: false,
+    });
+    expect(fly).toHaveBeenCalledWith('s1');
   });
 });
 

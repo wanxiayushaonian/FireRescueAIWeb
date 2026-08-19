@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  effectiveDisplayPrefs,
   loadSceneDisplayPrefs,
   saveSceneDisplayPrefs,
   sceneDisplayKey,
@@ -63,6 +64,35 @@ describe('scene-display-prefs 持久化', () => {
     vi.unstubAllGlobals();
     expect(loadSceneDisplayPrefs('s')).toBeNull();
     expect(() => saveSceneDisplayPrefs('', { whole: {} })).not.toThrow();
+  });
+});
+
+describe('effectiveDisplayPrefs 存档+默认合并(显隐回放统一入口)', () => {
+  it('无存档 → 三层全量默认表(修复 `?? {}` 兜底抹表导致的 UI/渲染脱节)', () => {
+    expect(effectiveDisplayPrefs('scene-X')).toEqual(defaultCategoryVisibilityByLevel());
+  });
+
+  it('存档部分层/部分 type → 按层 merge:存档显式值优先,缺失补该层默认', () => {
+    saveSceneDisplayPrefs('s', { whole: { Door: true } });
+    const eff = effectiveDisplayPrefs('s');
+    expect(eff.whole.Door).toBe(true);          // 存档显式值优先
+    expect(eff.whole.Wall).toBe(false);          // whole 缺失 type 补默认
+    expect(eff.single.Door).toBe(true);          // 缺失层补默认(single 默认门显)
+    expect(eff.single.OutdoorFireHydrant).toBe(false);
+    expect(eff.multi.Door).toBe(false);          // multi 默认门藏
+  });
+
+  it('空层存档(旧版重置形态) → 补默认,永不产出空层', () => {
+    window.localStorage.setItem(sceneDisplayKey('s'), JSON.stringify({ whole: {}, single: { Door: true } }));
+    const eff = effectiveDisplayPrefs('s');
+    expect(eff.whole.OutdoorFireHydrant).toBe(true);
+    expect(eff.whole.Wall).toBe(false);
+    expect(eff.single.Door).toBe(true);
+  });
+
+  it('损坏存档 → 默认表', () => {
+    window.localStorage.setItem(sceneDisplayKey('s'), 'not-json{');
+    expect(effectiveDisplayPrefs('s')).toEqual(defaultCategoryVisibilityByLevel());
   });
 });
 

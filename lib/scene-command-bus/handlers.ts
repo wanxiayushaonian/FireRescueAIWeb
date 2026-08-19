@@ -1,7 +1,7 @@
 import { registerSceneTool } from './registry';
-import { getSceneTreeForView } from './scene-tree';
 import type { SceneSdkLike } from './types';
 import type { RecipeStore } from '../scene-recipe/store';
+import { getGlobalRecipeStore } from '../scene-recipe/global-store';
 
 // 聚焦高亮色:与 FIRE_TYPE_COLORS 告警色一致,agent 不操心配色。
 const FOCUS_HIGHLIGHT_COLOR = '#f87171';
@@ -68,31 +68,24 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
     const storyIds = Array.isArray(args.story_ids) ? (args.story_ids as unknown[]).map(String) : [];
     // 视角聚焦到首个楼层(缺省 true;显式 fly_to_first=false 或恢复全楼层时不移动视角)
     const flyToFirst = args.fly_to_first !== false && storyIds.length > 0;
-    // 经 Recipe 单一真相源(若 store 可用);空数组 = null 恢复全楼层。否则回退直调 sdk
-    if (store) {
-      // 与 floor-focus/objectsOverview 基线保持一致:
-      // detailLevel 恒为 full——structure 的 hideWindowAndDoor 会触发 SDK 孤儿隐藏,
-      // 把草地/马路/周边底模藏掉(presets 注释明示)。
-      // 单层聚焦→显设备;多层/恢复全楼层→藏设备减压(仅配方层,模态显隐是唯一写入方不受影响)。
-      const isFocusSingle = storyIds.length === 1;
-      store.patchStructural({
-        visibleStories: storyIds.length ? storyIds : null,
-        detailLevel: 'full',
-        hideDevices: !isFocusSingle,
-      });
-      if (flyToFirst) await sdk.fly(storyIds[0]);
+    // 经 Recipe 单一真相源(注入 store 优先,缺席时读全局引用堵"场景就绪事件先于 React commit"
+    // 的注册窗口);空数组 = null 恢复全楼层。仍拿不到 store 则明确拒绝 —— 绝不直调
+    // sdk.setViewMode:其内部 resetAll 会恢复一切被 hide 的对象且 Recipe 不同步(显隐污染)。
+    const s = store ?? getGlobalRecipeStore();
+    if (!s) {
+      console.warn('[scene-bus] focus_floors: RecipeStore 未就绪(场景加载窗口期),已拒绝执行');
       return;
     }
-    const sceneId = typeof window !== 'undefined' ? window.__sceneId : undefined;
-    if (!sceneId) {
-      console.warn('[scene-bus] focus_floors: 场景未就绪(window.__sceneId 空),跳过');
-      return;
-    }
-    const tree = await getSceneTreeForView(sceneId);
-    // 隔离显示选中楼层;空数组 = 恢复全楼层。
-    // 注意:SDK setViewMode 的 mode 只接受 '2D'|'3D'|'YExtend',没有 'story' 模式;
-    // 隔离楼层 = type:'3D' + ids:storyIds(showStory 同传)。
-    await sdk.setViewMode([{ type: '3D', ids: storyIds }], tree, storyIds);
+    // 与 floor-focus/objectsOverview 基线保持一致:
+    // detailLevel 恒为 full——structure 的 hideWindowAndDoor 会触发 SDK 孤儿隐藏,
+    // 把草地/马路/周边底模藏掉(presets 注释明示)。
+    // 单层聚焦→显设备;多层/恢复全楼层→藏设备减压(仅配方层,模态显隐是唯一写入方不受影响)。
+    const isFocusSingle = storyIds.length === 1;
+    s.patchStructural({
+      visibleStories: storyIds.length ? storyIds : null,
+      detailLevel: 'full',
+      hideDevices: !isFocusSingle,
+    });
     if (flyToFirst) await sdk.fly(storyIds[0]);
   });
 }

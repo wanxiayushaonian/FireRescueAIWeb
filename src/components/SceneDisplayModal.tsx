@@ -162,7 +162,10 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
     });
     writeLevel(next);
   };
-  const resetLevel = (): void => writeLevel({});
+  // 重置写该层级"全量默认表"而非空对象:engine 对空表不发任何 show/hide,
+  // 旧配置会在 SDK 里继续生效,而 UI 已回落默认显示(UI OFF / 实际 ON 脱节);
+  // 写全量表才能让 engine 立即按默认重放,渲染与开关回到一致。
+  const resetLevel = (): void => writeLevel(defaultVisibleByLevel(activeLevel));
   const toggleGroup = (key: string): void =>
     setExpandedGroups((s) => {
       const n = new Set(s);
@@ -419,7 +422,7 @@ export function SceneDisplayModal({ open, onOpenChange }: { open: boolean; onOpe
           <button
             onClick={resetLevel}
             className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-3 transition hover:border-line-glow hover:text-text-1"
-            title="清除当前层级的全部配置(恢复默认全显)"
+            title="恢复本层级的默认显隐配置(白名单)"
           >
             <RotateCcw className="h-3 w-3" />
             重置本层

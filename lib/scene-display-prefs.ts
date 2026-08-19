@@ -2,6 +2,7 @@
 // 模态框(SceneDisplayModal)是 categoryVisibility 的唯一写入方;
 // 场景加载/模块预设应用时(App.tsx)按当前 sceneId 回放,替代"加载完无条件自动隐藏"。
 import type { LayerLevel } from './scene-recipe/level-policy';
+import { defaultCategoryVisibilityByLevel } from './scene-categories';
 
 /** StructuralRecipe['categoryVisibility']:每层级一张 type→可见 表 */
 export type CategoryVisibilityMap = Partial<Record<LayerLevel, Record<string, boolean>>>;
@@ -46,4 +47,22 @@ export function saveSceneDisplayPrefs(sceneId: string, prefs: CategoryVisibility
   } catch {
     /* quota / privacy mode */
   }
+}
+
+/**
+ * 存档 + 层级默认表的合并结果(显隐回放一律用本函数,不用 loadSceneDisplayPrefs 裸值)。
+ * 背景:曾有多处以 `loadSceneDisplayPrefs(sceneId) ?? {}` 兜底 —— 无存档时把 App 初始化的
+ * 全量默认表抹成空表,engine 对空表不发任何 show/hide,而 setViewMode 的 resetAll 已把藏掉
+ * 的类别恢复显示,模态框 UI 却仍按白名单默认显示 OFF(UI OFF / 实际 ON 的脱节)。
+ * 语义:每层缺失的 type 用该层默认补齐,存档显式值优先;永不返回空层。
+ */
+export function effectiveDisplayPrefs(sceneId: string): Record<LayerLevel, Record<string, boolean>> {
+  const defaults = defaultCategoryVisibilityByLevel();
+  const saved = loadSceneDisplayPrefs(sceneId);
+  if (!saved) return defaults;
+  return {
+    whole: { ...defaults.whole, ...saved.whole },
+    single: { ...defaults.single, ...saved.single },
+    multi: { ...defaults.multi, ...saved.multi },
+  };
 }

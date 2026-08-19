@@ -7,6 +7,7 @@ import type { LayerApplyParams } from 'ustudio-sdk';
 import { RecipeStore } from '@/lib/scene-recipe/store';
 import { applyRecipe } from '@/lib/scene-recipe/engine';
 import { detectDesync, type SdkLayerState } from '@/lib/scene-recipe/desync';
+import { setGlobalRecipeStore } from '@/lib/scene-recipe/global-store';
 import type { RecipeRuntime } from '@/lib/scene-recipe/types';
 
 type View = 'loading' | 'ready' | 'error' | 'no-scene';
@@ -234,6 +235,9 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
           }
         })();
         sceneStateUnsubRef.current = sceneStateUnsub;
+        // 全局兜底引用:堵「场景就绪事件先于 React commit」窗口期命令总线/动作执行器
+        // 拿不到注入 store 的情况(见 lib/scene-recipe/global-store.ts)
+        setGlobalRecipeStore(store);
 
         setRecipeStore(store);
 
@@ -253,6 +257,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
       recipeUnsubRef.current = null;
       sceneStateUnsubRef.current?.();
       sceneStateUnsubRef.current = null;
+      setGlobalRecipeStore(null);
       setRecipeStore(null);
       // 注意：不在 cleanup 中 dispose runtime，因为我们要跨模块复用
       // 只有 sceneId 变化时才会 dispose 旧 runtime（在上面的 effect 中）
