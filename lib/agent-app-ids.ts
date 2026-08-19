@@ -32,6 +32,13 @@ export const GLOBAL_ASSISTANT_APP_ID = (process.env.NEXT_PUBLIC_GLOBAL_AGENT_APP
 export const DRILL_COMMANDER_APP_ID = (process.env.NEXT_PUBLIC_DRILL_COMMANDER_APP_ID ?? '').trim() || COMMANDER_APP_ID;
 
 /**
+ * 演练对抗·预案输出 agent app_id(对抗舱初步部署/动态调整)。
+ * 平台建「演练预案输出」应用后以 NEXT_PUBLIC_DRILL_PLANNER_APP_ID 注入;
+ * 未配回退演练指挥 app(再回退通用)。
+ */
+export const DRILL_PLANNER_APP_ID = (process.env.NEXT_PUBLIC_DRILL_PLANNER_APP_ID ?? '').trim() || DRILL_COMMANDER_APP_ID;
+
+/**
  * 实战指挥业务助手(辅助决策:力量调度/战术战法/处置要点 + GIS 派遣联动)。
  * 平台建「实战指挥·辅助决策」应用后以 NEXT_PUBLIC_COMMAND_APP_ID 注入,未配回退通用。
  */
