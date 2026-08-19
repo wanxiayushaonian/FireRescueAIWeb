@@ -171,6 +171,21 @@ export function subscribeNavPick(fn: () => void): () => void {
   return () => navPickListeners.delete(fn);
 }
 
+// ---- 自定义导航起点(信息卡「设为起点」;与两点导航拾取的 navStart 独立) ----
+// 「导航至此」默认起点=自动推定的大门;设了自定义起点后优先从该点出发,
+// 直到再次点击同对象取消 / 切换场景(树变化) / 清除路线。
+let customNavStart: NavPoint | null = null;
+
+export function getCustomNavStart(): NavPoint | null {
+  return customNavStart;
+}
+
+export function setCustomNavStart(point: NavPoint | null): void {
+  customNavStart = point;
+  // 复用拾取订阅通道通知 UI(信息卡按钮态/「清除路线」后同步)
+  navPickListeners.forEach((fn) => fn());
+}
+
 // 打点高亮跟踪:先清上一个再高亮新的(描边渲染常驻,累积会拖帧且视觉杂乱)
 let lastPickHighlight: string | null = null;
 
@@ -243,13 +258,19 @@ export interface NavEnd {
 /** 导航源:internal=场内端点(见 NavEnd);external=场外 WGS84 经纬度(经度在前)。 */
 type NavSource = NavEnd | { kind: 'external'; lonLat: { lon: number; lat: number } };
 
+/** 一次 navigateAndDraw 内部失败的原因(模块态;兜底文案拼接用,只透传最近一次) */
+let lastNavFailMessage: string | null = null;
+
 /** 两点导航:起点/终点打点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。
- * 端点优先用被点对象世界坐标(贴合点击位置),无坐标时回退 Space/Story 图节点。 */
+ * 端点优先用被点对象世界坐标(贴合点击位置),无坐标时回退 Space/Story 图节点。
+ * 坐标连图不可达(设备包围盒中心可能落在连通图外的墙/空间边缘)时,自动回退
+ * node_id 锚点重试一次——锚点是 kgraph 图内节点,可达性最稳。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
   start: NavPoint,
   end: NavPoint,
 ): Promise<DrawRouteResult> {
+  const label = `${start.name} → ${end.name}`;
   const poi: NavPoi = {
     start: start.outId ? runtime.getObjectWorldPosition(start.outId) : null,
     end: end.outId ? runtime.getObjectWorldPosition(end.outId) : null,
@@ -258,10 +279,15 @@ export async function navigateBetween(
     runtime,
     { nodeId: start.nodeId, position: start.position ?? null },
     { nodeId: end.nodeId, position: end.position ?? null },
-    `${start.name} → ${end.name}`,
+    label,
     poi,
   );
-  return r ?? { error: '两点间不可达(连通图目前覆盖 3F-38F 的室内点)' };
+  if (r) return r;
+  // 坐标端点不可达 → 双端都退回图节点锚点重试(端点贴合点击位置是优化,不是硬需求)
+  const r2 = await navigateAndDraw(runtime, { nodeId: start.nodeId }, { nodeId: end.nodeId }, label, poi);
+  if (r2) return r2;
+  const why = lastNavFailMessage ? `:${lastNavFailMessage}` : '(连通图目前覆盖 3F-38F 的室内点)';
+  return { error: `两点间不可达${why}` };
 }
 
 /**
@@ -283,7 +309,9 @@ export async function navigateFromOutside(
     label,
     poi,
   );
-  return r ?? { error: '场外到场内不可达(场景未配置 GIS 定位或目标不在连通图)' };
+  if (r) return r;
+  const why = lastNavFailMessage ? `:${lastNavFailMessage}` : '';
+  return { error: `场外到场内不可达${why || '(场景未配置 GIS 定位或目标不在连通图)'}` };
 }
 
 /** 端点 → SDK 导航入参:有坐标用 {x,y,z}(贴合点击点),否则 {node_id}(空间/楼层锚点)。 */
@@ -323,7 +351,11 @@ async function navigateAndDraw(
           source: navEndPayload(source),
           target: navEndPayload(target),
         });
-    if (!result || result.reachable !== true) return null;
+    if (!result || result.reachable !== true) {
+      lastNavFailMessage = result?.message ? String(result.message) : null;
+      return null;
+    }
+    lastNavFailMessage = null;
     if (result.path_id) navPathIds.add(result.path_id);
     const start = poi?.start ?? null;
     const end = poi?.end ?? null;
@@ -351,6 +383,7 @@ async function navigateAndDraw(
       distanceM: result.total_distance,
     };
   } catch {
+    lastNavFailMessage = 'SDK 调用异常';
     return null;
   }
 }
