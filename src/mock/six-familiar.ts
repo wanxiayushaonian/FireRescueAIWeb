@@ -128,7 +128,7 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
           '最后是内攻搜救与清理移交——本系统演练对抗模块即按此程序推演，可在熟悉完成后进入演练验证。',
           '已绘制进攻路线：首层出入口 → 防烟楼梯间 → 5F 火点目标——体会"以固为主"的展开路径。',
         ],
-        whole: true,
+        floorSpec: '1-5F',
         attackRoute: true,
         relatedNodeId: 'tactics-procedure',
       },
