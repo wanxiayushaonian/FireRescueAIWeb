@@ -33,25 +33,6 @@ export const BUILDINGS: DrillBuilding[] = [
 const wait = (min = 300, max = 800) =>
   new Promise<void>((r) => window.setTimeout(r, min + Math.random() * (max - min)));
 
-/** 拉取可选建筑列表（state 支持 loading/empty/error/ok 演示） */
-export async function fetchDrillBuildings(opts?: { state?: FetchState }): Promise<DrillBuilding[]> {
-  await wait();
-  if (opts?.state === 'error') throw new Error('mock error');
-  if (opts?.state === 'empty') return [];
-  return BUILDINGS;
-}
-
-/** 拉取指定建筑的楼层列表（切换建筑时联动刷新） */
-export async function fetchBuildingFloors(
-  buildingId: string,
-  opts?: { state?: FetchState },
-): Promise<string[]> {
-  await wait(200, 500);
-  if (opts?.state === 'error') throw new Error('mock error');
-  if (opts?.state === 'empty') return [];
-  return BUILDINGS.find((b) => b.id === buildingId)?.floors ?? [];
-}
-
 export interface EmergencyEvent {
   id: string;
   text: string;
@@ -150,4 +131,103 @@ export function evaluatePlan(emergencyCount: number, evaluatedCount: number): Ev
         ],
     archived: pass,
   };
+}
+
+// ============================================================
+// 方案 B — znya 真实建筑接线（覆写 fetchDrillBuildings / fetchBuildingFloors）
+// 通过 @/api/key-buildings 的 fetchKeyBuildings 获取列表，
+// 用 fetchKeyBuildingDetail(id) 的 ground_floors/underground_floors 生成楼层。
+// ============================================================
+import { fetchKeyBuildings, fetchKeyBuildingDetail } from '@/api/key-buildings';
+
+const ZNYA_BUILDINGS_CACHE_KEY = 'firerescue:znya-drill-buildings';
+
+interface CachedZnyaBuildings {
+  ts: number;
+  buildings: DrillBuilding[];
+}
+
+let znyaCache: DrillBuilding[] | null = null;
+let znyaLoading = false;
+
+/** 从 znya detail 数据生成楼层列表 (B2…32F) */
+function floorsFromDetail(ground: number, underground: number): string[] {
+  return makeFloors(ground, underground);
+}
+
+/** 确保缓存已就绪（返回 Promise，可重复调用） */
+async function ensureZnyaCache(): Promise<DrillBuilding[]> {
+  if (znyaCache) return znyaCache;
+  if (znyaLoading) {
+    // 等待已有加载完成
+    await new Promise<void>((resolve) => {
+      const check = setInterval(() => {
+        if (!znyaLoading || znyaCache) { clearInterval(check); resolve(); }
+      }, 50);
+    });
+    return znyaCache ?? [];
+  }
+  znyaLoading = true;
+
+  try {
+    const list = await fetchKeyBuildings();
+    // 先拿列表快速入列，detail 后续追加楼层
+    const result: DrillBuilding[] = list.map((b) => ({
+      id: String(b.id),
+      name: b.name,
+      floors: [], // 占位，detail 回来后再更新
+    }));
+
+    // 异步拉取详情补全楼层（fire-and-forget）
+    void Promise.allSettled(
+      list.map(async (b) => {
+        try {
+          const detail = await fetchKeyBuildingDetail(String(b.id));
+          return { id: String(b.id), floors: floorsFromDetail(detail.ground_floors ?? 10, detail.underground_floors ?? 1) };
+        } catch {
+          // fallback：默认 10 地上 1 地下
+          return { id: String(b.id), floors: makeFloors(10, 1) };
+        }
+      }),
+    ).then((results) => {
+      for (const res of results) {
+        if (res.status === 'fulfilled') {
+          const cached = znyaCache;
+          if (cached) {
+            const item = cached.find((x) => x.id === res.value.id);
+            if (item) item.floors = res.value.floors;
+          }
+        }
+      }
+      znyaCache = znyaCache ?? list.map((b) => ({ id: String(b.id), name: b.name, floors: [] }));
+      znyaLoading = false;
+    });
+
+    znyaCache = result;
+    znyaLoading = false;
+    return znyaCache;
+  } catch {
+    znyaCache = [];
+    znyaLoading = false;
+    return [];
+  }
+}
+
+/** 拉取可选建筑列表（方案 B：znya 真实建筑） */
+export async function fetchDrillBuildings(opts?: { state?: FetchState }): Promise<DrillBuilding[]> {
+  if (opts?.state === 'error') throw new Error('mock error');
+  if (opts?.state === 'empty') return [];
+  if (opts?.state === 'loading') return []; // caller 显示 skeleton
+  return ensureZnyaCache();
+}
+
+/** 拉取指定建筑的楼层列表（znya 实时/detail 已缓存） */
+export async function fetchBuildingFloors(
+  buildingId: string,
+  opts?: { state?: FetchState },
+): Promise<string[]> {
+  if (opts?.state === 'error') throw new Error('mock error');
+  if (opts?.state === 'empty') return [];
+  await ensureZnyaCache();
+  return znyaCache?.find((b) => b.id === buildingId)?.floors ?? [];
 }
