@@ -12,9 +12,13 @@ import RecommendPanel from '@/components/command/RecommendPanel';
 import VideoPlaybackPanel from '@/components/command/VideoPlaybackPanel';
 import TacticalOverlay from '@/components/command/TacticalOverlay';
 import CommandIntelPanel from '@/components/command/CommandIntelPanel';
+import IncidentZoneOverlay from '@/components/command/IncidentZoneOverlay';
+import IncidentTimeline from '@/components/command/IncidentTimeline';
 import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
+import { recordCaseEvent } from '@/lib/case-timeline';
+import { compressDuration, interpolateOnPolyline, type LatLng } from '@/lib/gis/vehicle-anim';
 import {
   connect, disconnect, getSnapshot, injectIncident, setRecommendationStatus, subscribe,
 } from '@/mock/liveChannel';
@@ -40,12 +44,14 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   const [intelOpen, setIntelOpen] = useState(true);
   const [varsPanelOpen, setVarsPanelOpen] = useState(true);
   const [recPanelOpen, setRecPanelOpen] = useState(true);
+  const [timelineOpen, setTimelineOpen] = useState(true);
   const [videoOpen, setVideoOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
   const timersRef = useRef<number[]>([]);
   const selectedIdRef = useRef<string | null>(null);
   // 真实模式:fetchIncidents(incidents DB)→ adapter → 面板格式;mock 模式走 liveChannel 状态机
-  const [mode, setMode] = useState<'real' | 'mock'>('real');
+  // (2026-08-20 用户裁定:mock 主线演示,不对接业务库——默认模拟演练)
+  const [mode, setMode] = useState<'real' | 'mock'>('mock');
   const [realIncidents, setRealIncidents] = useState<MockIncident[]>([]);
   const [analysisSummary, setAnalysisSummary] = useState<BuildingAnalysisSummary | null>(null);
   const [dispatchRoutes, setDispatchRoutes] = useState<RouteRenderItem[]>([]);
@@ -53,11 +59,12 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   // GIS 底图实例(RealGisMap onMapReady 注入,供战术推演层投影)
   const [gisMap, setGisMap] = useState<L.Map | null>(null);
 
-  // 事件处理：Toast + 场景动作日志（source=面板/预案引擎）
+  // 事件处理：Toast + 场景动作日志 + 案卷时间轴转录（liveChannel 状态机的演进即案件时间线）
   const handleEvents = useCallback((events: LiveEvent[]) => {
     for (const ev of events) {
       if (ev.kind === 'status') {
         showToast(`${ev.incident.id} 状态更新：${ev.to} · 演示数据`);
+        recordCaseEvent(ev.incident.id, 'status', `状态推进:${ev.from} → ${ev.to}`, ev.incident.address);
         if (ev.to === '到场') {
           addSceneAction({
             action: 'highlight',
@@ -78,6 +85,11 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           ev.trapped === 0
             ? `${ev.incidentId} 被困人员已全部救出 · 演示数据`
             : `${ev.incidentId} 救援进展：成功救出 1 人，剩余 ${ev.trapped} 人 · 演示数据`,
+        );
+        recordCaseEvent(
+          ev.incidentId,
+          'rescue',
+          ev.trapped === 0 ? '被困人员全部救出' : `救出 1 人,剩余 ${ev.trapped} 人`,
         );
       }
     }
@@ -158,12 +170,20 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       action: 'addMarker', target: `警情定位 ${inc.id}：${inc.address}`,
       params: { lng: inc.lng, lat: inc.lat, incidentId: inc.id }, source: '面板',
     });
-    // 真实模式:fetchAiDispatch 真实派遣路线(画线)+ fetchBuildingAnalysis 响应摘要
-    if (mode === 'real' && Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
+    // 案域聚焦:直接飞案件中心(案域三圈由 IncidentZoneOverlay 绘制),并自动开案域相关图层
+    // (警情模块的核心对象是"这一起案",与态势总览的全市一张图形成分工)
+    if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
+      gisMap?.flyTo([inc.lat, inc.lng], Math.max(gisMap.getZoom(), 14), { duration: 0.8 });
+      window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'water', on: true } }));
+      window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'stations', on: true } }));
+    }
+    recordCaseEvent(inc.id, 'manual', `选定案件 ${inc.id}`, `${inc.address} · ${inc.type} · ${inc.status}`);
+    // AI 派遣路线(两模式共用:mock 警情同样取真实多站路线画线+车动,警情数据本身才是 mock)
+    if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
       dispatchingRef.current = id;
       Promise.all([
         fetchAiDispatch({ name: inc.address, lng: inc.lng, lat: inc.lat }).then((r) => r.routes).catch(() => [] as RouteRenderItem[]),
-        fetchBuildingAnalysis(inc.lng, inc.lat).catch(() => null),
+        mode === 'real' ? fetchBuildingAnalysis(inc.lng, inc.lat).catch(() => null) : Promise.resolve(null),
       ]).then(([routes, summary]) => {
         if (dispatchingRef.current !== id) return; // 已切到别的警情,丢弃过期结果
         setDispatchRoutes(routes);
@@ -174,10 +194,79 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
             // source='智能体'(非'面板')→ use-scene-bridge 消费 showRoute + renderRoutes 画线
             params: { routes, incidentId: inc.id }, source: '智能体',
           });
+          recordCaseEvent(
+            inc.id, 'dispatch',
+            `AI 派遣 ${routes.length} 站联动`,
+            routes.map((r) => `${r.stationName ?? '站点'} ${r.duration ? Math.round(r.duration / 60) + 'min' : '?'}`).join(' · '),
+          );
         }
       });
     }
-  }, [mode, realIncidents, onIncidentSelect]);
+  }, [mode, realIncidents, onIncidentSelect, gisMap]);
+
+  // 车辆行进动画:派遣路线就绪后,每条路线一个车标按真实 ETA 压缩行进(演示节奏
+  // 1min真实=6s演示,夹 20-50s),到案点记"到场"时间轴节点。切案/卸载/换路线清理。
+  const vehiclesRef = useRef<{ markers: Array<{ remove: () => void }>; raf: number | null }>({ markers: [], raf: null });
+  useEffect(() => {
+    const { markers, raf } = vehiclesRef.current;
+    for (const m of markers) m.remove();
+    if (raf != null) cancelAnimationFrame(raf);
+    vehiclesRef.current = { markers: [], raf: null };
+    if (!gisMap || !selectedId || dispatchRoutes.length === 0) return;
+    const leaflet = require('leaflet') as typeof import('leaflet');
+
+    const anims = dispatchRoutes.map((r) => {
+      const station = r.stationName ?? '站点';
+      const marker = leaflet
+        .marker(r.polyline[0] as [number, number], {
+          zIndexOffset: 900,
+          icon: leaflet.divIcon({
+            className: '',
+            html: `<div style="display:flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;background:rgba(10,26,38,.85);border:1px solid #22d3ee66;font-size:10px;color:#e2f3f8;white-space:nowrap;transform:translate(-50%,-50%)">🚒 ${station} 途中</div>`,
+            iconSize: [0, 0],
+          }),
+        })
+        .addTo(gisMap);
+      return {
+        marker,
+        station,
+        polyline: r.polyline as LatLng[],
+        durationMs: compressDuration(r.duration),
+        done: false,
+      };
+    });
+    vehiclesRef.current.markers = anims.map((a) => a.marker);
+
+    const t0 = performance.now();
+    const tick = (now: number): void => {
+      let allDone = true;
+      for (const a of anims) {
+        const p = Math.min(1, (now - t0) / a.durationMs);
+        if (p < 1) allDone = false;
+        const pos = interpolateOnPolyline(a.polyline, p);
+        if (pos) (a.marker as unknown as { setLatLng: (p2: [number, number]) => void }).setLatLng(pos);
+        if (p >= 1 && !a.done) {
+          a.done = true;
+          (a.marker as unknown as { setIcon: (i: unknown) => void }).setIcon(
+            leaflet.divIcon({
+              className: '',
+              html: `<div style="display:flex;align-items:center;gap:3px;padding:2px 6px;border-radius:999px;background:rgba(10,26,38,.85);border:1px solid #34d39988;font-size:10px;color:#d5f5e3;white-space:nowrap;transform:translate(-50%,-50%)">✓ ${a.station} 到场</div>`,
+              iconSize: [0, 0],
+            }),
+          );
+          recordCaseEvent(selectedId, 'arrival', `${a.station} 车组到场`);
+        }
+      }
+      if (!allDone) vehiclesRef.current.raf = requestAnimationFrame(tick);
+    };
+    vehiclesRef.current.raf = requestAnimationFrame(tick);
+    return () => {
+      const v = vehiclesRef.current;
+      if (v.raf != null) cancelAnimationFrame(v.raf);
+      for (const m of v.markers) m.remove();
+      vehiclesRef.current = { markers: [], raf: null };
+    };
+  }, [gisMap, selectedId, dispatchRoutes]);
 
   // 模拟新警情接入：1s 内顶部插入（先 toast，再入列）
   const handleInject = useCallback(() => {
@@ -243,6 +332,9 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       <div className="pointer-events-auto absolute inset-0">
         <RealGisMap initialLayers={{ incidents: true }} onMapReady={setGisMap} />
       </div>
+
+      {/* 案域圈层:选中警情的三级作战域(500m 警戒/1.5km 作战/3km 支援) */}
+      <IncidentZoneOverlay map={gisMap} incident={selected ? { lng: selected.lng, lat: selected.lat } : null} />
 
       {/* 战术推演层：蔓延圈 / 力量部署 / 进攻路线（真实地图投影，跟随 pan/zoom，pointer-events-none 不影响底图交互） */}
       <TacticalOverlay
@@ -406,6 +498,22 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           onFlushImprovement={handleFlushImprovement}
           onExportReport={handleExportReport}
         />
+      </DraggablePanel>
+
+      {/* 处置时间轴:选中案件的动作流水(选定/状态/派遣/到场/救援)——案卷的骨架,
+          与态势总览"全市一张图"分工:本模块以时间为轴管单案 */}
+      <DraggablePanel
+        panelId="command-timeline"
+        title={selected ? `处置时间轴 · ${selected.id}` : '处置时间轴'}
+        icon={GaugeCircle}
+        width={280}
+        dock="right"
+        defaultPos={{ x: 432, y: 332 }}
+        height="calc(100% - 348px)"
+        open={timelineOpen}
+        onOpenChange={setTimelineOpen}
+      >
+        <IncidentTimeline incidentId={selectedId} />
       </DraggablePanel>
 
       {/* 预案库（默认关闭；战后评估改进措施回流 / 正式预案建档可查） */}

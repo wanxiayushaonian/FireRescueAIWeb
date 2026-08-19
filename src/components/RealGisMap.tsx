@@ -86,6 +86,19 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
   const [showIncidents, setShowIncidents] = useState(initialLayers?.incidents ?? false);
   const [showBuildings, setShowBuildings] = useState(initialLayers?.buildings ?? false);
   const [showRegions, setShowRegions] = useState(initialLayers?.regions ?? false);
+  // 外部图层开关(实战指挥案域聚焦用:选中警情自动开 water/stations——总览无人发此事件,零影响)
+  useEffect(() => {
+    const onSetLayer = (e: Event): void => {
+      const d = (e as CustomEvent<{ layer: string; on: boolean }>).detail;
+      if (!d?.layer || typeof d.on !== 'boolean') return;
+      if (d.layer === 'water') setShowWater(d.on);
+      else if (d.layer === 'stations') setShowStations(d.on);
+      else if (d.layer === 'buildings') setShowBuildings(d.on);
+      else if (d.layer === 'keyUnits') setShowKeyUnits(d.on);
+    };
+    window.addEventListener('gis:set-layer', onSetLayer);
+    return () => window.removeEventListener('gis:set-layer', onSetLayer);
+  }, []);
   const [showIncidentResponse, setShowIncidentResponse] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
