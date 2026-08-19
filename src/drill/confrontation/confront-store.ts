@@ -70,7 +70,7 @@ type Listener = (s: ConfrontationState) => void;
 const listeners = new Set<Listener>();
 
 function emit(): void {
-  for (const fn of listeners) fn(conf);
+  for (const fn of listeners) fn(cloneState(conf));
 }
 
 function genId(prefix: string): string {
