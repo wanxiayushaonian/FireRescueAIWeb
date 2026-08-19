@@ -1,25 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft,
   Bot,
-  CarFront,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
   Download,
   Flag,
-  Radio,
   RefreshCcw,
   Route,
   Stamp,
-  Swords,
   UserCheck,
 } from 'lucide-react';
-import type { LucideIcon } from 'lucide-react';
 import type { ExamPost, ExamQuestion, ExamResult, ExamSession, SubmitExamInput } from '@/mock/training';
 import {
-  EXAM_POSTS,
   fetchExamPaper,
   findNode,
   getTourSuggestion,
@@ -32,14 +28,7 @@ import { addSceneAction } from '@/mock/sceneLog';
 import DemoTag from '@/components/DemoTag';
 import { showToast } from '@/components/Toast';
 
-const POST_ICON: Record<ExamPost, LucideIcon> = {
-  commander: Flag,
-  fighter: Swords,
-  driver: CarFront,
-  signaler: Radio,
-};
-
-type Step = 'post' | 'quiz' | 'result';
+type Step = 'quiz' | 'result';
 
 interface Choice {
   chosen: number[];
@@ -52,23 +41,20 @@ export interface ExamViewProps {
   onRequestAgentHint?: (topic: string) => void;
 }
 
-/** 二级界面：岗位考核（选择岗位 → 在线考核 → 成绩回顾） */
+/** 二级界面:综合考核(2026-08-19 简化:不带岗位,混编 mock 题库 → 在线考核 → 成绩展示)。
+ *  Portal 到 body + z-[80]:覆盖 App 层场景切换器等浮层(此前考核页左上角露出场景包下拉框)。 */
 export default function ExamView({ onBack, onRequestAgentHint }: ExamViewProps) {
-  const [step, setStep] = useState<Step>('post');
-  const [post, setPost] = useState<ExamPost | null>(null);
+  const [step, setStep] = useState<Step>('quiz');
   const [submitInput, setSubmitInput] = useState<SubmitExamInput | null>(null);
+  /** 重开一局:变更 key 强制 QuizRunner 重挂载取新卷 */
+  const [round, setRound] = useState(0);
 
-  const enterQuiz = (p: ExamPost) => {
-    setPost(p);
-    window.setTimeout(() => setStep('quiz'), 300);
-  };
-
-  return (
+  return createPortal(
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="scene-grid-weak absolute inset-0 z-50 flex flex-col bg-bg-deep"
+      className="scene-grid-weak fixed inset-0 z-[80] flex flex-col bg-bg-deep"
     >
       {/* 顶部返回条 */}
       <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-bg-panel/90 px-3 backdrop-blur-[8px]">
@@ -79,10 +65,10 @@ export default function ExamView({ onBack, onRequestAgentHint }: ExamViewProps) 
           <ArrowLeft className="h-3.5 w-3.5" />
           返回熟悉
         </button>
-        <span className="text-[15px] font-bold text-text-1">熟悉考核 · 岗位考核</span>
+        <span className="text-[15px] font-bold text-text-1">熟悉考核 · 综合考核</span>
         <DemoTag />
         <div className="ml-auto flex items-center gap-1.5">
-          {(['post', 'quiz', 'result'] as Step[]).map((s, i) => (
+          {(['quiz', 'result'] as Step[]).map((s, i) => (
             <span key={s} className="flex items-center gap-1.5">
               <span
                 className={`rounded-full border px-2 py-0.5 text-[12px] ${
@@ -91,19 +77,19 @@ export default function ExamView({ onBack, onRequestAgentHint }: ExamViewProps) 
                     : 'border-line text-text-3'
                 }`}
               >
-                {['① 选择岗位', '② 在线考核', '③ 成绩回顾'][i]}
+                {['① 在线考核', '② 成绩展示'][i]}
               </span>
-              {i < 2 && <ChevronRight className="h-3 w-3 text-text-3" />}
+              {i < 1 && <ChevronRight className="h-3 w-3 text-text-3" />}
             </span>
           ))}
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
-        {step === 'post' && <PostSelect onStart={enterQuiz} />}
-        {step === 'quiz' && post && (
+        {step === 'quiz' && (
           <QuizRunner
-            post={post}
+            key={round}
+            post="mixed"
             onSubmit={(input) => {
               setSubmitInput(input);
               setStep('result');
@@ -115,54 +101,17 @@ export default function ExamView({ onBack, onRequestAgentHint }: ExamViewProps) 
           <ResultReview
             key={submitInput.startedAt}
             input={submitInput}
-            onRestart={() => setStep('post')}
+            onRestart={() => {
+              setSubmitInput(null);
+              setRound((r) => r + 1);
+              setStep('quiz');
+            }}
             onBack={onBack}
           />
         )}
       </div>
-    </motion.div>
-  );
-}
-
-// ---------- 步骤一：岗位选择 ----------
-
-function PostSelect({ onStart }: { onStart: (p: ExamPost) => void }) {
-  return (
-    <div className="flex h-full items-center justify-center p-6">
-      <div className="grid grid-cols-2 gap-4">
-        {EXAM_POSTS.map((p, i) => {
-          const Icon = POST_ICON[p.post];
-          return (
-            <motion.div
-              key={p.post}
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1, duration: 0.3 }}
-              whileHover={{ y: -4 }}
-              whileTap={{ scale: 0.97 }}
-              className="flex h-[140px] w-[240px] flex-col rounded-lg border border-line bg-bg-panel/90 p-3 shadow-xl backdrop-blur-[8px] transition-shadow hover:shadow-[0_0_20px_rgba(34,211,238,.25)]"
-            >
-              <div className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-bg-panel-2">
-                  <Icon className="h-4 w-4 text-cyan" />
-                </span>
-                <span className="text-[16px] font-bold text-text-1">{p.name}</span>
-                <span className="ml-auto rounded-full border border-line px-1.5 py-px font-num text-[11px] text-text-3">
-                  {p.questionCount} 题 · {p.durationMin} 分钟
-                </span>
-              </div>
-              <div className="mt-2 text-[12px] text-text-3">考核侧重点：{p.focus}</div>
-              <button
-                onClick={() => onStart(p.post)}
-                className="mt-auto h-8 rounded-md border border-cyan/60 text-[13px] text-cyan transition hover:bg-cyan/10 hover:shadow-[0_0_10px_rgba(34,211,238,.35)]"
-              >
-                开始考核
-              </button>
-            </motion.div>
-          );
-        })}
-      </div>
-    </div>
+    </motion.div>,
+    document.body,
   );
 }
 

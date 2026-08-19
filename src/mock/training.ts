@@ -22,7 +22,7 @@ export interface FamiliarNode {
   lat?: number;
 }
 
-export type ExamPost = 'commander' | 'fighter' | 'driver' | 'signaler'; // 指挥员/战斗员/驾驶员/通信员
+export type ExamPost = 'commander' | 'fighter' | 'driver' | 'signaler' | 'mixed'; // 指挥员/战斗员/驾驶员/通信员;mixed=综合考核(跨岗位混编)
 
 export interface ExamQuestion {
   id: string;
@@ -504,6 +504,7 @@ export const EXAM_BANK: Record<ExamPost, ExamQuestion[]> = {
   fighter: BANK_FIGHTER,
   driver: BANK_DRIVER,
   signaler: BANK_SIGNALER,
+  mixed: [], // 占位:fetchExamPaper 对 mixed 走四库混编,不读本键
 };
 
 export const EXAM_POSTS: Array<{
@@ -517,6 +518,7 @@ export const EXAM_POSTS: Array<{
   { post: 'fighter', name: '战斗员', focus: '灭火进攻 · 设施操作', questionCount: 10, durationMin: 10 },
   { post: 'driver', name: '驾驶员', focus: '车辆停靠 · 供水保障', questionCount: 10, durationMin: 10 },
   { post: 'signaler', name: '通信员', focus: '通信联络 · 信息报送', questionCount: 10, durationMin: 10 },
+  { post: 'mixed', name: '综合考核', focus: '六熟悉全范围(跨岗位混编)', questionCount: 10, durationMin: 10 },
 ];
 
 export function postNameOf(post: ExamPost): string {
@@ -540,12 +542,14 @@ export async function fetchFamiliarNodes(opts: FetchOptions = {}): Promise<Famil
   return FAMILIAR_NODES;
 }
 
-/** 按岗位从题库随机抽 10 题组卷 */
+/** 按岗位从题库随机抽 10 题组卷;mixed=四个岗位题库合并混编(不带岗位的综合考核) */
 export async function fetchExamPaper(post: ExamPost, opts: FetchOptions = {}): Promise<ExamQuestion[]> {
   await delay();
   checkState(opts);
   if (opts.state === 'empty') return [];
-  const bank = [...EXAM_BANK[post]];
+  const bank = post === 'mixed'
+    ? [...EXAM_BANK.commander, ...EXAM_BANK.fighter, ...EXAM_BANK.driver, ...EXAM_BANK.signaler]
+    : [...EXAM_BANK[post]];
   // 洗牌抽 10 题
   for (let i = bank.length - 1; i > 0; i -= 1) {
     const j = Math.floor(Math.random() * (i + 1));
