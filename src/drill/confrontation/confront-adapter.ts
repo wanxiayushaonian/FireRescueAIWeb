@@ -6,7 +6,6 @@ import {
   parseAgentChatSSE,
   type PostAgentChatParams,
   type ToolCallEvent,
-  type AgentChatEvent,
 } from '@/lib/agent-chat-client';
 import { evaluateViaAgent } from '@/lib/agent-evaluate';
 import type { ConfrontationSeed } from './confront-store';
@@ -88,6 +87,7 @@ export class ConfrontAdapter {
   }
 
   private async run(content: string, ctx: AdapterCtx): Promise<ReadableStream<Uint8Array>> {
+    this.logger.debug('[confront-adapter] run', { appId: ctx.appId, buildingId: ctx.buildingId, sceneId: ctx.sceneId, drillId: ctx.drillId, contentLength: content.length });
     return this.postChat({
       content,
       app_id: ctx.appId,
@@ -196,6 +196,11 @@ export class ConfrontAdapter {
 
   /** 评估 agent:复用 lib/agent-evaluate.ts(失败返回 null,调用方降级)。 */
   async evaluateDrill(input: Parameters<typeof evaluateViaAgent>[0]): Promise<ReturnType<typeof evaluateViaAgent>> {
-    return evaluateViaAgent(input);
+    try {
+      return await evaluateViaAgent(input);
+    } catch (err) {
+      this.logger.warn('[confront-adapter] evaluateDrill 失败:', err);
+      return null;
+    }
   }
 }
