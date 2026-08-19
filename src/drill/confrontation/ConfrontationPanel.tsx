@@ -172,6 +172,8 @@ export default function ConfrontationPanel() {
     });
 
     driver.clearAll();
+
+    showToast(review.archived ? '对抗演练已归档' : '评估完成');
   };
 
   const jumpTo = (evt: ConfrontationEvent) => {
