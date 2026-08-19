@@ -19,6 +19,8 @@ export interface GuideStep {
   relatedNodeId?: string;
   /** 动态数据段落:组件拉 znya 真实数据拼装(市政水源/责任区单位/就近队站) */
   dynamic?: 'water' | 'units' | 'stations';
+  /** 进攻路线演示(处置程序步):出入口 → 着火层目标点绘制进攻路线(planAttackRoute) */
+  attackRoute?: boolean;
 }
 
 export interface GuideChapter {
@@ -47,7 +49,8 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
           '请观察当前整体场景中的周边道路与相邻建筑环境，建立方位感。',
         ],
         whole: true,
-        relatedNodeId: 'fc-outdoor-hydrant',
+        highlightTypes: ['SceneInOut'],
+        relatedNodeId: 'area-roads',
       },
       {
         id: 'ch1-s2',
@@ -57,6 +60,8 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
         ],
         dynamic: 'water',
         whole: true,
+        highlightTypes: ['OutdoorFireHydrant'],
+        relatedNodeId: 'area-water',
       },
       {
         id: 'ch1-s3',
@@ -66,6 +71,7 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
           '水泵接合器 4 组设于建筑南立面（消火栓系统与喷淋系统各 2 组），距室外消火栓 15-40m，并有分区标识。',
           '火场供水时优先利用固定设施：内部消火栓出水、水泵接合器补压、消防车抢占室外栓取水。',
         ],
+        floorSpec: 'B1',
         relatedNodeId: 'fc-pool',
       },
     ],
@@ -82,6 +88,7 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
         narration: ['以下为本责任区重点单位的真实分类统计（znya key_units），按类型与分布掌握总体格局。'],
         dynamic: 'units',
         whole: true,
+        relatedNodeId: 'area-units',
       },
       {
         id: 'ch2-s2',
@@ -91,6 +98,7 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
           '其火灾特点是：垂直蔓延快、疏散路径长、供水压力大——熟悉与处置均须围绕这三个特点展开。',
         ],
         whole: true,
+        relatedNodeId: 'area-building-role',
       },
     ],
   },
@@ -106,8 +114,10 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
         narration: [
           '本建筑主要灾害类型：电气火灾（主导风险，商务办公设备密集）、餐饮燃气泄漏、地下车库汽车火灾。',
           '电气火灾处置要点：先断电、后灭火，防止触电与复燃；燃气泄漏要点：切断气源、禁绝火源、自然通风扩散。',
+          '已聚焦 5F（电气火灾主战场）——结合竖井位置理解烟囱效应蔓延路径。',
         ],
-        whole: true,
+        floorSpec: '5F',
+        relatedNodeId: 'hazard-types',
       },
       {
         id: 'ch3-s2',
@@ -116,8 +126,11 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
           '基本程序：接警调度 → 途中部署（预先明确进攻路线与阵地）→ 到场侦察（消防控制室询情+外部观察）。',
           '展开阶段坚持"以固为主、固移结合"：优先启用室内消火栓、防排烟与消防电梯等固定设施。',
           '最后是内攻搜救与清理移交——本系统演练对抗模块即按此程序推演，可在熟悉完成后进入演练验证。',
+          '已绘制进攻路线：首层出入口 → 防烟楼梯间 → 5F 火点目标——体会"以固为主"的展开路径。',
         ],
         whole: true,
+        attackRoute: true,
+        relatedNodeId: 'tactics-procedure',
       },
     ],
   },
@@ -258,6 +271,7 @@ export const SIX_FAMILIAR_CHAPTERS: GuideChapter[] = [
         narration: ['以下为本建筑就近的真实执勤队站（znya fire_stations），与单位微型消防站构成第一响应梯队。'],
         dynamic: 'stations',
         whole: true,
+        relatedNodeId: 'org-structure',
       },
       {
         id: 'ch6-s2',

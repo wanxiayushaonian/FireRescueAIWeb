@@ -11,6 +11,7 @@ import {
 import { useScene } from '@/components/SceneProvider';
 import { storyIdsForFloorSpec, parseFloorSpec, parseFloorToken } from '@/lib/floor-focus';
 import { buildDeviceSearchIndex } from '@/lib/scene-pick';
+import { planAttackRoute, drawAttackRoute, clearSceneRoutes } from '@/lib/scene-navigation';
 import { presets } from '@/lib/scene-recipe/presets';
 import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
 import { fetchWaterSourcesInBbox } from '@/api/water';
@@ -148,6 +149,26 @@ export default function SixFamiliarGuide({
       if (runtime && initialView) {
         void runtime.setCameraViewpoint(initialView, true).catch(() => {});
       }
+      // 整体视角下的类型高亮(2026-08-19 前三章联动:出入口/室外消火栓等场景包室外对象)
+      if (step.highlightTypes?.length && runtime) {
+        const hits = deviceIndex.filter((d) => step.highlightTypes!.includes(d.type)).slice(0, 12);
+        for (const h of hits) runtime.highlightObject(h.outId, '#22d3ee');
+        if (hits.length === 0) showToast(`场景中未找到 ${step.highlightTypes.join('/')} 类型对象,无法高亮`);
+      }
+      // 进攻路线演示(处置程序步):首层出入口 → 5F 室内消火栓(着火层目标点)
+      if (step.attackRoute && runtime && tree) {
+        const target = deviceIndex.find(
+          (d) => d.type === 'IndoorFireHydrant' && parseFloorToken(d.storyLabel ?? '') === 5,
+        );
+        const plan = target ? planAttackRoute(tree, target.outId) : null;
+        if (plan) {
+          void drawAttackRoute(runtime, plan).then((r) => {
+            if (!r) showToast('进攻路线绘制失败:无可用路径');
+          });
+        } else {
+          showToast('进攻路线规划失败:未找到 5F 室内消火栓目标点');
+        }
+      }
       return;
     }
     if (step.floorSpec && tree) {
@@ -201,6 +222,7 @@ export default function SixFamiliarGuide({
 
   const goStep = (chapterIdx: number, stepIdx: number): void => {
     runtime?.clearAllHighlight();
+    clearSceneRoutes(runtime); // 进攻路线演示步离开即清除
     const next = { ...progress, chapterIdx, stepIdx };
     setProgress(next);
     saveGuideProgress(next);
@@ -304,6 +326,7 @@ export default function SixFamiliarGuide({
             {step.whole && <Badge>整体视角</Badge>}
             {step.floorSpec && <Badge accent>已聚焦 {step.floorSpec}</Badge>}
             {step.highlightTypes?.length ? <Badge accent>高亮 {step.highlightTypes.length} 类设施</Badge> : null}
+            {step.attackRoute && <Badge accent>进攻路线已绘制</Badge>}
             {step.dynamic && <Badge>znya 实时数据</Badge>}
           </div>
 

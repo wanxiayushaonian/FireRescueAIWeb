@@ -10,11 +10,12 @@
  * - 对抗舱(全屏 Portal)
  * - 顶部 DrillToolbar
  */
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useScene } from '@/components/SceneProvider';
 import { DrillToolbar } from '@/drill/DrillToolbar';
 import ConfrontationPanel from '@/drill/confrontation/ConfrontationPanel';
 import { beginConfrontation } from '@/drill/confrontation/confront-store';
+import { subscribeConfrontation } from '@/drill/confrontation/confront-store';
 import type { Speed } from '@/lib/drill/timeline-engine';
 import {
   DEFAULT_SCENARIO_ID,
@@ -41,8 +42,18 @@ export default function DrillView() {
   const activeScenario: DrillScenarioDef =
     getScenario(selectedScenarioId) ?? getDefaultScenario();
 
-  // ---- 对抗舱开关 ----
+  // ---- 对抗舱开关 + 订阅 store，store.active 翻转为 false 时清理 ----
   const [confOpen, setConfOpen] = useState(false);
+  const confOpenRef = useRef(confOpen);
+  confOpenRef.current = confOpen;
+  useEffect(() => {
+    const unsub = subscribeConfrontation((s) => {
+      if (!s.active && confOpenRef.current) {
+        setConfOpen(false);
+      }
+    });
+    return unsub;
+  }, []);
 
   // ---- 显示状态(旧引擎兼容占位，对抗模式不使用) ----
   const [clock, setClock] = useState(0);

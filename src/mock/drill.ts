@@ -140,13 +140,6 @@ export function evaluatePlan(emergencyCount: number, evaluatedCount: number): Ev
 // ============================================================
 import { fetchKeyBuildings, fetchKeyBuildingDetail } from '@/api/key-buildings';
 
-const ZNYA_BUILDINGS_CACHE_KEY = 'firerescue:znya-drill-buildings';
-
-interface CachedZnyaBuildings {
-  ts: number;
-  buildings: DrillBuilding[];
-}
-
 let znyaCache: DrillBuilding[] | null = null;
 let znyaLoading = false;
 
