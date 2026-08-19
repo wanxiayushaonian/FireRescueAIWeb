@@ -443,10 +443,16 @@ export default function PlanOutputPanel() {
           <button
             onClick={handleEvaluate}
             disabled={!doneRevealing || evaluating}
+            title={doneRevealing ? undefined : '需先生成灾情设定并等预案输出完毕,才能评估'}
             className="flex h-8 items-center gap-1.5 rounded-md border border-cyan/60 px-2.5 text-[12px] text-cyan transition hover:bg-cyan/10 hover:shadow-[0_0_10px_rgba(34,211,238,.35)] disabled:opacity-40"
           >
             <ClipboardCheck className="h-3.5 w-3.5" />{evaluating ? '评估中…' : '预案评估'}
           </button>
+          {!doneRevealing && (
+            <span className="text-[10px] leading-tight text-text-3/70">
+              先「生成灾情设定」产出预案后可评估
+            </span>
+          )}
           <span className="ml-auto text-[11px] text-text-3">演示数据</span>
         </div>
       </div>
