@@ -8,13 +8,13 @@
  * 读 three 拾取结果但不改引擎状态(AGENTS.md 灰色区许可);动作全部走 SDK/runtime。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Crosshair, DoorOpen, Eye, Layers, Navigation, X } from 'lucide-react';
+import { Crosshair, DoorOpen, Eye, Layers, MapPin, Navigation, X } from 'lucide-react';
 import { useScene } from '@/components/SceneProvider';
 import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scene-pick';
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight, getCustomNavStart, setCustomNavStart, subscribeNavPick } from '@/lib/scene-navigation';
 import { gcj02ToWgs84 } from '@/lib/coord-transform';
 import { fetchKeyBuildings } from '@/api/key-buildings';
 import { showToast } from '@/components/Toast';
@@ -50,6 +50,16 @@ export default function SceneObjectInfoCard() {
   const { runtime, tree, view, recipeStore } = useScene();
   const [card, setCard] = useState<CardState | null>(null);
   const [props, setProps] = useState<PropsState>({ status: 'none' });
+  // 自定义起点的可见性(设/取消重渲染按钮态;真值在 scene-navigation 模块态)
+  const [customStartOutId, setCustomStartOutId] = useState<string | null>(null);
+  useEffect(() => {
+    // 切换场景树 → 旧起点的图节点已失效,清自定义起点(按钮态经订阅回调同步)
+    setCustomNavStart(null);
+  }, [tree]);
+  useEffect(
+    () => subscribeNavPick(() => setCustomStartOutId(getCustomNavStart()?.outId ?? null)),
+    [],
+  );
   const pickIndex = useMemo(() => buildPickIndex(tree), [tree]);
   const storyIndex = useMemo(() => buildOutIdToStoryIndex(tree), [tree]);
   // 桥仅用于楼层归属(子树树 id → 楼层);设备解析只用直接 id,避免合并网格误报
@@ -282,8 +292,49 @@ export default function SceneObjectInfoCard() {
       hideDevices: false,
     });
   };
+  /** 设/取消自定义导航起点(「导航至此」从该点出发,替代自动推定的大门)。 */
+  const toggleCustomStart = (): void => {
+    if (!runtime || !tree || !card) return;
+    if (getCustomNavStart()?.outId === card.node.outId) {
+      setCustomNavStart(null);
+      setCustomStartOutId(null);
+      showToast(`已取消起点(${card.node.name}),导航恢复从大门出发`);
+      return;
+    }
+    const pt = navNodeForOutId(tree, card.node.outId);
+    if (!pt) {
+      showToast('该对象未挂空间/楼层节点,无法作为起点');
+      return;
+    }
+    const start = { ...pt, outId: card.node.outId, position: runtime.getObjectWorldPosition(card.node.outId) };
+    setCustomNavStart(start);
+    setCustomStartOutId(card.node.outId);
+    showToast(`起点已设:${card.node.name}(「导航至此」将从这里出发;再点一次取消)`);
+  };
   const navigateTo = (): void => {
     if (!runtime || !tree) return;
+    const customStart = getCustomNavStart();
+    if (customStart) {
+      // 自定义起点 → 目标(与两点导航同链路:SDK kgraph 真实路径 + POI)
+      const plan = planAttackRoute(tree, card.node.outId);
+      const endNode = plan?.targetSpaceNodeId ?? plan?.targetStoryNodeId;
+      if (!endNode) {
+        showToast('该对象未挂空间/楼层节点,无法作为终点');
+        return;
+      }
+      void navigateBetween(runtime, customStart, {
+        name: card.node.name,
+        nodeId: endNode,
+        outId: card.node.outId,
+        position: runtime.getObjectWorldPosition(card.node.outId),
+      }).then((r) => {
+        showToast(
+          r.error
+            ?? `路径已生成:${customStart.name} → ${card.node.name}${typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : ''}`,
+        );
+      });
+      return;
+    }
     const plan = planAttackRoute(tree, card.node.outId);
     if (!plan) {
       showToast('无法规划路线(场景中未找到该对象)');
@@ -336,9 +387,9 @@ export default function SceneObjectInfoCard() {
     });
   };
 
-  // 卡片定位:光标右下,越界回拉(高度按属性区展开后的上界估计)
-  const W = 260;
-  const H = 340;
+  // 卡片定位:光标右下,越界回拉(高度按属性区展开 + 按钮区两行的上界估计)
+  const W = 280;
+  const H = 380;
   const x = Math.min(card.x + 14, Math.max(8, window.innerWidth - W - 8));
   const y = Math.min(card.y + 14, Math.max(8, window.innerHeight - H - 8));
 
@@ -389,32 +440,44 @@ export default function SceneObjectInfoCard() {
           {props.status === 'none' && <div className="py-1 text-[10px] text-text-3/60">暂无孪生属性</div>}
         </div>
       )}
-      <div className="mt-2 flex gap-1.5 border-t border-line/60 pt-2">
+      <div className="mt-2 flex flex-wrap gap-1.5 border-t border-line/60 pt-2">
         <button
           onClick={flyTo}
-          className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+          className="flex items-center gap-1 whitespace-nowrap rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
         >
           <Crosshair className="h-3 w-3" />
           飞向
         </button>
         <button
           onClick={highlight}
-          className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+          className="flex items-center gap-1 whitespace-nowrap rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
         >
           <Eye className="h-3 w-3" />
           高亮
         </button>
         <button
           onClick={navigateTo}
-          className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
-          title="绘制进攻路线:大门 → 楼梯 → 该设备"
+          className="flex items-center gap-1 whitespace-nowrap rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+          title={customStartOutId ? '绘制路线:自定义起点 → 该设备' : '绘制进攻路线:大门 → 楼梯 → 该设备'}
         >
           <Navigation className="h-3 w-3" />
           导航至此
         </button>
         <button
+          onClick={toggleCustomStart}
+          className={`flex items-center gap-1 whitespace-nowrap rounded border px-2 py-1 text-[11px] transition ${
+            customStartOutId === card.node.outId
+              ? 'border-orange/60 bg-orange/10 text-orange'
+              : 'border-line text-text-2 hover:border-line-glow hover:text-cyan'
+          }`}
+          title="设为导航起点:「导航至此」从该点出发(替代大门);再点一次取消"
+        >
+          <MapPin className="h-3 w-3" />
+          {customStartOutId === card.node.outId ? '起点✓' : '设为起点'}
+        </button>
+        <button
           onClick={navigateFromOutsideTo}
-          className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+          className="flex items-center gap-1 whitespace-nowrap rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
           title="从建筑外坐标进场导航:起点取 znya 该场景建筑坐标(自动转 WGS84),SDK 画室外+室内段"
         >
           <DoorOpen className="h-3 w-3" />
@@ -423,7 +486,7 @@ export default function SceneObjectInfoCard() {
         {card.story && (
           <button
             onClick={focusFloor}
-            className="flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+            className="flex items-center gap-1 whitespace-nowrap rounded border border-line px-2 py-1 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
           >
             <Layers className="h-3 w-3" />
             聚焦所在楼层

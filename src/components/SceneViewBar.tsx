@@ -23,6 +23,7 @@ import {
   setNavPickMode,
   subscribeNavPick,
   clearNavPickHighlight,
+  setCustomNavStart,
   findFireTruckOutId,
   type SceneRouteSummary,
 } from '@/lib/scene-navigation';
@@ -173,10 +174,11 @@ export default function SceneViewBar() {
           onClick={() => {
             const had = hasDrawnRoute();
             clearSceneRoutes(runtime);
-            showToast(had ? '已清除导航路线' : '当前没有导航路线');
+            setCustomNavStart(null); // 导航状态一并复位(自定义起点)
+            showToast(had ? '已清除导航路线与自定义起点' : '已清除自定义起点');
           }}
           className="flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] text-text-2 transition hover:text-cyan"
-          title="清除进攻路线等场内导航路线"
+          title="清除进攻路线等场内导航路线,并取消自定义导航起点"
         >
           <RouteIcon className="h-3 w-3" />
           清除路线

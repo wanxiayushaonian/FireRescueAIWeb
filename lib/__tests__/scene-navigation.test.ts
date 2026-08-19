@@ -5,6 +5,8 @@ import {
   navigateBetween,
   navigateFromOutside,
   clearSceneRoutes,
+  getCustomNavStart,
+  setCustomNavStart,
   type NavPoint,
 } from '../scene-navigation';
 import type { SceneTreeNode } from '../ustudio';
@@ -138,6 +140,8 @@ interface FakeCall {
 
 function makeRuntime(overrides?: {
   navigateResult?: unknown;
+  /** 按调用次序出队(先于 navigateResult;耗尽回落 navigateResult/默认)——回退重试用 */
+  navigateResults?: unknown[];
   externalResult?: unknown;
   position?: { x: number; y: number; z: number } | null;
 }) {
@@ -148,6 +152,7 @@ function makeRuntime(overrides?: {
       overrides?.position === null ? null : overrides?.position ?? { x: 1, y: 2, z: 3 },
     navigateWithinScene: async (p: unknown) => {
       calls.push({ op: 'navigateWithinScene', args: p });
+      if (overrides?.navigateResults?.length) return overrides.navigateResults.shift();
       return overrides?.navigateResult ?? { reachable: true, path_id: 'path-9', message: 'ok', total_distance: 42 };
     },
     navigateFromExternal: async (p: unknown) => {
@@ -235,6 +240,44 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     const r = await navigateBetween(runtime, start, end);
     expect(r.error).toContain('不可达');
     expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
+  });
+
+  it('坐标端点不可达 → 自动回退双端 node_id 重试(设备包围盒中心可能落在连通图外)', async () => {
+    const { runtime, calls } = makeRuntime({
+      navigateResults: [
+        { reachable: false, path_id: null, message: 'source 不在连通图' },
+        { reachable: true, path_id: 'path-10', message: 'ok', total_distance: 88 },
+      ],
+    });
+    const r = await navigateBetween(
+      runtime,
+      { name: 'A', nodeId: 'tw-space-a', position: { x: 9, y: 1, z: 9 } },
+      { name: 'B', nodeId: 'tw-space-b', position: { x: 5, y: 1, z: 5 } },
+    );
+    expect(r).toEqual({ real: true, mode: 'full', distanceM: 88 });
+    const navCalls = calls.filter((c) => c.op === 'navigateWithinScene');
+    expect(navCalls).toHaveLength(2); // 第一次坐标端点,第二次回退 node_id
+    expect(navCalls[0]?.args).toEqual({ source: { x: 9, y: 1, z: 9 }, target: { x: 5, y: 1, z: 5 } });
+    expect(navCalls[1]?.args).toEqual({ source: { node_id: 'tw-space-a' }, target: { node_id: 'tw-space-b' } });
+  });
+
+  it('双次均不可达 → 错误信息透传 SDK message(不再只有写死的覆盖范围文案)', async () => {
+    const { runtime, calls } = makeRuntime({
+      navigateResult: { reachable: false, path_id: null, message: '目标楼层未建图' },
+    });
+    const r = await navigateBetween(runtime, start, end);
+    expect(r.error).toContain('两点间不可达');
+    expect(r.error).toContain('目标楼层未建图');
+    expect(calls.filter((c) => c.op === 'navigateWithinScene')).toHaveLength(2);
+  });
+
+  it('customNavStart 自定义起点:设置/读取/取消(独立于两点导航拾取的 navStart)', () => {
+    expect(getCustomNavStart()).toBeNull();
+    const pt: NavPoint = { name: '大堂消火栓', nodeId: 'tw-space-x', outId: 'out-x' };
+    setCustomNavStart(pt);
+    expect(getCustomNavStart()).toEqual(pt);
+    setCustomNavStart(null);
+    expect(getCustomNavStart()).toBeNull();
   });
 
   it('clearSceneRoutes 按 path_id 精确清理 SDK 导航线(非无参 delete 全部)', async () => {
