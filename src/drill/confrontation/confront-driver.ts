@@ -3,7 +3,6 @@
 // 特情后 2.5s 生成调整 → 人响应 → 结束评估。
 import type { ConfrontAdapter } from './confront-adapter';
 import type {
-  ConfrontationEvent,
   ConfrontationSeed,
   ConfrontationReview,
 } from './confront-store';
@@ -11,7 +10,6 @@ import type {
 export interface ConfrontAppIds {
   readonly planner: string;
   readonly adversary: string;
-  readonly evaluate: string;
 }
 
 export interface ConfrontDriverDeps {
@@ -22,7 +20,7 @@ export interface ConfrontDriverDeps {
   readonly drillId: string;
   readonly seed: ConfrontationSeed | null;
   /** 本局事件流(评估用:按响应用时判定 timely/delayed/ignored;Task 6 接入)。 */
-  readonly events?: readonly { readonly kind: string; readonly respondedWithinSec?: number }[];
+  readonly events?: readonly { readonly kind: string; readonly adopted?: boolean; readonly respondedWithinSec?: number }[];
 }
 
 type TimerId = ReturnType<typeof setTimeout>;
@@ -148,7 +146,7 @@ export class ConfrontDriver {
       comments: pass
         ? [
             `特情响应平均用时 ${adjusts.length ? Math.round(adjusts.reduce((a, e) => a + (e.respondedWithinSec ?? 30), 0) / adjusts.length) : 8}s，调整链路完整`,
-            `${events.filter((e) => e.kind === 'adjust' && (e as { adopted?: boolean }).adopted === false).length || 2} 次人工改派决策合理`,
+            `${events.filter((e) => e.kind === 'adjust' && e.adopted === false).length || 2} 次人工改派决策合理`,
             '进攻/疏散路线动态调整后无交叉冲突',
           ]
         : [

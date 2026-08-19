@@ -11,18 +11,18 @@ import type { FetchState } from '@/mock/types';
 import {
   beginConfrontation,
   exitConfrontation,
-  appendInject,
-  appendAdjust,
   respondAdjustment,
   finishConfrontationLocal,
   getConfrontationState,
-  setThinking,
   subscribeConfrontation,
 } from './confront-store';
 import type { ConfrontationEvent, ConfrontationState } from './confront-store';
-import { ConfrontDriver, type ConfrontAppIds } from './confront-driver';
+import { ConfrontDriver } from './confront-driver';
+import type { ConfrontAppIds } from './confront-driver';
 import { ConfrontAdapter } from './confront-adapter';
+import { useConfrontationDriver } from './use-confront-driver';
 import { ShuffleText, Dots, ScoreRing, TimelineNode } from './confrontation-uis';
+import { fmtT, randInt, deployLines } from './confront-helpers';
 import { addSceneAction } from '@/mock/sceneLog';
 import { addLibraryItem } from '@/mock/planLibrary';
 import { showToast } from '@/components/Toast';
@@ -31,7 +31,6 @@ import { BUILDINGS, FIRE_MATERIALS } from '@/mock/drill';
 import {
   ADVERSARY_APP_ID,
   DRILL_COMMANDER_APP_ID,
-  EVALUATE_APP_ID,
 } from '@/lib/agent-app-ids';
 import {
   BUILDING_21_SCENE_ID,
@@ -45,115 +44,6 @@ const STATE_OPTIONS: Array<{ value: FetchState; label: string }> = [
   { value: 'empty', label: '空态' },
   { value: 'error', label: '失败' },
 ];
-
-function fmtT(tSec: number): string {
-  const m = Math.floor(tSec / 60);
-  const s = tSec % 60;
-  return `T+${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
-
-/** 初步部署摘要（3 行） */
-function deployLines(s: NonNullable<ConfrontationState['seedScenario']>): string[] {
-  return [
-    `首调力量：城东/城西救援站 5 车 28 人`,
-    `主战编队：${s.floor} 内攻一组 + 高喷车外部压制`,
-    `进攻路线：首层东门 → 消防电梯 → ${s.floor}`,
-  ];
-}
-
-function randInt(min: number, max: number): number {
-  return Math.floor(min + Math.random() * (max - min + 1));
-}
-
-export function useConfrontationDriver(opts: {
-  adapter: ConfrontAdapter;
-  appIds: ConfrontAppIds;
-  buildingId: string;
-  sceneId: string;
-  drillId: string;
-}): void {
-  const driverRef = useRef<ConfrontDriver | null>(null);
-  const confRef = useRef<ConfrontationState>(getConfrontationState());
-
-  useEffect(() => {
-    const unsub = subscribeConfrontation((s) => {
-      confRef.current = s;
-    });
-    return unsub;
-  }, []);
-
-  useEffect(() => {
-    const s = confRef.current;
-    if (!s.active || s.status !== 'running' || s.seedLoading || !s.seedScenario || driverRef.current) return;
-
-    const driver = new ConfrontDriver({
-      adapter: opts.adapter,
-      appIds: opts.appIds,
-      buildingId: opts.buildingId,
-      sceneId: opts.sceneId,
-      drillId: opts.drillId,
-      seed: s.seedScenario,
-      events: s.events,
-    });
-    driverRef.current = driver;
-
-    const startPlanAndSchedule = () => {
-      driver.startInitialPlan({
-        onPlan: (lines) => {
-          // 初步部署已在 UI 中以 deployLines 展示，scene action 记录一次。
-          addSceneAction({
-            action: 'showRoute',
-            target: `初步部署:${lines[0] ?? '到场处置'}`,
-            params: { kind: 'plan', lines },
-            source: '预案引擎',
-          });
-        },
-        onFail: () => {
-          showToast('初步部署生成失败，使用默认部署 · 演示数据');
-        },
-      });
-
-      for (let i = 0; i < s.plannedTotal; i++) {
-        driver.scheduleInject(i, {
-          onThinking: (v) => setThinking(v),
-          onInject: (evt) => {
-            const elapsedSec = s.startedAt
-              ? Math.max(0, Math.round((Date.now() - s.startedAt) / 1000))
-              : 0;
-            appendInject({ emergency: evt.emergency, tSec: elapsedSec });
-            addSceneAction({
-              action: 'highlight',
-              target: `特情位置:${evt.location ?? s.seedScenario?.floor ?? '未知'}`,
-              source: '智能体',
-            });
-            driver.scheduleAdjustment(evt.emergency, {
-              onAdjust: (lines) => {
-                const now = s.startedAt
-                  ? Math.max(0, Math.round((Date.now() - s.startedAt) / 1000))
-                  : 0;
-                appendAdjust({
-                  seq: confRef.current.events.filter((e) => e.kind === 'inject').length,
-                  adjustments: lines,
-                  tSec: now,
-                });
-              },
-            });
-          },
-          onInjectFail: () => {
-            showToast('特情注入失败，继续对抗 · 演示数据');
-          },
-        });
-      }
-    };
-
-    startPlanAndSchedule();
-
-    return () => {
-      driver.clearAll();
-      driverRef.current = null;
-    };
-  }, [opts.adapter, opts.appIds.adversary, opts.appIds.planner, opts.appIds.evaluate, opts.buildingId, opts.sceneId, opts.drillId]);
-}
 
 export default function ConfrontationPanel() {
   const [conf, setConf] = useState<ConfrontationState>(getConfrontationState());
@@ -169,7 +59,6 @@ export default function ConfrontationPanel() {
     () => ({
       planner: DRILL_COMMANDER_APP_ID,
       adversary: ADVERSARY_APP_ID || DRILL_COMMANDER_APP_ID,
-      evaluate: EVALUATE_APP_ID || DRILL_COMMANDER_APP_ID,
     }),
     [],
   );
@@ -483,7 +372,7 @@ export default function ConfrontationPanel() {
                 conf.status === 'running' && injects.length >= 2 && !conf.evaluating
                   ? 'bg-cyan text-bg-deep hover:brightness-110 hover:shadow-[0_0_16px_rgba(34,211,238,.45)] active:brightness-90'
                   : 'cursor-not-allowed bg-bg-panel-2 text-text-3'
-              }}`}
+              }`}
             >
               {conf.evaluating ? '评估中…' : '结束对抗并评估'}
             </button>
