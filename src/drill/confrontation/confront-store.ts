@@ -78,8 +78,18 @@ function genId(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${idCounter}`;
 }
 
+function cloneState(s: ConfrontationState): ConfrontationState {
+  return {
+    ...s,
+    events: s.events.map((e) => ({ ...e })),
+    seedScenario: s.seedScenario ? { ...s.seedScenario } : null,
+    review: s.review ? { ...s.review } : null,
+    lastRound: s.lastRound ? { ...s.lastRound } : null,
+  };
+}
+
 export function getConfrontationState(): ConfrontationState {
-  return conf;
+  return cloneState(conf);
 }
 
 export function subscribeConfrontation(fn: Listener): () => void {
