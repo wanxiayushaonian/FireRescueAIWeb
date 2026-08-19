@@ -13,7 +13,7 @@ import { storyIdsForFloorSpec, parseFloorSpec, parseFloorToken } from '@/lib/flo
 import { buildDeviceSearchIndex } from '@/lib/scene-pick';
 import { planAttackRoute, drawAttackRoute, clearSceneRoutes } from '@/lib/scene-navigation';
 import { presets } from '@/lib/scene-recipe/presets';
-import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
+import { effectiveDisplayPrefs } from '@/lib/scene-display-prefs';
 import { fetchWaterSourcesInBbox } from '@/api/water';
 import { fetchKeyUnits } from '@/api/key-units';
 import { fetchStations } from '@/api/force';
@@ -144,7 +144,7 @@ export default function SixFamiliarGuide({
     if (step.whole) {
       recipeStore.setStructural({
         ...presets.objectsOverview.structural,
-        categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+        categoryVisibility: effectiveDisplayPrefs(sceneId),
       });
       if (runtime && initialView) {
         void runtime.setCameraViewpoint(initialView, true).catch(() => {});

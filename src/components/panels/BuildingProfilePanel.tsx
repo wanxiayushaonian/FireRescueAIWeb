@@ -25,7 +25,7 @@ import { fetchBuildingProfile, DRILL_DEMO_BUILDING_ID } from '@/api/building-pro
 import { useScene } from '@/components/SceneProvider';
 import { storyIdsForFloorSpec } from '@/lib/floor-focus';
 import { presets } from '@/lib/scene-recipe/presets';
-import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
+import { effectiveDisplayPrefs } from '@/lib/scene-display-prefs';
 import type { KeyBuilding } from '@/lib/key-building-mapper';
 import type {
   RealBuildingProfile,
@@ -103,7 +103,7 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
     if (activeFloor) {
       recipeStore?.setStructural({
         ...presets.objectsOverview.structural,
-        categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+        categoryVisibility: effectiveDisplayPrefs(sceneId),
       });
       setActiveFloor(null);
     }
@@ -147,7 +147,7 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
   const restoreFullView = () => {
     recipeStore?.setStructural({
       ...presets.objectsOverview.structural,
-      categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+      categoryVisibility: effectiveDisplayPrefs(sceneId),
     });
     setActiveFloor(null);
     showToast('已恢复全楼视图');

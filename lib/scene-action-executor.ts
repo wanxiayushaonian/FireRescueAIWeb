@@ -1,6 +1,7 @@
 import { subscribeSceneLog } from '../src/mock/sceneLog';
 import type { SceneAction } from '../src/mock/sceneLog';
 import type { RecipeStore } from './scene-recipe/store';
+import { getGlobalRecipeStore } from './scene-recipe/global-store';
 
 /**
  * sceneLog action → SoonspaceRuntime 真实 SDK 调用的映射层。
@@ -31,9 +32,6 @@ export type SceneExecutorRuntime = {
   flyToObject: (id: string) => unknown;
   highlightObject: (id: string, color?: string) => unknown;
   clearObjectHighlight: (id: string) => unknown;
-  setViewMode?: (...args: unknown[]) => unknown;
-  /** 高层:按 storyIds 切楼层(适配层内部 fetch tree + runtime.setViewMode) */
-  switchFloor: (storyIds: string[]) => unknown;
   resetCamera: () => unknown;
 };
 
@@ -60,17 +58,19 @@ export function mapSceneAction(action: SceneAction, runtime: SceneExecutorRuntim
       const storyIds = Array.isArray((params as { storyIds?: unknown })?.storyIds)
         ? (params as { storyIds: string[] }).storyIds
         : [];
-      // 经 Recipe 单一真相源(若 store 可用);否则回退原直调
-      if (store) {
-        const isFocusSingle = storyIds.length === 1;
-        store.patchStructural({
-          visibleStories: storyIds,
-          detailLevel: isFocusSingle ? 'full' : 'structure',
-          hideDevices: !isFocusSingle,
-        });
-        return { executed: true };
+      // 经 Recipe 单一真相源(注入 store 优先,缺席时读全局引用);仍拿不到则明确拒绝 ——
+      // 不直调 runtime.setViewMode:其内部 resetAll 会恢复一切被 hide 的对象且 Recipe
+      // 不同步(显隐污染),详见 global-store.ts 注释。
+      const s = store ?? getGlobalRecipeStore();
+      if (!s) {
+        return { executed: false, reason: 'RecipeStore 未就绪,switchFloor 已拒绝(避免绕过显隐真相源)' };
       }
-      runtime.switchFloor(storyIds);
+      const isFocusSingle = storyIds.length === 1;
+      s.patchStructural({
+        visibleStories: storyIds,
+        detailLevel: isFocusSingle ? 'full' : 'structure',
+        hideDevices: !isFocusSingle,
+      });
       return { executed: true };
     }
     case 'resetView': {

@@ -5,7 +5,7 @@ import { useScene } from '@/components/SceneProvider';
 import { showToast } from '@/components/Toast';
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { presets } from '@/lib/scene-recipe/presets';
-import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
+import { effectiveDisplayPrefs } from '@/lib/scene-display-prefs';
 
 /**
  * 整体建筑视角下,鼠标 hover 到任意位置 → 浮层显示"所在楼层 + 楼栋"。
@@ -87,7 +87,7 @@ export default function SceneFloorHoverLabel() {
       } else {
         recipeStore.setStructural({
           ...presets.objectsOverview.structural,
-          categoryVisibility: loadSceneDisplayPrefs(sceneId) ?? {},
+          categoryVisibility: effectiveDisplayPrefs(sceneId),
         });
         showToast('已恢复全楼视图');
       }

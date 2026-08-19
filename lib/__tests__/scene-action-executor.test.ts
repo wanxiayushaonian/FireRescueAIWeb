@@ -1,5 +1,7 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { mapSceneAction } from '@/lib/scene-action-executor';
+import { setGlobalRecipeStore } from '@/lib/scene-recipe/global-store';
+import type { RecipeStore } from '@/lib/scene-recipe/store';
 import type { SceneAction } from '@/mock/sceneLog';
 
 function makeRuntime() {
@@ -7,13 +9,14 @@ function makeRuntime() {
     flyToObject: vi.fn(),
     highlightObject: vi.fn(),
     clearObjectHighlight: vi.fn(),
-    setViewMode: vi.fn(),
-    switchFloor: vi.fn(),
     resetCamera: vi.fn(),
   };
 }
 
 describe('mapSceneAction', () => {
+  afterEach(() => {
+    setGlobalRecipeStore(null);
+  });
   it('flyTo + id target → runtime.flyToObject(id)', () => {
     const r = makeRuntime();
     const a: SceneAction = { ts: '00:00:00', action: 'flyTo', target: '460054423520694453', source: '面板' };
@@ -38,14 +41,30 @@ describe('mapSceneAction', () => {
     expect(r.highlightObject).toHaveBeenCalledWith('obj-123', expect.anything());
   });
 
-  it('switchFloor → runtime.setViewMode(按 params.storyIds)', () => {
+  it('switchFloor 无 store 无全局引用 → 拒绝(executed:false,不绕过显隐真相源)', () => {
     const r = makeRuntime();
     const a: SceneAction = {
       ts: '00:00:00', action: 'switchFloor', target: '5F', source: '面板',
       params: { storyIds: ['story-5'] },
     };
-    mapSceneAction(a, r);
-    expect(r.switchFloor).toHaveBeenCalledWith(['story-5']);
+    const res = mapSceneAction(a, r);
+    expect(res.executed).toBe(false);
+    expect(res.reason).toMatch(/RecipeStore/);
+  });
+
+  it('switchFloor 全局引用兜底 → patchStructural(单层 full+显设备)', () => {
+    const r = makeRuntime();
+    const patchStructural = vi.fn();
+    setGlobalRecipeStore({ patchStructural } as unknown as RecipeStore);
+    const a: SceneAction = {
+      ts: '00:00:00', action: 'switchFloor', target: '5F', source: '面板',
+      params: { storyIds: ['story-5'] },
+    };
+    const res = mapSceneAction(a, r);
+    expect(res.executed).toBe(true);
+    expect(patchStructural).toHaveBeenCalledWith({
+      visibleStories: ['story-5'], detailLevel: 'full', hideDevices: false,
+    });
   });
 
   it('resetView → runtime.resetCamera()', () => {

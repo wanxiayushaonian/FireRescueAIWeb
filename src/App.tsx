@@ -32,8 +32,7 @@ import SceneHintBar from '@/components/SceneHintBar';
 import { storyIdsForFloorSpec } from '@/lib/floor-focus';
 import { showToast } from '@/components/Toast';
 import { presets } from '@/lib/scene-recipe/presets';
-import { loadSceneDisplayPrefs } from '@/lib/scene-display-prefs';
-import { defaultCategoryVisibilityByLevel } from '@/lib/scene-categories';
+import { effectiveDisplayPrefs } from '@/lib/scene-display-prefs';
 import { loadSceneSkyPref } from '@/lib/scene-sky-prefs';
 
 export default function App() {
@@ -178,11 +177,11 @@ function AppContent() {
   // 模块切换/场景就绪时套 Recipe 预设;态势总览不加载 3D;培训 familiarize 步进在 TrainingView。
   // 显隐细节统一由模态框控制:预设只定基线(楼层全集/mode/GIS),categoryVisibility 按场景 id
   // 回放存档的模态开关配置(替代旧"加载完无条件 hideDevices 全藏"与模态配置互相覆盖的冲突)。
-  // 无存档时用层级默认表初始化(2026-08-17 用户定:single 全显含室外三件/multi 消防设施+门/whole 保持)。
+  // 回放一律经 effectiveDisplayPrefs:存档缺失的层/type 补层级默认表,不会出现空表
+  // (2026-08-17 用户定稿:single 消防设施+门/multi 消防设施/whole 仅室外三件)。
   useEffect(() => {
     if (!recipeStore) return;
-    const saved = loadSceneDisplayPrefs(sceneId);
-    const display = saved ?? defaultCategoryVisibilityByLevel();
+    const display = effectiveDisplayPrefs(sceneId);
     if (module === 'objects') {
       recipeStore.setStructural({ ...presets.objectsOverview.structural, categoryVisibility: display });
     } else if (module === 'drill') {
