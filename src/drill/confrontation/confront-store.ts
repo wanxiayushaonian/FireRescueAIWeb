@@ -94,7 +94,7 @@ export function getConfrontationState(): ConfrontationState {
 
 export function subscribeConfrontation(fn: Listener): () => void {
   listeners.add(fn);
-  fn(conf);
+  fn(cloneState(conf));
   return () => {
     listeners.delete(fn);
   };
