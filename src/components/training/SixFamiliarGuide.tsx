@@ -155,20 +155,6 @@ export default function SixFamiliarGuide({
         for (const h of hits) runtime.highlightObject(h.outId, '#22d3ee');
         if (hits.length === 0) showToast(`场景中未找到 ${step.highlightTypes.join('/')} 类型对象,无法高亮`);
       }
-      // 进攻路线演示(处置程序步):首层出入口 → 5F 室内消火栓(着火层目标点)
-      if (step.attackRoute && runtime && tree) {
-        const target = deviceIndex.find(
-          (d) => d.type === 'IndoorFireHydrant' && parseFloorToken(d.storyLabel ?? '') === 5,
-        );
-        const plan = target ? planAttackRoute(tree, target.outId) : null;
-        if (plan) {
-          void drawAttackRoute(runtime, plan).then((r) => {
-            if (!r) showToast('进攻路线绘制失败:无可用路径');
-          });
-        } else {
-          showToast('进攻路线规划失败:未找到 5F 室内消火栓目标点');
-        }
-      }
       return;
     }
     if (step.floorSpec && tree) {
@@ -191,6 +177,22 @@ export default function SixFamiliarGuide({
           ).slice(0, 6);
           for (const h of hits) runtime?.highlightObject(h.outId, '#22d3ee');
         }
+      }
+    }
+    // 进攻路线演示(处置程序步):首层出入口 → 5F 室内消火栓(着火层目标点)。
+    // 独立于 whole/floorSpec 分支:步数据用 floorSpec='1-5F' 炸开,路线在炸开视角可见
+    // (整体视角下路线在建筑内部被外壳遮挡,2026-08-19 实测)。
+    if (step.attackRoute && runtime && tree) {
+      const target = deviceIndex.find(
+        (d) => d.type === 'IndoorFireHydrant' && parseFloorToken(d.storyLabel ?? '') === 5,
+      );
+      const plan = target ? planAttackRoute(tree, target.outId) : null;
+      if (plan) {
+        void drawAttackRoute(runtime, plan).then((r) => {
+          if (!r) showToast('进攻路线绘制失败:无可用路径');
+        });
+      } else {
+        showToast('进攻路线规划失败:未找到 5F 室内消火栓目标点');
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
