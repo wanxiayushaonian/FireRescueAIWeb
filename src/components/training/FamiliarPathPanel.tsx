@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bot, ChevronDown, Droplets, Layers, MapPin } from 'lucide-react';
+import { Bot, ChevronDown, ChevronLeft, ChevronRight, Droplets, Layers, MapPin, Pause, Play, X } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { FamiliarNode } from '@/mock/training';
 import { FAMILIAR_PATHS } from '@/mock/training';
@@ -75,27 +75,23 @@ export default function FamiliarPathPanel({
   // 考核错题推导的强化点位（cyan 描边 + 「强化」徽标）
   const [boostIds, setBoostIds] = useState<Set<string>>(new Set());
 
-  // ---------- 智能体连续导览 ----------
+  // ---------- 智能体连续导览(2026-08-19 内容化:进度/讲解/站控) ----------
   const [touringPath, setTouringPath] = useState<FamiliarNode['category'] | null>(null);
-  const tourTimer = useRef<number | null>(null);
+  /** 当前站下标 + 暂停标记;站点序列与完成文案经 ref(回调闭包外读写) */
+  const [tourIdx, setTourIdx] = useState(0);
+  const [tourPaused, setTourPaused] = useState(false);
+  const tourNodesRef = useRef<FamiliarNode[]>([]);
+  const tourDoneTextRef = useRef('导览完成 · 演示数据');
   // 导览程序选中点位时置位，避免触发「手动暂停」逻辑
   const tourTicking = useRef(false);
 
-  const clearTourTimer = () => {
-    if (tourTimer.current) {
-      window.clearInterval(tourTimer.current);
-      tourTimer.current = null;
-    }
-  };
-
-  const stopTour = (done = false, doneText = '导览完成 · 演示数据') => {
-    clearTourTimer();
+  const stopTour = (done = false, doneText?: string) => {
     setTouringPath(null);
-    if (done) showToast(doneText);
+    setTourPaused(false);
+    setTourIdx(0);
+    tourNodesRef.current = [];
+    if (done) showToast(doneText ?? tourDoneTextRef.current);
   };
-
-  // 组件卸载时清理定时器
-  useEffect(() => clearTourTimer, []);
 
   /** 每站：复用点位选中逻辑 + 写场景动作日志（source 智能体） */
   const visitNode = (n: FamiliarNode, logPrefix = '') => {
@@ -111,18 +107,44 @@ export default function FamiliarPathPanel({
     opts?: { firstLogPrefix?: string; doneText?: string },
   ) => {
     if (pathNodes.length === 0) return;
-    clearTourTimer();
+    tourNodesRef.current = pathNodes;
+    tourDoneTextRef.current = opts?.doneText ?? '导览完成 · 演示数据';
     setTouringPath(category);
-    let idx = 0;
-    visitNode(pathNodes[idx], opts?.firstLogPrefix ?? '');
-    tourTimer.current = window.setInterval(() => {
-      idx += 1;
-      if (idx >= pathNodes.length) {
-        stopTour(true, opts?.doneText ?? '导览完成 · 演示数据');
-        return;
-      }
-      visitNode(pathNodes[idx]);
+    setTourIdx(0);
+    setTourPaused(false);
+    visitNode(pathNodes[0], opts?.firstLogPrefix ?? '');
+  };
+
+  // 导览主时钟:2.5s/站自动推进;暂停/停止时卸载
+  useEffect(() => {
+    if (!touringPath || tourPaused) return;
+    const iv = window.setInterval(() => {
+      setTourIdx((i) => {
+        const nodes = tourNodesRef.current;
+        const next = i + 1;
+        if (next >= nodes.length) {
+          stopTour(true);
+          return i;
+        }
+        visitNode(nodes[next]);
+        return next;
+      });
     }, 2500);
+    return () => window.clearInterval(iv);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [touringPath, tourPaused]);
+
+  /** 站控:上一站/下一站(手动跳站不暂停导览) */
+  const jumpTour = (delta: number): void => {
+    const nodes = tourNodesRef.current;
+    const next = tourIdx + delta;
+    if (next < 0) return;
+    if (next >= nodes.length) {
+      stopTour(true);
+      return;
+    }
+    setTourIdx(next);
+    visitNode(nodes[next]);
   };
 
   // ---------- 考核错题 → 强化导览（'training:start-tour' 事件契约） ----------
@@ -273,6 +295,51 @@ export default function FamiliarPathPanel({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* 导览控制台(导览中显示):进度 + 当前站要点 + 站控 */}
+      {touringPath && tourNodesRef.current[tourIdx] && (
+        <div className="shrink-0 border-t border-violet/40 bg-violet/5 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-violet" />
+            <span className="font-num text-[11px] text-violet">{tourIdx + 1}/{tourNodesRef.current.length}</span>
+            <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-text-1">
+              {tourNodesRef.current[tourIdx].name}
+            </span>
+            <button
+              onClick={() => jumpTour(-1)}
+              disabled={tourIdx === 0}
+              className="rounded p-1 text-text-3 transition hover:bg-white/5 hover:text-cyan disabled:opacity-30"
+              title="上一站"
+            >
+              <ChevronLeft className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => setTourPaused((v) => !v)}
+              className="rounded p-1 text-text-3 transition hover:bg-white/5 hover:text-cyan"
+              title={tourPaused ? '继续导览' : '暂停导览'}
+            >
+              {tourPaused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              onClick={() => jumpTour(1)}
+              className="rounded p-1 text-text-3 transition hover:bg-white/5 hover:text-cyan"
+              title="下一站"
+            >
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+            <button
+              onClick={() => stopTour()}
+              className="rounded p-1 text-text-3 transition hover:bg-white/5 hover:text-red"
+              title="停止导览"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-text-3">
+            {tourPaused ? '已暂停 · ' : ''}要点:{tourNodesRef.current[tourIdx].points[0]}
+          </div>
         </div>
       )}
 

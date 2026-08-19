@@ -225,9 +225,13 @@ export default function SixFamiliarGuide({
   const goStep = (chapterIdx: number, stepIdx: number): void => {
     runtime?.clearAllHighlight();
     clearSceneRoutes(runtime); // 进攻路线演示步离开即清除
-    const next = { ...progress, chapterIdx, stepIdx };
-    setProgress(next);
-    saveGuideProgress(next);
+    // 函数式更新:completeChapter 的 setProgress 与本调用同批时,展开 prev 保住 doneChapters
+    // (此前用闭包 progress 直写,章节完成标记被 goStep 覆盖——只有最后一章不 goStep 才幸存)
+    setProgress((prev) => {
+      const next = { ...prev, chapterIdx, stepIdx };
+      saveGuideProgress(next);
+      return next;
+    });
   };
 
   const prevStep = (): void => {
