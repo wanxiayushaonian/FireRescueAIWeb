@@ -6,7 +6,7 @@ import FamiliarPathPanel from '@/components/training/FamiliarPathPanel';
 import PointDetailPanel from '@/components/training/PointDetailPanel';
 import ExamView from '@/components/training/ExamView';
 import type { FamiliarNode } from '@/mock/training';
-import { fetchFamiliarNodes } from '@/mock/training';
+import { fetchFamiliarNodes, findNode } from '@/mock/training';
 import type { FetchState } from '@/mock/types';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
@@ -57,7 +57,8 @@ export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) 
     loadPaths(demoStateL);
   }, [demoStateL, loadPaths]);
 
-  const selected = nodes.find((n) => n.id === selectedId) ?? null;
+  // findNode 兜底:六熟悉知识卡(辖区与处置)不在 FAMILIAR_NODES 主列表,经 findNode 合并检索
+  const selected = nodes.find((n) => n.id === selectedId) ?? findNode(selectedId ?? '') ?? null;
 
   // 选中点位：右面板模拟加载 + 场景联动 + 熟悉度 +8
   const selectNode = (n: FamiliarNode) => {
