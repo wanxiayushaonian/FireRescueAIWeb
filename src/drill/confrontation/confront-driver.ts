@@ -47,12 +47,13 @@ export class ConfrontDriver {
   }
 
   private ctx(appId: string) {
+    if (!this.deps.seed) throw new Error('ConfrontDriver ctx: seed required');
     return {
       appId,
       buildingId: this.deps.buildingId,
       sceneId: this.deps.sceneId,
       drillId: this.deps.drillId,
-      seed: this.deps.seed!,
+      seed: this.deps.seed,
     };
   }
 

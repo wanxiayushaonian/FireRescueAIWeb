@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
+import { fmtT } from './confront-helpers';
 
 /** 洗牌闪变:0.4s slot-machine 字符滚动后定格(照抄原型 L33-55)。 */
 export function ShuffleText({ text, className = '' }: { text: string; className?: string }) {
@@ -112,10 +113,4 @@ export function TimelineNode({
       <span className="mt-0.5 block truncate text-[12px] text-text-2">{text}</span>
     </motion.button>
   );
-}
-
-function fmtT(tSec: number): string {
-  const m = Math.floor(tSec / 60);
-  const s = tSec % 60;
-  return `T+${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
