@@ -231,6 +231,12 @@ export function finishConfrontationLocal(
   emit();
 }
 
+/** 重显上一局(exit 后状态保留,只把面板 active 置回;一级预案面板「上一局对抗」按钮用)。 */
+export function reopenConfrontation(): void {
+  conf = { ...conf, active: true };
+  emit();
+}
+
 export function exitConfrontation(): void {
   conf = { ...conf, active: false, status: conf.status === 'running' ? 'idle' : conf.status, thinking: false, seedLoading: false };
   emit();

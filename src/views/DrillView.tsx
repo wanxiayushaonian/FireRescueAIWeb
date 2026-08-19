@@ -16,6 +16,7 @@ import { DrillToolbar } from '@/drill/DrillToolbar';
 import ConfrontationPanel from '@/drill/confrontation/ConfrontationPanel';
 import { beginConfrontation } from '@/drill/confrontation/confront-store';
 import { subscribeConfrontation } from '@/drill/confrontation/confront-store';
+import { getDrillState } from '@/mock/drillStore';
 import type { Speed } from '@/lib/drill/timeline-engine';
 import {
   DEFAULT_SCENARIO_ID,
@@ -48,6 +49,8 @@ export default function DrillView() {
   confOpenRef.current = confOpen;
   useEffect(() => {
     const unsub = subscribeConfrontation((s) => {
+      // 外部激活(情景面板「进入对抗模式」带参进入)自动开舱;关闭(exit)自动收起
+      if (s.active && !confOpenRef.current) setConfOpen(true);
       if (!s.active && confOpenRef.current) {
         setConfOpen(false);
       }
@@ -182,12 +185,14 @@ export default function DrillView() {
           <button
             type="button"
             onClick={() => {
+              // 灾情种子优先级:情景参数面板「生成灾情设定」的参数 > 剧本默认参数
+              const gen = getDrillState().scenario;
               beginConfrontation({
                 seedScenario: {
-                  building: '21号楼',
-                  floor: activeScenario.scenario.fireFloor ?? '5F',
-                  material: activeScenario.scenario.material,
-                  trapped: activeScenario.scenario.trappedCount,
+                  building: gen?.buildingName ?? '21号楼',
+                  floor: gen?.floor ?? activeScenario.scenario.fireFloor ?? '5F',
+                  material: gen?.material ?? activeScenario.scenario.material,
+                  trapped: gen?.trapped ?? activeScenario.scenario.trappedCount,
                   seed: `#${Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`,
                 },
                 plannedTotal: 3 + Math.floor(Math.random() * 3),

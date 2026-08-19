@@ -10,12 +10,11 @@ import {
 } from '@/mock/drill';
 import type { DrillBuilding } from '@/mock/drill';
 import { beginGenerate, finishGenerate, subscribeDrill } from '@/mock/drillStore';
-import { beginConfrontation } from '@/mock/drillStore';
+import { beginConfrontation } from '@/drill/confrontation/confront-store';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
 import PanelStateView from '@/components/PanelStateView';
 import DemoTag from '@/components/DemoTag';
-import ConfrontationPanel from '@/components/drill/ConfrontationPanel';
 
 const STATE_OPTIONS: Array<{ value: FetchState; label: string }> = [
   { value: 'ok', label: '正常' },
@@ -143,8 +142,6 @@ export default function ScenarioPanel() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* 对抗模式二级视图（Portal 全屏覆盖，inactive 时渲染 null） */}
-      <ConfrontationPanel />
       {/* 工具行：状态演示 */}
       <div className="flex items-center justify-between gap-2 border-b border-line px-3 py-2">
         <span className="flex items-center gap-1.5 text-[12px] text-text-3">
@@ -297,10 +294,26 @@ export default function ScenarioPanel() {
               {!canGenerate && (
                 <div className="mt-1.5 text-center text-[12px] text-text-3">请先完善着火位置信息</div>
               )}
-              {/* 进入对抗模式（二级界面）：预案输出智能体随机生成灾情 + 对抗智能体主动特情 */}
+              {/* 进入对抗模式（二级界面）：携带本表单灾情参数进对抗舱
+                  （三智能体版,confront-store;替代旧 mock 版 beginConfrontation(demoState)） */}
               <button
-                onClick={() => beginConfrontation(demoState)}
-                className="mt-2 h-9 w-full rounded-md border border-orange/70 text-[13px] font-bold text-orange transition hover:bg-orange/10 hover:shadow-[0_0_12px_rgba(249,115,22,.35)]"
+                onClick={() => {
+                  if (!canGenerate || !building) {
+                    showToast('请先选择着火建筑与楼层，再进入对抗模式');
+                    return;
+                  }
+                  beginConfrontation({
+                    seedScenario: {
+                      building: building.name,
+                      floor,
+                      material,
+                      trapped,
+                      seed: `#${Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`,
+                    },
+                    plannedTotal: 3 + Math.floor(Math.random() * 3),
+                  });
+                }}
+                className="mt-2 h-9 w-full rounded-md border border-orange/70 text-[13px] font-bold text-orange transition hover:bg-orange/10 hover:shadow-[0_0_12px_rgba(249,115,22,.35)] disabled:opacity-40"
               >
                 进入对抗模式 →
               </button>

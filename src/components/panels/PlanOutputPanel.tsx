@@ -10,10 +10,13 @@ import type { EmergencyEvent, EvaluationResult } from '@/mock/drill';
 import { evaluateViaAgent } from '@/lib/agent-evaluate';
 import {
   beginEvaluate, beginGenerate, finishEvaluate, finishGenerate,
-  getConfrontationState, getDrillState, injectEmergency, reopenConfrontation,
-  subscribeConfrontation, subscribeDrill,
+  getDrillState, injectEmergency, subscribeDrill,
 } from '@/mock/drillStore';
-import type { ConfrontationState, DrillState } from '@/mock/drillStore';
+import {
+  getConfrontationState, subscribeConfrontation, reopenConfrontation,
+} from '@/drill/confrontation/confront-store';
+import type { ConfrontationState } from '@/drill/confrontation/confront-store';
+import type { DrillState } from '@/mock/drillStore';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
 import PanelStateView from '@/components/PanelStateView';
