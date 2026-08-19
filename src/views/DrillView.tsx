@@ -10,6 +10,7 @@
  *
  * 推演引擎由 ConfrontationPanel(对抗舱)接管。
  * 旧引擎 tick 编排已移除——bus/state/recorder/runner 不再参与渲染循环。
+ * 旧引擎评估入口(Empty shell)已清理——对抗舱内部评估已接管评估闭环。
  *
  * @see plan/2026-08-09-drill-simulation-plan.md §6.5
  */
@@ -22,16 +23,12 @@ import { DrillToolbar } from '@/drill/DrillToolbar';
 import { DrillStatusPanel } from '@/drill/DrillStatusPanel';
 import DrillScenarioPanel from '@/components/drill/DrillScenarioPanel';
 import type { ScenarioApplyResult } from '@/components/drill/DrillScenarioPanel';
-import { DrillEvaluationDialog } from '@/drill/DrillEvaluationDialog';
-import type { EvaluationData, EvaluationImprovement } from '@/lib/agent-evaluate';
 import { buildDrillJson, buildDrillMarkdown } from '@/lib/drill/drill-export';
-import type { DisasterStatus } from '@/lib/drill/disaster-state';
 import { DrillRecorder } from '@/lib/drill/drill-recorder';
 import type { TreeNode } from '@/lib/drill/drill-recorder';
-import { addLibraryItem } from '@/mock/planLibrary';
 import DraggablePanel from '@/components/DraggablePanel';
 import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
-import { Library, Star, Swords } from 'lucide-react';
+import { Library, Swords } from 'lucide-react';
 import {
   DEFAULT_SCENARIO_ID,
   getScenario,
@@ -77,14 +74,9 @@ export default function DrillView() {
   const [speed, setSpeed] = useState<Speed>(1);
   const [status, setStatus] = useState<'idle' | 'running'>('idle');
 
-  // ---- 事件树 / 预案库 / 评估面板 ----
+  // ---- 事件树 / 预案库 ----
   const [treeOpen, setTreeOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [reportReady, setReportReady] = useState(false);
-  const [evalOpen, setEvalOpen] = useState(false);
-  const [evalLoading, setEvalLoading] = useState(false);
-  const [evalData, setEvalData] = useState<EvaluationData | null>(null);
-  const [evalArchived, setEvalArchived] = useState<ReadonlySet<number>>(new Set());
 
   // ---- 3D/相机联动(事件树节点点击→相机回溯) ----
   const { runtime, tree, recipeStore } = useScene();
@@ -127,10 +119,6 @@ export default function DrillView() {
     if (status !== 'idle') return;
     recorder.clear();
     setClock(0);
-    setReportReady(false);
-    setEvalOpen(false);
-    setEvalData(null);
-    setEvalArchived(new Set());
     // ts=0 事件记录
     // (实际种子事件由对抗舱接管,此处保留空调用以兼容旧流程)
     setStatus('running');
@@ -140,28 +128,6 @@ export default function DrillView() {
   const handleStop = (): void => {
     setStatus('idle');
     setClock(0);
-    setReportReady(recorder.getAll().length > 0);
-  };
-
-  // ---- 演练评估(暂不实现,对抗舱评估由其内部处理) ----
-  const runEvaluation = async (): Promise<void> => {
-    setEvalOpen(true);
-    setEvalLoading(true);
-    setEvalData(null);
-    // TODO: 对接对抗舱评估结果或旧引擎事件数据
-    setEvalLoading(false);
-  };
-
-  const archiveImprovement = (imp: EvaluationImprovement, index: number): void => {
-    addLibraryItem({
-      kind: '改进措施',
-      title: imp.content.length > 28 ? `${imp.content.slice(0, 28)}…` : imp.content,
-      status: '待落地',
-      summary: [imp.content],
-      sourceDetail: `来源:演练对抗 · 演练评估(${activeScenario.name})→ ${imp.target}`,
-    });
-    setEvalArchived((prev) => new Set(prev).add(index));
-    showToast('改进措施已回流预案库');
   };
 
   // ---- 演练事件导出 ----
@@ -269,19 +235,7 @@ export default function DrillView() {
             </button>
           )}
 
-          {/* 演练评估入口:停止后可用 */}
-          {reportReady && status !== 'running' && (
-            <button
-              type="button"
-              onClick={() => void runEvaluation()}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-amber-300/50 bg-amber-300/10 px-3 py-2 text-[13px] font-medium text-amber-300 transition hover:bg-amber-300/20"
-              title="由评估智能体对本场演练打分(响应/编成/战术/协同等维度)"
-            >
-              <Star className="h-4 w-4" />
-              生成演练评估报告
-            </button>
-          )}
-
+          {/* 态势面板:对抗模式下无旧引擎数据源,展示空占位 */}
           <div className="flex min-h-0 flex-1 flex-col rounded-lg border border-line bg-bg-panel/60">
             <div className="border-b border-line px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-2">
               态势
@@ -301,18 +255,6 @@ export default function DrillView() {
           const spec = typeof node.meta?.location === 'string' ? node.meta.location : undefined;
           if (spec) focusFloors([spec]);
         }}
-      />
-
-      {/* 演练评估报告 */}
-      <DrillEvaluationDialog
-        open={evalOpen}
-        loading={evalLoading}
-        data={evalData}
-        scenarioName={activeScenario.name}
-        onClose={() => setEvalOpen(false)}
-        onRetry={() => void runEvaluation()}
-        onArchive={archiveImprovement}
-        archived={evalArchived}
       />
 
       {/* 预案库悬浮面板 */}

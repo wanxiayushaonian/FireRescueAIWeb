@@ -30,7 +30,7 @@ import DemoTag from '@/components/DemoTag';
 import { BUILDINGS, FIRE_MATERIALS } from '@/mock/drill';
 import {
   ADVERSARY_APP_ID,
-  DRILL_COMMANDER_APP_ID,
+  DRILL_PLANNER_APP_ID,
 } from '@/lib/agent-app-ids';
 import {
   BUILDING_21_SCENE_ID,
@@ -57,8 +57,8 @@ export default function ConfrontationPanel() {
   const adapter = useMemo(() => new ConfrontAdapter(), []);
   const appIds = useMemo<ConfrontAppIds>(
     () => ({
-      planner: DRILL_COMMANDER_APP_ID,
-      adversary: ADVERSARY_APP_ID || DRILL_COMMANDER_APP_ID,
+      planner: DRILL_PLANNER_APP_ID,
+      adversary: ADVERSARY_APP_ID || DRILL_PLANNER_APP_ID,
     }),
     [],
   );
