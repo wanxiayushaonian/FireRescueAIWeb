@@ -19,7 +19,7 @@ export interface ConfrontationReview {
   readonly score: number;
   readonly conclusion: string;
   readonly comments: readonly string[];
-  readonly outcomes: readonly Array<'timely' | 'delayed' | 'ignored'>;
+  readonly outcomes: readonly ('timely' | 'delayed' | 'ignored')[];
   readonly archived: boolean;
 }
 
@@ -162,7 +162,11 @@ export function appendInject(
 }
 
 export function appendAdjust(
-  evt: Omit<ConfrontationEvent, 'id' | 'kind'> & { readonly id?: string; readonly seq: number },
+  evt: Omit<ConfrontationEvent, 'id' | 'kind' | 'emergency'> & {
+    readonly id?: string;
+    readonly seq: number;
+    readonly emergency?: string;
+  },
 ): void {
   const node: ConfrontationEvent = {
     id: evt.id ?? genId('ca'),
