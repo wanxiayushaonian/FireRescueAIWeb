@@ -28,6 +28,8 @@ import { fetchIncidents } from '@/api/incidents';
 import { toMockIncidents } from '@/lib/command-incident-adapter';
 import { fetchAiDispatch, fetchBuildingAnalysis, type BuildingAnalysisSummary } from '@/api/dispatch';
 import type { RouteRenderItem } from '@/lib/gis/route-render';
+import DisposalFlowBar from '@/components/command/DisposalFlowBar';
+import { useDisposalFlow } from '@/hooks/useDisposalFlow';
 
 // GIS 底座:与总览模块同一 RealGisMap(Leaflet 浏览器库,须客户端加载,ssr:false)
 const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
@@ -58,12 +60,13 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   const dispatchingRef = useRef<string | null>(null);
   // GIS 底图实例(RealGisMap onMapReady 注入,供战术推演层投影)
   const [gisMap, setGisMap] = useState<L.Map | null>(null);
+  const demoActiveRef = useRef(false);
 
-  // 事件处理：Toast + 场景动作日志 + 案卷时间轴转录（liveChannel 状态机的演进即案件时间线）
+  // Events handler with demo-gate on status toast
   const handleEvents = useCallback((events: LiveEvent[]) => {
     for (const ev of events) {
       if (ev.kind === 'status') {
-        showToast(`${ev.incident.id} 状态更新：${ev.to}`);
+        if (!demoActiveRef.current) showToast(`${ev.incident.id} 状态更新：${ev.to}`);
         recordCaseEvent(ev.incident.id, 'status', `状态推进:${ev.from} → ${ev.to}`, ev.incident.address);
         if (ev.to === '到场') {
           addSceneAction({
@@ -144,7 +147,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   const selectedRecs = mode === 'real' ? dispatchRecs : mockRecs;
 
   // 选中警情 → 中右两面板加载 + flyTo 日志（同一警情重复选中不重复写日志）
-  const handleSelect = useCallback((id: string) => {
+  const selectIncident = useCallback((id: string, withDispatch: boolean) => {
     if (id === selectedIdRef.current) return;
     selectedIdRef.current = id;
     setSelectedId(id);
@@ -155,7 +158,6 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
     const list = mode === 'real' ? realIncidents : getSnapshot().incidents;
     const inc = list.find((i) => i.id === id);
     if (!inc) return;
-    // 注入 agent 上下文：让 agent 知道当前选中的警情
     onIncidentSelect?.({
       id: inc.id,
       address: inc.address,
@@ -169,9 +171,6 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       action: 'addMarker', target: `警情定位 ${inc.id}：${inc.address}`,
       params: { lng: inc.lng, lat: inc.lat, incidentId: inc.id }, source: '面板',
     });
-    // 案域聚焦:fitBounds 包住 1.5km 作战圈(警情区域清晰可辨;支援圈出画由图例标注),
-    // padding 让开左右两侧指挥面板遮挡区;不再写 flyTo 场景日志——桥的 flyTo 消费
-    // 会拉回 z14 覆盖本次 fitBounds(定位记录由上面 addMarker 保留)
     if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
       const ringM = 1500;
       const dLat = ringM / 111320;
@@ -187,14 +186,14 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'stations', on: true } }));
     }
     recordCaseEvent(inc.id, 'manual', `选定案件 ${inc.id}`, `${inc.address} · ${inc.type} · ${inc.status}`);
-    // AI 派遣路线仅对"接警/出动"阶段的新案发起——到场/控制的案力量已在现场,
-    // 再画派遣线+车行动画会与"到场"状态推荐时空错位(车还在路上却收到场决策)
     const needsDispatch = inc.status === '接警' || inc.status === '出动';
-    if (!needsDispatch) {
-      recordCaseEvent(inc.id, 'manual', '案件处置中(力量已到场,不再重复派遣)');
+    if (!needsDispatch || !withDispatch) {
+      // 仅手动选中已到场/控制/熄灭案件(needsDispatch=false)才记录"力量已到场";
+      // 演示路径(withDispatch=false 且 needsDispatch=true)静默跳过,派遣由剧本自行编排
+      if (!needsDispatch) recordCaseEvent(inc.id, 'manual', '案件处置中(力量已到场,不再重复派遣)');
       return;
     }
-    // AI 派遣路线(两模式共用:mock 警情同样取真实多站路线画线+车动,警情数据本身才是 mock)
+    // 原有 AI 派遣 + dispatchRoutes 设置块(原 L197-220)原样保留
     if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
       dispatchingRef.current = id;
       Promise.all([
@@ -220,6 +219,20 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
     }
   }, [mode, realIncidents, onIncidentSelect, gisMap]);
 
+  const handleSelect = useCallback((id: string) => selectIncident(id, true), [selectIncident]);
+
+  // disposal-flow demo hook (after selectIncident so onDemoIncident can reference it)
+  const flow = useDisposalFlow({
+    gisMap,
+    onDemoIncident: useCallback((inc) => selectIncident(inc.id, false), [selectIncident]),
+    onPanelChange: useCallback((id, open) => {
+      if (id === 'vars') setVarsPanelOpen(open);
+      else setRecPanelOpen(open);
+    }, []),
+  });
+  // Stable ref mirror for handleEvents closure
+  useEffect(() => { demoActiveRef.current = flow.demoActive; }, [flow.demoActive]);
+
   // 车辆行进动画:派遣路线就绪后,每条路线一个车标按真实 ETA 压缩行进(演示节奏
   // 1min真实=6s演示,夹 20-50s),到案点记"到场"时间轴节点。切案/卸载/换路线清理。
   // 到场时刻与状态机对齐:以状态机翻「到场」的剩余秒数为基准按真实 ETA 比例分配时长,
@@ -230,6 +243,8 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
     for (const m of markers) m.remove();
     if (raf != null) cancelAnimationFrame(raf);
     vehiclesRef.current = { markers: [], raf: null };
+    // During demo, vehicle convoy is managed by useDisposalFlow
+    if (flow.demoActive) return;
     if (!gisMap || !selectedId || dispatchRoutes.length === 0) return;
     const leaflet = require('leaflet') as typeof import('leaflet');
     const remainingMs = (secondsUntilArrival(selectedId) ?? 0) * 1000;
@@ -292,7 +307,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       for (const m of v.markers) m.remove();
       vehiclesRef.current = { markers: [], raf: null };
     };
-  }, [gisMap, selectedId, dispatchRoutes]);
+  }, [gisMap, selectedId, dispatchRoutes, flow.demoActive]);
 
   // 模拟新警情接入：1s 内顶部插入（先 toast，再入列）
   const handleInject = useCallback(() => {
@@ -382,6 +397,16 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           className={`rounded px-3 py-1 text-[12px] transition ${mode === 'mock' ? 'bg-cyan/15 text-cyan' : 'text-text-3 hover:text-text-1'}`}
         >模拟演练</button>
       </div>
+
+      {/* 处置流程演示条:一键新警情演示 */}
+      <DisposalFlowBar
+        demoActive={flow.demoActive}
+        stage={flow.stage}
+        following={flow.following}
+        disabled={!gisMap || mode === 'real'}
+        onStart={() => { flow.startDemo(); }}
+        onStop={flow.stopDemo}
+      />
 
       {/* 右上悬浮:预案库 + 现场视频回传(选中警情后视频可用)。
           right-[440px]:让开右侧 C 面板(vars,right:16 width:400 → 左边缘 right:416),
