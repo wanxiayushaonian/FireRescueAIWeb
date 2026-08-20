@@ -48,6 +48,7 @@ describe('liveChannel 剧本受控接口', () => {
     const inc = injectIncident();
     expect(forceStatus(inc.id, '出动')).toBe(false);
     pushScriptRec({ incidentId: inc.id, type: 'force', content: 'x', basis: 'x' });
+    setScripted(inc.id); // no-op guard
     expect(getSnapshot().recommendations.length).toBe(0);
   });
 });

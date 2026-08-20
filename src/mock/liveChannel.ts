@@ -373,8 +373,12 @@ export function pushScriptRec(rec: {
   notify([{ kind: 'recommendation', rec: full }]);
 }
 
-/** 演示期间暂停某案的自动 dwell 推进(剧本用 forceStatus 掌舵)。置 null 恢复自由推进。 */
+/** 演示期间暂停某案的自动 dwell 推进(剧本用 forceStatus 掌舵)。置 null 恢复自由推进。仅 mock。 */
 export function setScripted(id: string | null): void {
+  if (source !== 'mock') {
+    console.warn('[liveChannel] setScripted 仅 mock 模式可用');
+    return;
+  }
   scriptedId = id;
 }
 
