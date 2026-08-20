@@ -43,8 +43,9 @@ export class VehicleConvoy {
   ) {
     this.vehicles = vehicles.map((v) => ({
       ...v,
+      polyline: [...v.polyline],
       progress: 0,
-      latLng: (v.polyline[0] as LatLng | undefined) ?? null,
+      latLng: v.polyline.length > 0 ? (v.polyline[0] as LatLng) : null,
       done: false,
     }));
     this.clock = clock;
