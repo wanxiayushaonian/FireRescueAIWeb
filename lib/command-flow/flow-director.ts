@@ -103,6 +103,10 @@ export class FlowDirector {
       case 'convoy':
         this.handlers.convoy(a.action);
         break;
+      default: {
+        const _exhaustive: never = a.kind;
+        throw new Error(`Unknown ScriptAction kind: ${_exhaustive}`);
+      }
     }
   }
 }
