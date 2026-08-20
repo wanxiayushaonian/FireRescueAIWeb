@@ -166,11 +166,11 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       action: 'addMarker', target: `警情定位 ${inc.id}：${inc.address}`,
       params: { lng: inc.lng, lat: inc.lat, incidentId: inc.id }, source: '面板',
     });
-    // 案域聚焦:fitBounds 包住 3km 支援圈(三圈全可见,车动过程大半在画面内),padding
-    // 让出左右两侧指挥面板遮挡区;不再写 flyTo 场景日志——桥的 flyTo 消费会拉回 z14
-    // 覆盖本次 fitBounds(定位记录由上面 addMarker 保留)
+    // 案域聚焦:fitBounds 包住 1.5km 作战圈(警情区域清晰可辨;支援圈出画由图例标注),
+    // padding 让开左右两侧指挥面板遮挡区;不再写 flyTo 场景日志——桥的 flyTo 消费
+    // 会拉回 z14 覆盖本次 fitBounds(定位记录由上面 addMarker 保留)
     if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
-      const ringM = 3000;
+      const ringM = 1500;
       const dLat = ringM / 111320;
       const dLng = ringM / (111320 * Math.cos((inc.lat * Math.PI) / 180));
       gisMap?.fitBounds(
@@ -178,12 +178,19 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           [inc.lat - dLat, inc.lng - dLng],
           [inc.lat + dLat, inc.lng + dLng],
         ],
-        { paddingTopLeft: [480, 60], paddingBottomRight: [440, 60], maxZoom: 14, animate: true },
+        { paddingTopLeft: [480, 60], paddingBottomRight: [440, 60], maxZoom: 15, animate: true },
       );
       window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'water', on: true } }));
       window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'stations', on: true } }));
     }
     recordCaseEvent(inc.id, 'manual', `选定案件 ${inc.id}`, `${inc.address} · ${inc.type} · ${inc.status}`);
+    // AI 派遣路线仅对"接警/出动"阶段的新案发起——到场/控制的案力量已在现场,
+    // 再画派遣线+车行动画会与"到场"状态推荐时空错位(车还在路上却收到场决策)
+    const needsDispatch = inc.status === '接警' || inc.status === '出动';
+    if (!needsDispatch) {
+      recordCaseEvent(inc.id, 'manual', '案件处置中(力量已到场,不再重复派遣)');
+      return;
+    }
     // AI 派遣路线(两模式共用:mock 警情同样取真实多站路线画线+车动,警情数据本身才是 mock)
     if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
       dispatchingRef.current = id;

@@ -171,9 +171,12 @@ function sampleVars(rt: Runtime): { vars: LiveVars; events: LiveEvent[] } {
     recommendations = [rec, ...recommendations];
     events.push({ kind: 'recommendation', rec });
   };
-  if (temperature > 500) emitRec(thresholdRecommendation('temperature', vars));
-  else if (smoke > 60) emitRec(thresholdRecommendation('smoke', vars));
-  else if (trapped > 0 && (st === '到场' || st === '控制')) emitRec(thresholdRecommendation('trapped', vars));
+  // 越阈推荐统一到场门控(变量照常采样显示):力量未到场时推"内攻轮换/排烟部署"
+  // 属时空错位——用户反馈"车没到先收到场类决策"。trapped 原有门控一并收拢。
+  const onScene = st === '到场' || st === '控制';
+  if (onScene && temperature > 500) emitRec(thresholdRecommendation('temperature', vars));
+  else if (onScene && smoke > 60) emitRec(thresholdRecommendation('smoke', vars));
+  else if (onScene && trapped > 0) emitRec(thresholdRecommendation('trapped', vars));
 
   return { vars, events };
 }

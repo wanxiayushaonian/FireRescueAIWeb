@@ -124,9 +124,10 @@ export function useSceneBridge(deps: {
         }).routes;
         if (routeLayer && Array.isArray(routes) && routes.length) {
           const items: RouteRenderItem[] = routes.map((r, i) => ({ ...r, stationName: r.stationName ?? `路线 ${i + 1}` }));
-          const { bounds, summary } = renderRoutes(routeLayer, items);
+          const { summary } = renderRoutes(routeLayer, items);
           setPlanned(summary);
-          if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
+          // 不再 flyToBounds 路线范围:派遣网络远大于案域,自动拉远会把警情区域
+          // 缩成一点(用户反馈"内容更新时视角被拉走且看不清警情")——画线不动画
         }
       }
     });
