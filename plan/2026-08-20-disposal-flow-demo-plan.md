@@ -1486,10 +1486,11 @@ export function useDisposalFlow(opts: UseDisposalFlowOptions): DisposalFlowApi {
       convoy: (action) => {
         if (action === 'start') {
           const maxEtaSec = Math.max(...routes.map((r) => r.duration ?? 0), 1);
+          const convoyMs = compressDuration(maxEtaSec); // 与剧本 arriveAll 时刻对齐(1min真实=6s演示,夹20-50s)
           const vehicles = routes.map((r) => ({
             stationName: r.stationName ?? '站点',
             polyline: r.polyline as [number, number][],
-            durationMs: Math.max(2500, (maxEtaSec * (r.duration ?? maxEtaSec)) / maxEtaSec),
+            durationMs: Math.max(2500, (convoyMs * (r.duration ?? maxEtaSec)) / maxEtaSec),
           }));
           const leaflet = require('leaflet') as typeof import('leaflet');
           const markers = routes.map((r) => {
