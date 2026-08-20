@@ -12,6 +12,7 @@ import { fetchWaterSourcesPage } from '@/api/water';
 import { subscribeSceneLog } from '@/mock/sceneLog';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { drawFlyToPulse, clearFlyToPulse } from '@/lib/gis/flyto-pulse';
+import { isDisposalDemoActive } from '@/lib/disposal-demo-gate';
 import type { PlannedRoute } from '../DeployPanel';
 
 export function useSceneBridge(deps: {
@@ -40,6 +41,8 @@ export function useSceneBridge(deps: {
     const unsub = subscribeSceneLog((_list, latest) => {
       const map = mapRef.current;
       if (!map || !latest) return;
+      // 处置演示运行中:剧本视角经 ViewDirector 掌舵,抑制自动 flyTo,避免拉回 z14 覆盖演示聚焦
+      if (latest.action === 'flyTo' && isDisposalDemoActive()) return;
       if (latest.action === 'flyTo' || latest.action === 'addMarker') {
         const p = latest.params as { lng?: number; lat?: number; id?: string; zoom?: number; layer?: string } | undefined;
         if (typeof p?.lng === 'number' && typeof p?.lat === 'number' && (p.lng || p.lat)) {
