@@ -163,17 +163,23 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       caller: inc.caller,
     });
     addSceneAction({
-      action: 'flyTo', target: inc.address,
-      params: { lng: inc.lng, lat: inc.lat, incidentId: inc.id }, source: '面板',
-    });
-    addSceneAction({
       action: 'addMarker', target: `警情定位 ${inc.id}：${inc.address}`,
       params: { lng: inc.lng, lat: inc.lat, incidentId: inc.id }, source: '面板',
     });
-    // 案域聚焦:直接飞案件中心(案域三圈由 IncidentZoneOverlay 绘制),并自动开案域相关图层
-    // (警情模块的核心对象是"这一起案",与态势总览的全市一张图形成分工)
+    // 案域聚焦:fitBounds 包住 3km 支援圈(三圈全可见,车动过程大半在画面内),padding
+    // 让出左右两侧指挥面板遮挡区;不再写 flyTo 场景日志——桥的 flyTo 消费会拉回 z14
+    // 覆盖本次 fitBounds(定位记录由上面 addMarker 保留)
     if (Number.isFinite(inc.lng) && Number.isFinite(inc.lat)) {
-      gisMap?.flyTo([inc.lat, inc.lng], Math.max(gisMap.getZoom(), 14), { duration: 0.8 });
+      const ringM = 3000;
+      const dLat = ringM / 111320;
+      const dLng = ringM / (111320 * Math.cos((inc.lat * Math.PI) / 180));
+      gisMap?.fitBounds(
+        [
+          [inc.lat - dLat, inc.lng - dLng],
+          [inc.lat + dLat, inc.lng + dLng],
+        ],
+        { paddingTopLeft: [480, 60], paddingBottomRight: [440, 60], maxZoom: 14, animate: true },
+      );
       window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'water', on: true } }));
       window.dispatchEvent(new CustomEvent('gis:set-layer', { detail: { layer: 'stations', on: true } }));
     }
