@@ -387,7 +387,8 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
 
       {/* 顶部居中:真实/模拟模式切换(真实=incidents DB;模拟=liveChannel 状态机演示)。
           top-[60px] 堆叠在 GIS 图层控制条(top-3)之下,避免两条重叠。
-          pointer-events-auto:内容层(App.tsx)为 pointer-events-none,顶部控件须显式恢复交互。 */}
+          pointer-events-auto:内容层(App.tsx)为 pointer-events-none,顶部控件须显式恢复交互。
+          处置流程演示条并入本条(原独立 top-[110px] 与 TacticalOverlay 提示同位置冲突)。 */}
       <div className="pointer-events-auto absolute left-1/2 top-[60px] z-50 flex -translate-x-1/2 items-center gap-1 rounded-md border border-line bg-bg-panel/90 p-1 backdrop-blur-[8px]">
         <button
           onClick={() => setMode('real')}
@@ -397,17 +398,16 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           onClick={() => setMode('mock')}
           className={`rounded px-3 py-1 text-[12px] transition ${mode === 'mock' ? 'bg-cyan/15 text-cyan' : 'text-text-3 hover:text-text-1'}`}
         >模拟演练</button>
+        <div className="mx-1 h-4 w-px bg-line/60" />
+        <DisposalFlowBar
+          demoActive={flow.demoActive}
+          stage={flow.stage}
+          following={flow.following}
+          disabled={!gisMap || mode === 'real'}
+          onStart={() => { flow.startDemo(); }}
+          onStop={flow.stopDemo}
+        />
       </div>
-
-      {/* 处置流程演示条:一键新警情演示 */}
-      <DisposalFlowBar
-        demoActive={flow.demoActive}
-        stage={flow.stage}
-        following={flow.following}
-        disabled={!gisMap || mode === 'real'}
-        onStart={() => { flow.startDemo(); }}
-        onStop={flow.stopDemo}
-      />
 
       {/* 右上悬浮:预案库 + 现场视频回传(选中警情后视频可用)。
           right-[440px]:让开右侧 C 面板(vars,right:16 width:400 → 左边缘 right:416),
