@@ -64,6 +64,8 @@ export function useIncidentResponse(deps: {
   responseState: ResponseState | null;
   analyze: (target: ResponseTarget, targetMin?: number) => Promise<void>;
   clearResponse: () => void;
+  /** 只隐藏响应分析(面板+分层圈+ETA 染色环),不动 routeLayer——派遣路线与到场图例保留。 */
+  hideResponse: () => void;
 } {
   const { mapRef, responseLayer, routeLayer, stationsRef, stationsVisible } = deps;
   const [state, setState] = useState<ResponseState | null>(null);
@@ -203,6 +205,13 @@ export function useIncidentResponse(deps: {
     setState(null);
   }, [responseLayer, routeLayer]);
 
+  // 车辆全部到场后由实战指挥派发 gis:hide-response-analysis 调用:
+  // ETA 信息已过时,清面板与圈层还地图干净;routeLayer 上的派遣路线是处置记录,保留
+  const hideResponse = useCallback(() => {
+    clearResponseLayer(responseLayer);
+    setState(null);
+  }, [responseLayer]);
+
   // 面板锚定灾情点:地图移动/缩放时重算屏幕坐标(与 DeployPanel 跟随逻辑一致)
   useEffect(() => {
     const map = mapRef.current;
@@ -217,5 +226,5 @@ export function useIncidentResponse(deps: {
     };
   }, [mapRef, state?.target.lng, state?.target.lat]);
 
-  return { responseState: state, analyze, clearResponse };
+  return { responseState: state, analyze, clearResponse, hideResponse };
 }

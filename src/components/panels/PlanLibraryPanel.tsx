@@ -104,7 +104,7 @@ function ItemCard({ item, onOpen }: { item: LibraryItem; onOpen: (it: LibraryIte
         {item.buildingName && <span>{item.buildingName}</span>}
         <span className="ml-auto font-mono">{item.archivedAt}</span>
       </div>
-      <p className="mt-1 line-clamp-1 text-[12px] leading-5 text-text-2">{item.summary[0]}</p>
+      <p className="mt-1 line-clamp-2 text-[12px] leading-5 text-text-2" title={item.summary[0]}>{item.summary[0]}</p>
       {item.kind === '改进措施' && (
         <div className="mt-1.5 flex justify-end">
           {item.status === '待落地' ? (

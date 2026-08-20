@@ -193,7 +193,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers, pr
 
   // 灾情响应分析(重点建筑圆环菜单「响应分析」入口,见 gis/hooks/use-incident-response)
   // 提前到图层隐藏/目标 marker 之前,使派遣与响应两套路线视图共享同一套「干净视图」逻辑
-  const { responseState, analyze, clearResponse } = useIncidentResponse({
+  const { responseState, analyze, clearResponse, hideResponse } = useIncidentResponse({
     mapRef,
     responseLayer: layers.incidentResponse,
     routeLayer: layers.route, // 复用现有 route 图层(最近站路线,与 use-deploy-routes 同款)
@@ -206,6 +206,14 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers, pr
   useEffect(() => {
     setShowIncidentResponse(!!responseState);
   }, [responseState]);
+
+  // 实战指挥:车辆全部到场后隐藏响应分析(面板+圈层+ETA 环)——ETA 已过时,还地图干净;
+  // 派遣路线与到场路线图例不受影响(hideResponse 不动 routeLayer)
+  useEffect(() => {
+    const onHide = (): void => hideResponse();
+    window.addEventListener('gis:hide-response-analysis', onHide);
+    return () => window.removeEventListener('gis:hide-response-analysis', onHide);
+  }, [hideResponse]);
 
   // 派遣/响应分析任一激活时,临时隐藏重点对象图层(重点单位+重点建筑)与水源图层,
   // 路线视图只保留 站点→目标 端点和路线,避免其他重点对象、水源点位遮挡;

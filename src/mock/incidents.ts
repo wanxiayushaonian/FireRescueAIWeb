@@ -65,7 +65,7 @@ export function nowTime(offsetMs = 0): string {
 export const INITIAL_INCIDENTS: Incident[] = [
   {
     id: 'JZ-20250612-007',
-    address: '九江市濂溪区德化路666号万达广场',
+    address: '九江市濂溪区德化路666号万达广场 3F',
     type: '建筑火灾',
     caller: '张 ** 138****2211',
     status: '到场',
@@ -79,7 +79,7 @@ export const INITIAL_INCIDENTS: Incident[] = [
   },
   {
     id: 'JZ-20250612-006',
-    address: '九江市八里湖东路5号乐盈广场21号楼',
+    address: '九江市八里湖东路5号乐盈广场21号楼 12F',
     type: '建筑火灾',
     caller: '李 ** 139****8830',
     status: '控制',
@@ -94,7 +94,7 @@ export const INITIAL_INCIDENTS: Incident[] = [
   },
   {
     id: 'JZ-20250612-005',
-    address: '九江市浔阳区长虹大道60号九江火车站',
+    address: '九江市浔阳区长虹大道60号九江火车站 2F候车厅',
     type: '抢险救援',
     caller: '王 ** 137****5562',
     status: '出动',
@@ -107,14 +107,14 @@ export const INITIAL_INCIDENTS: Incident[] = [
   },
 ];
 
-/** 新警情池:同为库内九江重点建筑快照(与初始 3 起不重复) */
+/** 新警情池:同为库内九江重点建筑快照(与初始 3 起不重复,地址精确到楼层/功能区) */
 const NEW_INCIDENT_POOL: Array<Pick<Incident, 'address' | 'type' | 'caller' | 'lng' | 'lat'>> = [
-  { address: '九江市浔阳区浔阳路88号九江苏宁广场', type: '建筑火灾', caller: '陈 ** 136****9014', lng: 115.9895, lat: 29.7068 },
-  { address: '九江市八里湖新区文博大道168号九江博物馆', type: '建筑火灾', caller: '刘 ** 135****3378', lng: 115.95331, lat: 29.69054 },
-  { address: '九江市浔阳区塔岭南路48号九江市第一人民医院', type: '抢险救援', caller: '赵 ** 150****6621', lng: 115.9865, lat: 29.7085 },
-  { address: '九江市濂溪区前进东路551号九江职业技术学院', type: '抢险救援', caller: '周 ** 189****0455', lng: 116.0358, lat: 29.6525 },
-  { address: '九江市八里湖新区体育路88号九江市体育中心', type: '抢险救援', caller: '吴 ** 187****3326', lng: 115.9658, lat: 29.6725 },
-  { address: '九江市浔阳区滨江东路999号九江银行总部大楼', type: '建筑火灾', caller: '郑 ** 159****7708', lng: 116.0058, lat: 29.7185 },
+  { address: '九江市浔阳区浔阳路88号九江苏宁广场 28F', type: '建筑火灾', caller: '陈 ** 136****9014', lng: 115.9895, lat: 29.7068 },
+  { address: '九江市八里湖新区文博大道168号九江博物馆 2F展厅', type: '建筑火灾', caller: '刘 ** 135****3378', lng: 115.95331, lat: 29.69054 },
+  { address: '九江市浔阳区塔岭南路48号九江市第一人民医院 门诊楼3F', type: '抢险救援', caller: '赵 ** 150****6621', lng: 115.9865, lat: 29.7085 },
+  { address: '九江市濂溪区前进东路551号九江职业技术学院 实训楼4F', type: '抢险救援', caller: '周 ** 189****0455', lng: 116.0358, lat: 29.6525 },
+  { address: '九江市八里湖新区体育路88号九江市体育中心 体育馆1F', type: '抢险救援', caller: '吴 ** 187****3326', lng: 115.9658, lat: 29.6725 },
+  { address: '九江市浔阳区滨江东路999号九江银行总部大楼 18F', type: '建筑火灾', caller: '郑 ** 159****7708', lng: 116.0058, lat: 29.7185 },
 ];
 
 let incidentSeq = 8;

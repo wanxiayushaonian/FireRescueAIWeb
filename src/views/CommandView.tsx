@@ -68,6 +68,13 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       if (ev.kind === 'status') {
         if (!demoActiveRef.current) showToast(`${ev.incident.id} 状态更新：${ev.to} · 演示数据`);
         recordCaseEvent(ev.incident.id, 'status', `状态推进:${ev.from} → ${ev.to}`, ev.incident.address);
+        // 选中警情力量到场及以后:响应分析(ETA 面板+圈层)已过时 → 隐藏(无派遣路线的场景由这里兜底)
+        if (
+          ev.incident.id === selectedIdRef.current &&
+          (ev.to === '到场' || ev.to === '控制' || ev.to === '熄灭')
+        ) {
+          window.dispatchEvent(new CustomEvent('gis:hide-response-analysis'));
+        }
         if (ev.to === '到场') {
           addSceneAction({
             action: 'highlight',
@@ -298,7 +305,12 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           recordCaseEvent(selectedId, 'arrival', `${a.station} 车组到场`);
         }
       }
-      if (!allDone) vehiclesRef.current.raf = requestAnimationFrame(tick);
+      if (!allDone) {
+        vehiclesRef.current.raf = requestAnimationFrame(tick);
+      } else {
+        // 全部车组到场:隐藏响应分析面板与圈层(ETA 已过时,清掉还地图干净;派遣路线保留)
+        window.dispatchEvent(new CustomEvent('gis:hide-response-analysis'));
+      }
     };
     vehiclesRef.current.raf = requestAnimationFrame(tick);
     return () => {

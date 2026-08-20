@@ -77,7 +77,7 @@ function IncidentCard({
         </span>
         <span className="ml-auto shrink-0 text-[11px] text-text-3">{relativeTime(incident.receivedAt)}</span>
       </div>
-      <div className="mt-1 truncate text-[13px] text-text-1">{incident.address}</div>
+      <div className="mt-1 line-clamp-2 text-[13px] leading-5 text-text-1" title={incident.address}>{incident.address}</div>
       {/* 第三行：类型徽标 + 报警人。报警人可截断 */}
       <div className="mt-1 flex items-center gap-2">
         <span className={`shrink-0 rounded border px-1.5 py-px text-[11px] leading-4 ${TYPE_STYLE[incident.type]}`}>

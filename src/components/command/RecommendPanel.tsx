@@ -157,7 +157,7 @@ function ReviewDialog({
         exit={{ y: 12, opacity: 0, scale: 0.97 }}
         transition={{ duration: 0.3 }}
         onClick={(e) => e.stopPropagation()}
-        className="flex max-h-[82dvh] w-[480px] flex-col overflow-hidden rounded-lg border border-violet/60 bg-bg-panel shadow-[0_0_32px_rgba(167,139,250,.15)]"
+        className="flex max-h-[82dvh] w-[560px] flex-col overflow-hidden rounded-lg border border-violet/60 bg-bg-panel shadow-[0_0_32px_rgba(167,139,250,.15)]"
       >
         <div className="flex h-11 shrink-0 items-center gap-2 border-b border-line bg-bg-panel-2/60 px-3">
           <Bot className="h-4 w-4 text-violet" />
@@ -225,8 +225,8 @@ function ReviewDialog({
                 return (
                   <div key={imp.id} className="rounded-lg border border-line bg-bg-panel-2/50 p-2.5">
                     <p className="text-[12px] leading-5 text-text-1">{imp.content}</p>
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <span className="rounded border border-violet/50 bg-violet/10 px-1.5 py-px text-[11px] text-violet">
+                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                      <span className="min-w-0 rounded border border-violet/50 bg-violet/10 px-1.5 py-px text-left text-[11px] leading-4 text-violet">
                         → {imp.target}
                       </span>
                       <motion.button
@@ -472,9 +472,10 @@ export default function RecommendPanel({
             onFlush={(imp) => {
               if (!incident) return;
               // 改进措施回流预案库闭环：入库「待落地」，可在预案库面板跟踪
+              // (title 存全文,列表 line-clamp 收纳展示,详情弹窗可看全——不再截 28 字)
               addLibraryItem({
                 kind: '改进措施',
-                title: imp.content.length > 28 ? `${imp.content.slice(0, 28)}…` : imp.content,
+                title: imp.content,
                 status: '待落地',
                 summary: [imp.content],
                 sourceDetail: `来源：实战指挥 · 战后决策评估（${review.incidentId}）→ ${imp.target}`,

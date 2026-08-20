@@ -47,8 +47,8 @@ export default function IncidentTimeline({ incidentId }: { incidentId: string | 
                   {meta.badge}
                 </span>
               </div>
-              <div className="truncate text-[12px] text-text-2" title={e.label}>{e.label}</div>
-              {e.detail && <div className="truncate text-[10px] text-text-3" title={e.detail}>{e.detail}</div>}
+              <div className="line-clamp-2 text-[12px] leading-4 text-text-2" title={e.label}>{e.label}</div>
+              {e.detail && <div className="line-clamp-2 text-[10px] leading-4 text-text-3" title={e.detail}>{e.detail}</div>}
             </div>
           </div>
         );
