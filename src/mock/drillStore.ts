@@ -91,7 +91,7 @@ export function finishEvaluate(r: EvaluationResult) {
       score: r.score,
       status: '已归档',
       summary: r.opinions,
-      sourceDetail: `来源：演练对抗 · 预案评估（评估分 ${r.score}/100，${state.scenario?.floor ?? ''} 情景） · 演示数据`,
+      sourceDetail: `来源：演练对抗 · 预案评估（评估分 ${r.score}/100，${state.scenario?.floor ?? ''} 情景）`,
     });
     // 真实化：同步在正式预案库建档（21号楼；fire-and-forget）
     void archiveDrillPlanToBackend(state.scenario, r, item.id);
@@ -387,12 +387,12 @@ export function beginConfrontation(flow: FetchState = 'ok') {
   later(1200, () => {
     if (!conf.active || conf.status !== 'running') return;
     if (flow === 'error') {
-      conf = { ...conf, seedLoading: false, seedError: '灾情生成失败，请重试 · 演示数据' };
+      conf = { ...conf, seedLoading: false, seedError: '灾情生成失败，请重试' };
       confEmit();
       return;
     }
     if (flow === 'empty') {
-      conf = { ...conf, seedLoading: false, seedError: '暂无可演练建筑 · 演示数据' };
+      conf = { ...conf, seedLoading: false, seedError: '暂无可演练建筑' };
       confEmit();
       return;
     }
@@ -505,7 +505,7 @@ export function finishConfrontation() {
       score,
       status: pass ? '已归档' : '需修订',
       summary: review.comments,
-      sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}，本局特情 ${confSeq} 条） · 演示数据`,
+      sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}，本局特情 ${confSeq} 条）`,
     });
   });
 }

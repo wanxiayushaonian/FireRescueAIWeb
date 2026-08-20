@@ -58,7 +58,7 @@ const BOUNDARY_URL = '/geo/jiujiang-boundary.json';
 // 边界交互(区县 hover 高亮/点击适窗)只在"能俯瞰九江全境"的低缩放级别生效
 const BOUNDARY_INTERACT_MAX_ZOOM = 12;
 
-export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; /** 各模块初始图层显隐(未传 = 默认只开边界/消防站;实战指挥等按需覆盖,如警情默认开) */ initialLayers?: Partial<{ stations: boolean; water: boolean; boundary: boolean; keyUnits: boolean; incidents: boolean; buildings: boolean; regions: boolean }> }) {
+export default function RealGisMap({ onEnterScene, onMapReady, initialLayers, preserveLayersOnActivity = false }: { onEnterScene?: (sceneId: string, buildingId?: string) => void; onMapReady?: (map: L.Map) => void; /** 各模块初始图层显隐(未传 = 默认只开边界/消防站;实战指挥等按需覆盖,如警情默认开) */ initialLayers?: Partial<{ stations: boolean; water: boolean; boundary: boolean; keyUnits: boolean; incidents: boolean; buildings: boolean; regions: boolean }>; /** 派遣/响应分析激活时是否隐藏重点对象与水源图层(总览默认隐藏保持路线视图干净;实战指挥传 true 保留作战圈内水源/站点/波及单位可见) */ preserveLayersOnActivity?: boolean }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const boundaryGeoRef = useRef<L.GeoJSON | null>(null);
   // 九江市整体边界 bounds(「九江全景」按钮 flyToBounds 用)
@@ -86,6 +86,19 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
   const [showIncidents, setShowIncidents] = useState(initialLayers?.incidents ?? false);
   const [showBuildings, setShowBuildings] = useState(initialLayers?.buildings ?? false);
   const [showRegions, setShowRegions] = useState(initialLayers?.regions ?? false);
+  // 外部图层开关(实战指挥案域聚焦用:选中警情自动开 water/stations——总览无人发此事件,零影响)
+  useEffect(() => {
+    const onSetLayer = (e: Event): void => {
+      const d = (e as CustomEvent<{ layer: string; on: boolean }>).detail;
+      if (!d?.layer || typeof d.on !== 'boolean') return;
+      if (d.layer === 'water') setShowWater(d.on);
+      else if (d.layer === 'stations') setShowStations(d.on);
+      else if (d.layer === 'buildings') setShowBuildings(d.on);
+      else if (d.layer === 'keyUnits') setShowKeyUnits(d.on);
+    };
+    window.addEventListener('gis:set-layer', onSetLayer);
+    return () => window.removeEventListener('gis:set-layer', onSetLayer);
+  }, []);
   const [showIncidentResponse, setShowIncidentResponse] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);
@@ -200,6 +213,9 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
   const prevDispatchLayersRef = useRef<{ keyUnits: boolean; buildings: boolean; water: boolean } | null>(null);
   const layersSuppressed = !!deploy || planned.length > 0 || !!responseState;
   useEffect(() => {
+    // 实战指挥(preserveLayersOnActivity)跳过抑制:作战圈内水源/站点/波及单位正是要看的对象,
+    // 选中警情刚开水源图层,再被隐藏等于白开
+    if (preserveLayersOnActivity) return;
     if (layersSuppressed) {
       if (!prevDispatchLayersRef.current) {
         prevDispatchLayersRef.current = { keyUnits: showKeyUnits, buildings: showBuildings, water: showWater };
@@ -214,7 +230,7 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers }: 
       prevDispatchLayersRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [layersSuppressed]);
+  }, [layersSuppressed, preserveLayersOnActivity]);
 
   // 路线目标端点(派遣 + 响应分析共用):重点对象图层被临时隐藏后,目标建筑/单位作为路线终点
   // 需要单独保留显示。用独立 marker 直接挂到 map(不进任何会被显隐开关/路线渲染清空的图层组),

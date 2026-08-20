@@ -56,7 +56,7 @@ const FILTERS: Array<'全部' | LibraryKind> = ['全部', '演练预案', '对�
 /** 改进措施「确认落地」操作（列表项 / 详情共用） */
 function handleConfirm(id: string) {
   const updated = confirmImprovement(id);
-  if (updated) showToast('改进措施已确认落地，关联预案版本 +1 · 演示数据');
+  if (updated) showToast('改进措施已确认落地，关联预案版本 +1');
 }
 
 function ItemCard({ item, onOpen }: { item: LibraryItem; onOpen: (it: LibraryItem) => void }) {
@@ -137,7 +137,7 @@ function DetailDialog({ item, onClose }: { item: LibraryItem; onClose: () => voi
   const Icon = meta.icon;
   const handleReload = () => {
     window.dispatchEvent(new CustomEvent('library:reload-plan', { detail: { buildingName: item.buildingName } }));
-    showToast(`已请求重新载入演练：${item.buildingName ?? item.title} · 演示数据`);
+    showToast(`已请求重新载入演练：${item.buildingName ?? item.title}`);
     onClose();
   };
   return (
@@ -165,8 +165,7 @@ function DetailDialog({ item, onClose }: { item: LibraryItem; onClose: () => voi
               v{item.version ?? 1}
             </span>
           )}
-          <span className="ml-auto rounded-full border border-amber/70 px-1.5 py-px text-[11px] text-amber">演示数据</span>
-          <button onClick={onClose} className="rounded p-1 text-text-3 transition hover:bg-red/20 hover:text-red">
+          <button onClick={onClose} className="ml-auto rounded p-1 text-text-3 transition hover:bg-red/20 hover:text-red">
             <X className="h-4 w-4" />
           </button>
         </div>

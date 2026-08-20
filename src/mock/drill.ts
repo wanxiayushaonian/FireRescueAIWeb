@@ -59,7 +59,7 @@ export function pickEmergency(used: string[]): EmergencyEvent {
   return src[Math.floor(Math.random() * src.length)];
 }
 
-/** 依据情景参数生成预案内容（演示数据） */
+/** 依据情景参数生成预案内容 */
 export function buildDrillPlan(s: ScenarioParams): DrillPlan {
   const heavy = s.trapped >= 10 || s.material === '危化品' || s.material === '气体';
   const level = heavy ? 'Ⅰ 级响应（重大火灾）' : 'Ⅱ 级响应（较大火灾）';

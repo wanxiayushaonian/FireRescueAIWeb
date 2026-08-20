@@ -1,4 +1,4 @@
-// 执勤力量资源库 Mock 数据（演示数据）
+// 执勤力量资源库 Mock 数据
 import type { FetchState, ResourceItem, Station } from './types';
 
 export const STATION_TYPES: Station['type'][] = [

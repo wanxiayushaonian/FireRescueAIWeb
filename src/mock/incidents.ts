@@ -57,11 +57,15 @@ export function nowTime(offsetMs = 0): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/** 预置 3 起警情：分别处于出动/到场/控制阶段，展示全状态谱系（演示数据） */
+/**
+ * 预置 3 起警情：分别处于出动/到场/控制阶段，展示全状态谱系。
+ * 点位为九江真实重点建筑快照（znya key_buildings 生产库,GCJ02 与 GIS 底图同源）——
+ * 2026-08-20 用户裁定:地图点位必须在九江范围内且为库内重点建筑,弃南京原型坐标。
+ */
 export const INITIAL_INCIDENTS: Incident[] = [
   {
     id: 'JZ-20250612-007',
-    address: '玄武区珠江路 100 号金茂大厦',
+    address: '九江市濂溪区德化路666号万达广场',
     type: '建筑火灾',
     caller: '张 ** 138****2211',
     status: '到场',
@@ -71,11 +75,11 @@ export const INITIAL_INCIDENTS: Incident[] = [
       { status: '出动', ts: nowTime(-150_000) },
       { status: '到场', ts: nowTime(-60_000) },
     ],
-    lng: 118.7968, lat: 32.0603,
+    lng: 116.00556, lat: 29.67511,
   },
   {
     id: 'JZ-20250612-006',
-    address: '秦淮区汉中路 27 号金鹰国际购物中心',
+    address: '九江市八里湖东路5号乐盈广场21号楼',
     type: '建筑火灾',
     caller: '李 ** 139****8830',
     status: '控制',
@@ -86,12 +90,12 @@ export const INITIAL_INCIDENTS: Incident[] = [
       { status: '到场', ts: nowTime(-7 * 60_000) },
       { status: '控制', ts: nowTime(-2 * 60_000) },
     ],
-    lng: 118.7832, lat: 32.0417,
+    lng: 115.94751, lat: 29.66124,
   },
   {
     id: 'JZ-20250612-005',
-    address: '建邺区江东中路 108 号化工仓储园 3 号库',
-    type: '危化品',
+    address: '九江市浔阳区长虹大道60号九江火车站',
+    type: '抢险救援',
     caller: '王 ** 137****5562',
     status: '出动',
     receivedAt: nowTime(-1 * 60_000),
@@ -99,15 +103,18 @@ export const INITIAL_INCIDENTS: Incident[] = [
       { status: '接警', ts: nowTime(-60_000) },
       { status: '出动', ts: nowTime(-30_000) },
     ],
-    lng: 118.7321, lat: 32.0055,
+    lng: 116.00704, lat: 29.70366,
   },
 ];
 
+/** 新警情池:同为库内九江重点建筑快照(与初始 3 起不重复) */
 const NEW_INCIDENT_POOL: Array<Pick<Incident, 'address' | 'type' | 'caller' | 'lng' | 'lat'>> = [
-  { address: '鼓楼区中山北路 219 号华江饭店', type: '建筑火灾', caller: '陈 ** 136****9014', lng: 118.7690, lat: 32.0740 },
-  { address: '栖霞区仙林大道 168 号大学城商业中心', type: '抢险救援', caller: '刘 ** 135****3378', lng: 118.9052, lat: 32.1018 },
-  { address: '雨花台区软件大道 48 号科创园 B 座', type: '建筑火灾', caller: '赵 ** 150****6621', lng: 118.7587, lat: 31.9842 },
-  { address: '江宁区百家湖大街 21 号景枫中心', type: '危化品', caller: '周 ** 189****0455', lng: 118.8156, lat: 31.9530 },
+  { address: '九江市浔阳区浔阳路88号九江苏宁广场', type: '建筑火灾', caller: '陈 ** 136****9014', lng: 115.9895, lat: 29.7068 },
+  { address: '九江市八里湖新区文博大道168号九江博物馆', type: '建筑火灾', caller: '刘 ** 135****3378', lng: 115.95331, lat: 29.69054 },
+  { address: '九江市浔阳区塔岭南路48号九江市第一人民医院', type: '抢险救援', caller: '赵 ** 150****6621', lng: 115.9865, lat: 29.7085 },
+  { address: '九江市濂溪区前进东路551号九江职业技术学院', type: '抢险救援', caller: '周 ** 189****0455', lng: 116.0358, lat: 29.6525 },
+  { address: '九江市八里湖新区体育路88号九江市体育中心', type: '抢险救援', caller: '吴 ** 187****3326', lng: 115.9658, lat: 29.6725 },
+  { address: '九江市浔阳区滨江东路999号九江银行总部大楼', type: '建筑火灾', caller: '郑 ** 159****7708', lng: 116.0058, lat: 29.7185 },
 ];
 
 let incidentSeq = 8;
@@ -139,7 +146,7 @@ export function statusRecommendation(status: IncidentStatus, incident: Incident)
     case '接警':
       return {
         type: 'force',
-        content: `首调建议：调派城东救援站 2 车 12 人作为首批力量赶赴${short}，携带高层供水与排烟装备，预计 6 分钟到场`,
+        content: `首调建议：调派辖区主力站 2 车 12 人作为首批力量赶赴${short}，携带高层供水与排烟装备，预计 6 分钟到场`,
         basis: '警情接入 · 首调规则',
       };
     case '出动':

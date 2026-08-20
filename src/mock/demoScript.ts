@@ -32,7 +32,7 @@ const PACE = {
   objectsShow: 5000,    // 步骤6：对象总览展示
 };
 
-/** 演示情景参数（金茂大厦 5F 电气火灾 · 演示数据） */
+/** 演示情景参数（金茂大厦 5F 电气火灾） */
 const SCENARIO = { buildingId: 'jm', buildingName: '金茂大厦', floor: '5F', material: '电气', trapped: 2 };
 
 let state: ScriptState = { running: false, stepIndex: 0, stepLabel: '', totalSteps: 7 };
@@ -76,7 +76,7 @@ export function stopScript(): void {
   timerIds.forEach((id) => window.clearTimeout(id));
   timerIds = [];
   setState({ running: false, stepIndex: 0, stepLabel: '已停止' });
-  showToast('演示剧本已停止 · 演示数据');
+  showToast('演示剧本已停止');
 }
 
 export function subscribeScript(fn: (s: ScriptState) => void): () => void {
@@ -142,7 +142,7 @@ async function run(): Promise<void> {
   // 7) 态势总览 · 演示结束
   setStep(7, '态势总览 · 演示结束');
   switchModule('overview');
-  addSceneAction({ action: 'resetView', target: '演示剧本完成 · 演示数据', source: '智能体' });
-  showToast('演示剧本完成 · 演示数据');
+  addSceneAction({ action: 'resetView', target: '演示剧本完成', source: '智能体' });
+  showToast('演示剧本完成');
   setState({ running: false });
 }

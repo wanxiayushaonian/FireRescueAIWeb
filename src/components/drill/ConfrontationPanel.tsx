@@ -125,7 +125,7 @@ export default function ConfrontationPanel() {
   useEffect(() => {
     if (conf.review?.archived && toastedGen.current !== conf.generation) {
       toastedGen.current = conf.generation;
-      showToast('对抗演练已归档 · 演示数据');
+      showToast('对抗演练已归档');
     }
   }, [conf.review, conf.generation]);
 
@@ -273,7 +273,7 @@ export default function ConfrontationPanel() {
                   variants={{ hidden: { x: -8, opacity: 0 }, show: { x: 0, opacity: 1 } }}
                   className="font-mono text-[10px] text-text-3"
                 >
-                  seed: {conf.seedScenario.seed} · 演示数据
+                  seed: {conf.seedScenario.seed}
                 </motion.div>
                 <motion.div
                   variants={{ hidden: { x: -8, opacity: 0 }, show: { x: 0, opacity: 1 } }}
@@ -325,7 +325,7 @@ export default function ConfrontationPanel() {
               </div>
             </div>
             <div className="mt-2 text-[11px] leading-4 text-text-3">
-              将按时间线制造突发特情，检验预案韧性 · 演示数据
+              将按时间线制造突发特情，检验预案韧性
             </div>
           </motion.div>
 
@@ -364,7 +364,7 @@ export default function ConfrontationPanel() {
                 </span>
               </>
             ) : (
-              <span className="text-text-3 text-[12px]">正在生成初步灾情… · 演示数据</span>
+              <span className="text-text-3 text-[12px]">正在生成初步灾情…</span>
             )}
             <span className="ml-auto flex items-center gap-1.5 font-num text-[13px] text-cyan">
               <Timer className="h-3.5 w-3.5" />{fmtT(tSecNow)}
@@ -404,7 +404,7 @@ export default function ConfrontationPanel() {
                 style={{ filter: 'drop-shadow(0 0 5px rgba(249,115,22,.6))' }}
               />
             </svg>
-            <span className="absolute bottom-2 left-3 text-[11px] text-text-3">3D 占位缩略区 · 承接本局场景动作 · 演示数据</span>
+            <span className="absolute bottom-2 left-3 text-[11px] text-text-3">3D 占位缩略区 · 承接本局场景动作</span>
           </div>
 
           {/* 特情-调整卡对滚动区（新卡在上） */}
@@ -412,7 +412,7 @@ export default function ConfrontationPanel() {
             {!conf.seedScenario && !conf.seedError ? (
               <div className="flex h-full flex-col items-center justify-center gap-3">
                 <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
-                <div className="text-[13px] text-text-2">正在生成初步灾情… · 演示数据</div>
+                <div className="text-[13px] text-text-2">正在生成初步灾情…</div>
               </div>
             ) : (
               <div className="flex flex-col gap-3">
@@ -471,7 +471,7 @@ export default function ConfrontationPanel() {
                                 <button
                                   onClick={() => {
                                     respondAdjustment(adjust.id, false);
-                                    showToast('已记录人工决策 · 演示数据');
+                                    showToast('已记录人工决策');
                                   }}
                                   className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[12px] text-text-2 transition hover:border-line-glow hover:text-cyan"
                                 >

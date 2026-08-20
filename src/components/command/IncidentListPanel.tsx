@@ -1,4 +1,4 @@
-// 实时警情接入面板（command.md §2）：警情列表 + 状态机徽标 + 模拟新警情接入 + 三态演示
+// 实时警情接入面板（command.md §2）：警情列表 + 状态机徽标 + 新警情接入 + 三态演示
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Radio, ChevronDown, ChevronUp, FlameKindling, AudioLines } from 'lucide-react';
@@ -156,7 +156,7 @@ export default function IncidentListPanel({
         state === 'empty' ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
             <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
-            <div className="text-[13px] text-text-2">当前无接入警情 · 演示数据</div>
+            <div className="text-[13px] text-text-2">当前无接入警情</div>
           </div>
         ) : state === 'error' ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
@@ -181,7 +181,7 @@ export default function IncidentListPanel({
                 className="flex h-9 w-full items-center justify-center gap-2 rounded-md bg-orange text-[13px] font-bold text-bg-deep transition hover:brightness-110 hover:shadow-[0_0_10px_rgba(249,115,22,.4)]"
               >
                 <AudioLines className="h-4 w-4 animate-pulse" />
-                模拟新警情接入
+                新警情接入
               </button>
             )}
           </div>
@@ -189,7 +189,7 @@ export default function IncidentListPanel({
             {list.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-3">
                 <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
-                <div className="text-[13px] text-text-2">当前无接入警情 · 演示数据</div>
+                <div className="text-[13px] text-text-2">当前无接入警情</div>
               </div>
             )}
             <AnimatePresence initial={false}>
@@ -231,7 +231,7 @@ export default function IncidentListPanel({
           </div>
           <div className="shrink-0 border-t border-line px-3 py-1.5 text-center text-[11px] text-text-3">
             <Radio className="mr-1 inline h-3 w-3" />
-            模拟通道 · 数据为前端生成 · 演示数据
+            模拟通道 · 数据为前端生成
           </div>
         </>
       )}

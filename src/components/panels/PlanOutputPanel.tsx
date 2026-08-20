@@ -155,7 +155,7 @@ export default function PlanOutputPanel() {
         window.clearInterval(iv);
         if (toastedGen.current !== generation) {
           toastedGen.current = generation;
-          showToast('预案生成完成 · 演示数据');
+          showToast('预案生成完成');
         }
       }
     }, 500);
@@ -176,7 +176,7 @@ export default function PlanOutputPanel() {
     const e = renderEmergency(raw, scenario);
     injectEmergency(e);
     addSceneAction({ action: 'highlight', target: `特情位置：${e.location}`, source: '预案引擎' });
-    showToast('已注入突发特情 · 演示数据');
+    showToast('已注入突发特情');
   };
 
   const handleEvaluate = async () => {
@@ -213,7 +213,7 @@ export default function PlanOutputPanel() {
       result = evaluatePlan(cur.emergencies.length, cur.evaluatedCount);
     }
     finishEvaluate(result);
-    if (result.archived) showToast('预案已归档 · 演示数据');
+    if (result.archived) showToast('预案已归档');
   };
 
   const handleRetry = () => {
@@ -456,7 +456,6 @@ export default function PlanOutputPanel() {
               先「生成灾情设定」产出预案后可评估
             </span>
           )}
-          <span className="ml-auto text-[11px] text-text-3">演示数据</span>
         </div>
       </div>
     );

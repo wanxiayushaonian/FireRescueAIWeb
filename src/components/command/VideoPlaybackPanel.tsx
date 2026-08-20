@@ -131,7 +131,7 @@ export default function VideoPlaybackPanel({
           ) : state === 'empty' ? (
             <div className="flex h-full flex-col items-center justify-center gap-3">
               <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
-              <div className="text-[13px] text-text-2">该现场暂无视频源接入 · 演示数据</div>
+              <div className="text-[13px] text-text-2">该现场暂无视频源接入</div>
             </div>
           ) : state === 'error' ? (
             <div className="flex h-full flex-col items-center justify-center gap-3">
@@ -194,7 +194,7 @@ export default function VideoPlaybackPanel({
         {/* 底部状态行 */}
         <div className="flex shrink-0 items-center gap-2 border-t border-line px-3 py-1.5 text-[11px] text-text-3">
           <Video className="h-3 w-3" />
-          平台内置播放器 · FLV/HLS 接入区 · 演示数据
+          平台内置播放器 · FLV/HLS 接入区
         </div>
       </div>
     </DraggablePanel>

@@ -116,7 +116,7 @@ export default function ScenarioPanel() {
       setFloor(picked);
       setPicking(false);
       addSceneAction({ action: 'addMarker', target: `着火点 @${picked}`, params: { building: b?.name, floor: picked }, source: '面板' });
-      showToast(`已选定着火点：${b?.name ?? ''} ${picked} · 演示数据`);
+      showToast(`已选定着火点：${b?.name ?? ''} ${picked}`);
     }, 1400);
   };
 
@@ -137,7 +137,7 @@ export default function ScenarioPanel() {
     beginGenerate(scenario);
     // 预案内容即刻就绪，由预案输出面板负责分组流式展示
     window.setTimeout(() => finishGenerate(buildDrillPlan(scenario)), 600);
-    showToast('灾情设定已生成，预案输出智能体推演中 · 演示数据');
+    showToast('灾情设定已生成，预案输出智能体推演中');
   };
 
   return (
@@ -164,7 +164,7 @@ export default function ScenarioPanel() {
         state === 'empty' ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
             <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
-            <div className="text-[13px] text-text-2">暂无可选建筑 · 演示数据</div>
+            <div className="text-[13px] text-text-2">暂无可选建筑</div>
           </div>
         ) : (
           <PanelStateView state={state} onRetry={() => loadBuildings('ok')} skeletonRows={6} />
@@ -229,7 +229,7 @@ export default function ScenarioPanel() {
                       >
                         <Crosshair className="h-4 w-4" />
                       </motion.span>
-                      请点击场景选择着火点（模拟）· 演示数据
+                      请点击场景选择着火点（模拟）
                     </div>
                   </motion.div>
                 )}

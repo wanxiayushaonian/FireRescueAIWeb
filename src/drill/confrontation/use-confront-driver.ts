@@ -73,7 +73,7 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
           });
         },
         onFail: () => {
-          showToast('初步部署生成失败，使用默认部署 · 演示数据');
+          showToast('初步部署生成失败，使用默认部署');
         },
       });
 
@@ -105,7 +105,7 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
             scheduleNext();
           },
           onInjectFail: () => {
-            showToast('特情注入失败，继续对抗 · 演示数据');
+            showToast('特情注入失败，继续对抗');
             scheduleNext();
           },
         });

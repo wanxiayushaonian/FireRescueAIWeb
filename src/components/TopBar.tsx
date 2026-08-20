@@ -58,7 +58,7 @@ export default function TopBar() {
     window.dispatchEvent(
       new CustomEvent('topbar:open-alert', { detail: { buildingId: a.buildingId, floor: a.floor } }),
     );
-    showToast('已写入场景动作日志 · 演示数据');
+    showToast('已写入场景动作日志');
     setAlertOpen(false);
   };
 
@@ -89,10 +89,10 @@ export default function TopBar() {
       </div>
       {/* 右 */}
       <div className="flex items-center gap-4">
-        {/* 全局演示剧本：一键串联 接警→研判→生成→对抗→评估→归档（演示数据） */}
+        {/* 全局演示剧本：一键串联 接警→研判→生成→对抗→评估→归档 */}
         <button
           onClick={() => (script.running ? stopScript() : startScript())}
-          title="一键串联演示 · 演示数据"
+          title="一键串联演示"
           className={`flex items-center gap-2 rounded-md border px-3 py-1.5 text-[12px] transition ${
             script.running
               ? 'animate-pulse border-red/60 bg-red/10 text-red hover:bg-red/20'
@@ -122,7 +122,7 @@ export default function TopBar() {
             <button
               className="flex items-center gap-1.5 text-[12px] text-red"
               onClick={() => setAlertOpen((v) => !v)}
-              title={`当前 ${ALERTS.length} 条未处理告警（演示数据）`}
+              title={`当前 ${ALERTS.length} 条未处理告警`}
             >
               <span className="h-2 w-2 animate-pulse rounded-full bg-red" />{ALERTS.length} 条告警
             </button>

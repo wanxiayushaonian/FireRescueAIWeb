@@ -81,7 +81,7 @@ export default function FamiliarPathPanel({
   const [tourIdx, setTourIdx] = useState(0);
   const [tourPaused, setTourPaused] = useState(false);
   const tourNodesRef = useRef<FamiliarNode[]>([]);
-  const tourDoneTextRef = useRef('导览完成 · 演示数据');
+  const tourDoneTextRef = useRef('导览完成');
   // 导览程序选中点位时置位，避免触发「手动暂停」逻辑
   const tourTicking = useRef(false);
 
@@ -108,7 +108,7 @@ export default function FamiliarPathPanel({
   ) => {
     if (pathNodes.length === 0) return;
     tourNodesRef.current = pathNodes;
-    tourDoneTextRef.current = opts?.doneText ?? '导览完成 · 演示数据';
+    tourDoneTextRef.current = opts?.doneText ?? '导览完成';
     setTouringPath(category);
     setTourIdx(0);
     setTourPaused(false);
@@ -163,7 +163,7 @@ export default function FamiliarPathPanel({
       // 自动开始强化导览（2.5s/站），首条日志标注来自考核错题
       startTour(seq[0].category, seq, {
         firstLogPrefix: '强化导览（考核错题） · ',
-        doneText: '强化导览完成 · 演示数据',
+        doneText: '强化导览完成',
       });
     };
     window.addEventListener('training:start-tour', handler);
@@ -175,7 +175,7 @@ export default function FamiliarPathPanel({
   const handleSelect = (n: FamiliarNode) => {
     if (touringPath && !tourTicking.current) {
       stopTour();
-      showToast('已暂停导览 · 演示数据');
+      showToast('已暂停导览');
     }
     onSelect(n);
   };
@@ -198,7 +198,7 @@ export default function FamiliarPathPanel({
         </div>
         <div className="mt-1.5 flex items-center gap-1.5 text-[12px] text-text-3">
           当前熟悉对象
-          <span className="rounded border border-line bg-bg-panel-2 px-1.5 py-px text-text-2">乐盈广场21号楼 · 演示数据</span>
+          <span className="rounded border border-line bg-bg-panel-2 px-1.5 py-px text-text-2">乐盈广场21号楼</span>
         </div>
       </div>
 
@@ -216,7 +216,7 @@ export default function FamiliarPathPanel({
           {nodes.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center gap-3">
               <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
-              <div className="text-[13px] text-text-2">暂无熟悉路径数据 · 演示数据</div>
+              <div className="text-[13px] text-text-2">暂无熟悉路径数据</div>
             </div>
           ) : (
             FAMILIAR_PATHS.map((p, pi) => {

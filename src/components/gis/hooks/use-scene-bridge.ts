@@ -12,6 +12,7 @@ import { fetchWaterSourcesPage } from '@/api/water';
 import { subscribeSceneLog } from '@/mock/sceneLog';
 import { renderRoutes, type RouteRenderItem } from '@/lib/gis/route-render';
 import { drawFlyToPulse, clearFlyToPulse } from '@/lib/gis/flyto-pulse';
+import { isDisposalDemoActive } from '@/lib/disposal-demo-gate';
 import type { PlannedRoute } from '../DeployPanel';
 
 export function useSceneBridge(deps: {
@@ -40,6 +41,8 @@ export function useSceneBridge(deps: {
     const unsub = subscribeSceneLog((_list, latest) => {
       const map = mapRef.current;
       if (!map || !latest) return;
+      // 处置演示运行中:剧本视角经 ViewDirector 掌舵,抑制自动 flyTo,避免拉回 z14 覆盖演示聚焦
+      if (latest.action === 'flyTo' && isDisposalDemoActive()) return;
       if (latest.action === 'flyTo' || latest.action === 'addMarker') {
         const p = latest.params as { lng?: number; lat?: number; id?: string; zoom?: number; layer?: string } | undefined;
         if (typeof p?.lng === 'number' && typeof p?.lat === 'number' && (p.lng || p.lat)) {
@@ -124,9 +127,10 @@ export function useSceneBridge(deps: {
         }).routes;
         if (routeLayer && Array.isArray(routes) && routes.length) {
           const items: RouteRenderItem[] = routes.map((r, i) => ({ ...r, stationName: r.stationName ?? `路线 ${i + 1}` }));
-          const { bounds, summary } = renderRoutes(routeLayer, items);
+          const { summary } = renderRoutes(routeLayer, items);
           setPlanned(summary);
-          if (bounds) map.flyToBounds(bounds, { padding: [60, 60] });
+          // 不再 flyToBounds 路线范围:派遣网络远大于案域,自动拉远会把警情区域
+          // 缩成一点(用户反馈"内容更新时视角被拉走且看不清警情")——画线不动画
         }
       }
     });
