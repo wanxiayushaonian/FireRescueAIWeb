@@ -66,7 +66,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   const handleEvents = useCallback((events: LiveEvent[]) => {
     for (const ev of events) {
       if (ev.kind === 'status') {
-        if (!demoActiveRef.current) showToast(`${ev.incident.id} 状态更新：${ev.to}`);
+        if (!demoActiveRef.current) showToast(`${ev.incident.id} 状态更新：${ev.to} · 演示数据`);
         recordCaseEvent(ev.incident.id, 'status', `状态推进:${ev.from} → ${ev.to}`, ev.incident.address);
         if (ev.to === '到场') {
           addSceneAction({
@@ -89,8 +89,8 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       } else if (ev.kind === 'rescue') {
         showToast(
           ev.trapped === 0
-            ? `${ev.incidentId} 被困人员已全部救出`
-            : `${ev.incidentId} 救援进展：成功救出 1 人，剩余 ${ev.trapped} 人`,
+            ? `${ev.incidentId} 被困人员已全部救出 · 演示数据`
+            : `${ev.incidentId} 救援进展：成功救出 1 人，剩余 ${ev.trapped} 人 · 演示数据`,
         );
         recordCaseEvent(
           ev.incidentId,
@@ -311,7 +311,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
 
   // 模拟新警情接入：1s 内顶部插入（先 toast，再入列）
   const handleInject = useCallback(() => {
-    showToast('110 联动接入新警情');
+    showToast('110 联动接入新警情 · 演示数据');
     const t = window.setTimeout(() => {
       const inc = injectIncident();
       addSceneAction({
@@ -333,7 +333,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       params: { recId: rec.id },
       source: '面板',
     });
-    showToast('已采纳推荐并同步指挥链');
+    showToast('已采纳推荐并同步指挥链 · 演示数据');
   }, []);
 
   const handleIgnore = useCallback((rec: Recommendation) => {
@@ -347,7 +347,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       params: { kind: 'reinforce', color: '#22d3ee', incidentId: rec.incidentId },
       source: '面板',
     });
-    showToast('已在场景中展示增援路线');
+    showToast('已在场景中展示增援路线 · 演示数据');
   }, []);
 
   const handleFlushImprovement = useCallback((impId: string, incidentId: string) => {

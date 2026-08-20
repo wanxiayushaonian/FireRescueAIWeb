@@ -95,7 +95,7 @@ export function buildScript(ctx: ScriptContext): ScriptAction[] {
   const arriveRec = ctx.statusRecs['到场'];
   if (arriveRec) at(600, { kind: 'pushRec', ...arriveRec });
 
-  // ── 控制 ──
+  // 控制/熄灭阶段驻留 ~3s (≈真实5分钟压缩到演示节奏,保持现状节奏)
   at(3000, { kind: 'status', to: '控制' });
   at(500, { kind: 'stage', stage: '控制' });
   at(250, { kind: 'toast', msg: '火势已控制 · 演示数据' });
@@ -103,6 +103,7 @@ export function buildScript(ctx: ScriptContext): ScriptAction[] {
   if (controlRec) at(500, { kind: 'pushRec', ...controlRec });
 
   // ── 熄灭 ──
+  // ~3s dwell ≈ 真实5分钟压缩到演示节奏 (保持现状节奏)
   at(3000, { kind: 'status', to: '熄灭' });
   at(500, { kind: 'stage', stage: '熄灭' });
   at(250, { kind: 'toast', msg: '明火已扑灭 · 处置完毕 · 演示数据' });
