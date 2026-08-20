@@ -104,8 +104,9 @@ export class FlowDirector {
         this.handlers.convoy(a.action);
         break;
       default: {
-        const _exhaustive: never = a.kind;
-        throw new Error(`Unknown ScriptAction kind: ${_exhaustive}`);
+        // 穷举守卫:全部 case 覆盖后 a 窄化为 never,这里对 never 赋值即编译期穷举校验
+        const _exhaustive: never = a;
+        throw new Error('Unknown ScriptAction kind');
       }
     }
   }

@@ -36,10 +36,20 @@ export function buildScript(ctx: ScriptContext): ScriptAction[] {
   const { incidentId, address, lng, lat, routes } = ctx;
   const t: ScriptAction[] = [];
   let cursor = 0;
-  const at = (ms: number, a: Omit<ScriptAction, 'at'>): void => {
+  /** Overload: each kind literal narrows to a single ScriptAction member minus `at`. */
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'stage' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'toast' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'timeline' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'view' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'status' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'pushRec' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'panel' }, 'at'>): void;
+  function at(ms: number, a: Omit<ScriptAction & { kind: 'convoy' }, 'at'>): void;
+  // eslint-disable-next-line func-name-matching
+  function at(ms: number, a: Record<string, unknown>): void {
     cursor += ms;
-    t.push({ ...a, at: cursor } as ScriptAction);
-  };
+    t.push(Object.assign(a, { at: cursor }) as ScriptAction);
+  }
 
   // ── 接警 ──
   at(0, { kind: 'stage', stage: '接警' });
