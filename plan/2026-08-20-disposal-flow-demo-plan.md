@@ -1443,6 +1443,8 @@ export function useDisposalFlow(opts: UseDisposalFlowOptions): DisposalFlowApi {
     } catch {
       showToast('路线获取失败,仅视角演示 · 演示数据');
     }
+    // 过期守卫:await 期间被 stopDemo(中止/卸载)则丢弃这次 fetch 结果,不再续演
+    if (incidentIdRef.current !== inc.id) return;
 
     // 3) 地图适配器 + 视角仲裁
     const adapter: MapAdapter = {
@@ -1492,6 +1494,7 @@ export function useDisposalFlow(opts: UseDisposalFlowOptions): DisposalFlowApi {
       panel: (id, open) => onPanelChange(id, open),
       convoy: (action) => {
         if (action === 'start') {
+          if (!routes.length) return; // 防御:空路线(剧本本就不会发 start,兜底)
           const maxEtaSec = Math.max(...routes.map((r) => r.duration ?? 0), 1);
           const convoyMs = compressDuration(maxEtaSec); // 与剧本 arriveAll 时刻对齐(1min真实=6s演示,夹20-50s)
           const vehicles = routes.map((r) => ({
@@ -1503,6 +1506,7 @@ export function useDisposalFlow(opts: UseDisposalFlowOptions): DisposalFlowApi {
           const markers = routes.map((r) => {
             const marker = leaflet.marker(r.polyline[0] as [number, number], {
               zIndexOffset: 900,
+              bubblingMouseEvents: false, // 点击车辆不冒泡到地图 click(否则地图 stopFollow 立即取消跟随)
               icon: leaflet.divIcon({ className: '', html: vehicleIconHtml(r.stationName ?? '站点', false), iconSize: [0, 0] }),
             }).addTo(gisMap);
             // 点击车辆 → 视角跟随(getLatLng() 为 LatLng 对象,取 lat/lng 组成 [lat,lng])
