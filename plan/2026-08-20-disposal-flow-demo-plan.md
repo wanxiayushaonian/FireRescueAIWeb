@@ -529,7 +529,10 @@ export function forceStatus(incidentId: string, next: IncidentStatus): boolean {
   const rt = runtimes.find((r) => r.incident.id === incidentId);
   if (!rt) return false;
   const from = rt.incident.status;
-  if (from === next || STATUS_ORDER.indexOf(next) <= STATUS_ORDER.indexOf(from)) {
+  const toIdx = STATUS_ORDER.indexOf(next);
+  const fromIdx = STATUS_ORDER.indexOf(from);
+  // 仅允许沿合法链相邻推进(接警→出动→到场→控制→熄灭),跳级非法
+  if (toIdx !== fromIdx + 1) {
     console.warn(`[liveChannel] 非法状态迁移 ${from} → ${next}`);
     return false;
   }
@@ -848,21 +851,21 @@ describe('ViewDirector', () => {
   it('跟随每帧 panTo 车辆,停止后不再 panTo', () => {
     const adapter = mockAdapter();
     const v = new ViewDirector({ adapter });
-    v.startFollow({ latLng: () => [29.72, 116.0] });
+    v.startFollow({ latLng: () => [29.72, 116.0] }); // startFollow 内部立即吸附一次
     v.updateFollow();
     v.updateFollow();
     v.stopFollow();
     v.updateFollow();
-    expect(adapter.calls.filter((c) => c.startsWith('panTo')).length).toBe(2);
+    expect(adapter.calls.filter((c) => c.startsWith('panTo')).length).toBe(3); // 吸附1 + 每帧2
   });
 
   it('跟随中用户拖图 → 退出跟随', () => {
     const adapter = mockAdapter();
     const v = new ViewDirector({ adapter });
-    v.startFollow({ latLng: () => [29.71, 115.98] });
+    v.startFollow({ latLng: () => [29.71, 115.98] }); // 初始吸附 1 次 panTo
     v.notifyUserInteract();
     expect(v.getOwner()).toBe('user');
-    expect(adapter.calls.filter((c) => c.startsWith('panTo')).length).toBe(0);
+    expect(adapter.calls.filter((c) => c.startsWith('panTo')).length).toBe(1); // 拖图后不再 panTo
   });
 
   it('settle/reset 分别无动作与复位', () => {
@@ -1821,3 +1824,5 @@ Run: `git status --short` 确认无遗漏;若有格式/文档微调,单独 commi
 **3. Type consistency:** 核心类型 `FlowStage`/`ViewSpec`/`ScriptAction`/`FlowHandlers`/`MapAdapter`/`ConvoyClock`/`FlowClock` 跨任务签名一致;`buildScript` 返回 `ScriptAction[]`,FlowDirector.run 消费同一类型;liveChannel 接口签名与 useDisposalFlow 调用一致;`@/lib/...` 在 vitest(root lib/)与 Next(tsconfig paths)双环境可解析。
 
 **自审修正(已内联):** ① Task 8 车辆跟随 `getLatLng()` 返回 Leaflet `LatLng` 对象而非 `[number,number]`——已改为取 `[ll.lat, ll.lng]`;② Task 8 `resetView` 适配器改用 `addSceneAction({action:'resetView'})` 复用现有复位通道(原自定义事件无消费方);③ Task 8 `statusRecs` 类型直接用 `ScriptContext['statusRecs']`。
+
+**前置扫描修正(SDD 执行前,已内联):** ④ Task 5 `startFollow` 内部立即吸附一次 panTo,"每帧 panTo"测试期望改为 3(吸附1+每帧2)、"拖图退出"测试期望改为 1(仅初始吸附);⑤ Task 3 `forceStatus` 迁移校验改为**相邻推进**(`toIdx === fromIdx + 1`),跳级非法——与测试"跳 控制→熄灭 非法"一致。
