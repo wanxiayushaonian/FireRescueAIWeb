@@ -9,7 +9,7 @@
 //   connect('websocket') 为预留真实接入位，原型固定使用 connect('mock')。
 import {
   INITIAL_INCIDENTS, makeNewIncident, nextRecommendationId, nowTime,
-  statusRecommendation, thresholdRecommendation,
+  statusRecommendation, thresholdRecommendation, STATUS_ORDER,
 } from './incidents';
 import type { DisasterVars, Incident, IncidentStatus, Recommendation, RecommendType } from './incidents';
 
@@ -71,6 +71,24 @@ const runtimes: Runtime[] = [];
 const varsMap = new Map<string, LiveVars>();
 let recommendations: Recommendation[] = [];
 const listeners = new Set<Listener>();
+
+/** 当前被剧本掌舵的警情 id(自动 dwell 暂停);null = 无。 */
+let scriptedId: string | null = null;
+
+/** 仅测试用:直接设置数据源,不启动定时器。 */
+export function __setSourceForTest(src: LiveSource | null): void {
+  source = src;
+}
+
+/** 仅测试用:清空全部运行态与订阅。 */
+export function __resetForTest(): void {
+  runtimes.length = 0;
+  varsMap.clear();
+  recommendations = [];
+  scriptedId = null;
+  listeners.clear();
+  tick = 0;
+}
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v));
@@ -186,6 +204,8 @@ function doTick() {
   const events: LiveEvent[] = [];
 
   for (const rt of runtimes) {
+    // 剧本掌舵的警情:自动 dwell 暂停,由 forceStatus 精确控制翻转
+    if (rt.incident.id === scriptedId) continue;
     // 1) 状态机推进
     const next = NEXT_STATUS[rt.incident.status];
     if (next && tick - rt.enteredTick >= STATUS_DWELL[rt.incident.status as Exclude<IncidentStatus, '熄灭'>]) {
@@ -310,3 +330,51 @@ export function secondsUntilArrival(incidentId: string): number | null {
 export function getSnapshot(): LiveSnapshot {
   return snapshot();
 }
+
+/**
+ * 剧本驱动:强制把某案状态翻到 next(校验合法迁移链),绕开 dwell 等待。
+ * 仅 mock;非法迁移/非 mock 均 no-op + warn。返回是否成功。
+ */
+export function forceStatus(incidentId: string, next: IncidentStatus): boolean {
+  if (source !== 'mock') {
+    console.warn('[liveChannel] forceStatus 仅 mock 模式可用');
+    return false;
+  }
+  const rt = runtimes.find((r) => r.incident.id === incidentId);
+  if (!rt) return false;
+  const from = rt.incident.status;
+  const toIdx = STATUS_ORDER.indexOf(next);
+  const fromIdx = STATUS_ORDER.indexOf(from);
+  // 仅允许沿合法链相邻推进(接警→出动→到场→控制→熄灭),跳级非法
+  if (toIdx !== fromIdx + 1) {
+    console.warn(`[liveChannel] 非法状态迁移 ${from} → ${next}`);
+    return false;
+  }
+  rt.incident = {
+    ...rt.incident,
+    status: next,
+    statusHistory: [...rt.incident.statusHistory, { status: next, ts: nowTime() }],
+  };
+  rt.enteredTick = tick;
+  notify([{ kind: 'status', incident: rt.incident, from, to: next }]);
+  return true;
+}
+
+/** 剧本按时刻推送推荐(复用 recommendations 存储 + 事件通知)。仅 mock。 */
+export function pushScriptRec(rec: {
+  incidentId: string; type: RecommendType; content: string; basis: string;
+}): void {
+  if (source !== 'mock') {
+    console.warn('[liveChannel] pushScriptRec 仅 mock 模式可用');
+    return;
+  }
+  const full: Recommendation = { ...rec, id: nextRecommendationId(), ts: nowTime() };
+  recommendations = [full, ...recommendations];
+  notify([{ kind: 'recommendation', rec: full }]);
+}
+
+/** 演示期间暂停某案的自动 dwell 推进(剧本用 forceStatus 掌舵)。置 null 恢复自由推进。 */
+export function setScripted(id: string | null): void {
+  scriptedId = id;
+}
+
