@@ -18,9 +18,9 @@ import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
 import { recordCaseEvent } from '@/lib/case-timeline';
-import { compressDuration, interpolateOnPolyline, type LatLng } from '@/lib/gis/vehicle-anim';
+import { interpolateOnPolyline, type LatLng } from '@/lib/gis/vehicle-anim';
 import {
-  connect, disconnect, getSnapshot, injectIncident, setRecommendationStatus, subscribe,
+  connect, disconnect, getSnapshot, injectIncident, secondsUntilArrival, setRecommendationStatus, subscribe,
 } from '@/mock/liveChannel';
 import type { LiveEvent, LiveSnapshot } from '@/mock/liveChannel';
 import type { Recommendation, Incident as MockIncident } from '@/mock/incidents';
@@ -63,7 +63,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   const handleEvents = useCallback((events: LiveEvent[]) => {
     for (const ev of events) {
       if (ev.kind === 'status') {
-        showToast(`${ev.incident.id} 状态更新：${ev.to} · 演示数据`);
+        showToast(`${ev.incident.id} 状态更新：${ev.to}`);
         recordCaseEvent(ev.incident.id, 'status', `状态推进:${ev.from} → ${ev.to}`, ev.incident.address);
         if (ev.to === '到场') {
           addSceneAction({
@@ -74,17 +74,20 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           });
         }
         if (ev.to === '熄灭') {
-          addSceneAction({
-            action: 'resetView',
-            target: `警情 ${ev.incident.id} 处置完毕，视角复位`,
-            source: '面板',
-          });
+          // 仅当前选中警情熄灭才复位视角;非选中警情(状态机自行推进)只记时间轴,不打断用户当前视野
+          if (ev.incident.id === selectedIdRef.current) {
+            addSceneAction({
+              action: 'resetView',
+              target: `警情 ${ev.incident.id} 处置完毕，视角复位`,
+              source: '面板',
+            });
+          }
         }
       } else if (ev.kind === 'rescue') {
         showToast(
           ev.trapped === 0
-            ? `${ev.incidentId} 被困人员已全部救出 · 演示数据`
-            : `${ev.incidentId} 救援进展：成功救出 1 人，剩余 ${ev.trapped} 人 · 演示数据`,
+            ? `${ev.incidentId} 被困人员已全部救出`
+            : `${ev.incidentId} 救援进展：成功救出 1 人，剩余 ${ev.trapped} 人`,
         );
         recordCaseEvent(
           ev.incidentId,
@@ -219,6 +222,8 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
 
   // 车辆行进动画:派遣路线就绪后,每条路线一个车标按真实 ETA 压缩行进(演示节奏
   // 1min真实=6s演示,夹 20-50s),到案点记"到场"时间轴节点。切案/卸载/换路线清理。
+  // 到场时刻与状态机对齐:以状态机翻「到场」的剩余秒数为基准按真实 ETA 比例分配时长,
+  // 最远站恰在状态翻「到场」时到达——消除"状态:到场"与"车组到场"两条时间线错位。
   const vehiclesRef = useRef<{ markers: Array<{ remove: () => void }>; raf: number | null }>({ markers: [], raf: null });
   useEffect(() => {
     const { markers, raf } = vehiclesRef.current;
@@ -227,8 +232,16 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
     vehiclesRef.current = { markers: [], raf: null };
     if (!gisMap || !selectedId || dispatchRoutes.length === 0) return;
     const leaflet = require('leaflet') as typeof import('leaflet');
+    const remainingMs = (secondsUntilArrival(selectedId) ?? 0) * 1000;
+    // 状态机已翻到场(取数窗口跨越翻转):2.5s 短收尾,车标快速到位,不再按真实 ETA 慢走
+    const maxEtaMs = Math.max(...dispatchRoutes.map((r) => r.duration ?? 0), 1);
+    const durations = dispatchRoutes.map((r) => {
+      if (remainingMs <= 0) return 2500;
+      const etaMs = r.duration ?? maxEtaMs;
+      return Math.max(2500, (remainingMs * etaMs) / maxEtaMs);
+    });
 
-    const anims = dispatchRoutes.map((r) => {
+    const anims = dispatchRoutes.map((r, i) => {
       const station = r.stationName ?? '站点';
       const marker = leaflet
         .marker(r.polyline[0] as [number, number], {
@@ -244,7 +257,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
         marker,
         station,
         polyline: r.polyline as LatLng[],
-        durationMs: compressDuration(r.duration),
+        durationMs: durations[i],
         done: false,
       };
     });
@@ -283,7 +296,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
 
   // 模拟新警情接入：1s 内顶部插入（先 toast，再入列）
   const handleInject = useCallback(() => {
-    showToast('110 联动接入新警情 · 演示数据');
+    showToast('110 联动接入新警情');
     const t = window.setTimeout(() => {
       const inc = injectIncident();
       addSceneAction({
@@ -305,7 +318,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       params: { recId: rec.id },
       source: '面板',
     });
-    showToast('已采纳推荐并同步指挥链 · 演示数据');
+    showToast('已采纳推荐并同步指挥链');
   }, []);
 
   const handleIgnore = useCallback((rec: Recommendation) => {
@@ -319,7 +332,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       params: { kind: 'reinforce', color: '#22d3ee', incidentId: rec.incidentId },
       source: '面板',
     });
-    showToast('已在场景中展示增援路线 · 演示数据');
+    showToast('已在场景中展示增援路线');
   }, []);
 
   const handleFlushImprovement = useCallback((impId: string, incidentId: string) => {
@@ -329,11 +342,11 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       params: { impId, incidentId },
       source: '预案引擎',
     });
-    showToast('改进措施已写入预案库 · 演示数据');
+    showToast('改进措施已写入预案库');
   }, []);
 
   const handleExportReport = useCallback(() => {
-    showToast('评估报告导出任务已创建（模拟）· 演示数据');
+    showToast('评估报告导出任务已创建（模拟）');
   }, []);
 
   return (
@@ -343,7 +356,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           同在内容层，须自救恢复交互；TacticalOverlay 仍 pointer-events-none 不拦截底图）。
           与态势总览同一 RealGisMap 全量 chrome；警情是本模块核心业务对象，图层默认开 */}
       <div className="pointer-events-auto absolute inset-0">
-        <RealGisMap initialLayers={{ incidents: true }} onMapReady={setGisMap} />
+        <RealGisMap initialLayers={{ incidents: true }} onMapReady={setGisMap} preserveLayersOnActivity />
       </div>
 
       {/* 案域圈层:选中警情的三级作战域(500m 警戒/1.5km 作战/3km 支援) */}

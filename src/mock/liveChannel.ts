@@ -293,6 +293,20 @@ export function setRecommendationStatus(id: string, field: 'adopted' | 'ignored'
   notify([]);
 }
 
+/**
+ * 距状态机翻「到场」的剩余秒数(仅接警/出动有派遣语义,其余阶段返回 null)。
+ * 车动动画以它为基准对齐:车标到案时刻 = 状态机到场时刻,消除两条"到场"时间线错位。
+ */
+export function secondsUntilArrival(incidentId: string): number | null {
+  const rt = runtimes.find((r) => r.incident.id === incidentId);
+  if (!rt) return null;
+  const st = rt.incident.status;
+  if (st !== '接警' && st !== '出动') return null;
+  let total = Math.max(0, STATUS_DWELL[st] - (tick - rt.enteredTick));
+  if (st === '接警') total += STATUS_DWELL['出动'];
+  return total;
+}
+
 export function getSnapshot(): LiveSnapshot {
   return snapshot();
 }

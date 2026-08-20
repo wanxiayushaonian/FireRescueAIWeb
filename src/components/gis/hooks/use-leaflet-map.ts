@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { DEFAULT_CENTER } from '@/lib/gis/map-constants';
+import { saveMapView, takeMapView } from '@/lib/gis/map-view-store';
 
 // 高德矢量瓦片(GCJ02,自带中文地名/道路注记;免 key,subdomains 1-4)
 const VECTOR_URL = 'https://webrd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}';
@@ -69,9 +70,11 @@ export function useLeafletMap(
   // 初始化 Leaflet 地图(仅客户端;SSR 时 rootRef 为空直接跳过)
   useEffect(() => {
     if (!rootRef.current || mapRef.current) return;
+    // 跨模块视角记忆:上次 moveend 保存的视角优先,无则回退九江全景(切模块不再一律重置)
+    const saved = takeMapView();
     const map = L.map(rootRef.current, {
-      center: DEFAULT_CENTER,
-      zoom: DEFAULT_ZOOM,
+      center: saved?.center ?? DEFAULT_CENTER,
+      zoom: saved?.zoom ?? DEFAULT_ZOOM,
       zoomControl: false,
     });
     mapRef.current = map;
@@ -106,6 +109,8 @@ export function useLeafletMap(
     if (!map || !mapInited) return;
     const onZoom = () => setZoom(map.getZoom());
     map.on('zoomend', onZoom);
+    // 初始化即同步:视角记忆恢复的缩放级别可能不是默认值,先同步再渲染聚合/逐点
+    setZoom(map.getZoom());
     return () => {
       map.off('zoomend', onZoom);
     };
@@ -117,6 +122,8 @@ export function useLeafletMap(
     if (!map || !mapInited) return;
     let timer: number | undefined;
     const onMove = () => {
+      // 视角记忆:settled 后(moveend)写入,供其他模块重挂时恢复
+      saveMapView([map.getCenter().lat, map.getCenter().lng], map.getZoom());
       window.clearTimeout(timer);
       timer = window.setTimeout(() => setViewportTick((t) => t + 1), 300);
     };
