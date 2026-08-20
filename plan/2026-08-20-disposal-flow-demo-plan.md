@@ -1705,7 +1705,9 @@ const selectIncident = useCallback((id: string, withDispatch: boolean) => {
   recordCaseEvent(inc.id, 'manual', `选定案件 ${inc.id}`, `${inc.address} · ${inc.type} · ${inc.status}`);
   const needsDispatch = inc.status === '接警' || inc.status === '出动';
   if (!needsDispatch || !withDispatch) {
-    if (needsDispatch && !withDispatch) recordCaseEvent(inc.id, 'manual', '案件处置中(力量已到场,不再重复派遣)');
+    // 仅手动选中已到场/控制/熄灭案件(needsDispatch=false)才记录"力量已到场";
+    // 演示路径(withDispatch=false 且 needsDispatch=true)静默跳过,派遣由剧本自行编排
+    if (!needsDispatch) recordCaseEvent(inc.id, 'manual', '案件处置中(力量已到场,不再重复派遣)');
     return;
   }
   // 原有 AI 派遣 + dispatchRoutes 设置块(原 L197-220)原样保留
