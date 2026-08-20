@@ -24,10 +24,10 @@ export default function IncidentTimeline({ incidentId }: { incidentId: string | 
   }, [incidentId]);
 
   if (!incidentId) {
-    return <div className="py-6 text-center text-[12px] text-text-3">选中警情后记录处置动作 · 演示数据</div>;
+    return <div className="py-6 text-center text-[12px] text-text-3">选中警情后记录处置动作</div>;
   }
   if (entries.length === 0) {
-    return <div className="py-6 text-center text-[12px] text-text-3">暂无处置记录,等待案件推进 · 演示数据</div>;
+    return <div className="py-6 text-center text-[12px] text-text-3">暂无处置记录,等待案件推进</div>;
   }
   const ordered = [...entries].reverse(); // 新在上
   return (

@@ -1,4 +1,4 @@
-// 顶栏告警 Mock 数据（演示数据）
+// 顶栏告警 Mock 数据
 // fetch 风格同 design.md §4：Promise + 300-800ms 延迟 + state 演示参数，
 // 作为后续真实告警数据替换点。
 import type { FetchState } from './types';

@@ -197,7 +197,7 @@ export default function DisasterVarsPanel({
             ))}
           </div>
           <div className="shrink-0 pt-1.5 text-center text-[11px] text-text-3">
-            数据源：现场回传（模拟）· 刷新周期 5-10s · 演示数据
+            数据源：现场回传（模拟）· 刷新周期 5-10s
           </div>
         </div>
       )}

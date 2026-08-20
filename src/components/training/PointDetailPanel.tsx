@@ -48,7 +48,7 @@ export default function PointDetailPanel({
 }: PointDetailPanelProps) {
   const copyCoord = (text: string) => {
     void navigator.clipboard?.writeText(text).catch(() => {});
-    showToast('已复制坐标 · 演示数据');
+    showToast('已复制坐标');
   };
 
   const locate = (n: FamiliarNode) => {
@@ -61,7 +61,7 @@ export default function PointDetailPanel({
     if (n.floor) {
       addSceneAction({ action: 'switchFloor', target: `切换至 ${n.floor}`, params: { floor: n.floor }, source: '面板' });
     }
-    showToast('已写入场景动作日志 · 演示数据');
+    showToast('已写入场景动作日志');
   };
 
   const highlightRelated = (n: FamiliarNode, chip: string) => {
@@ -71,7 +71,7 @@ export default function PointDetailPanel({
       params: { nodeId: n.id, facility: chip },
       source: '面板',
     });
-    showToast('已写入场景动作日志 · 演示数据');
+    showToast('已写入场景动作日志');
   };
 
   return (
@@ -118,7 +118,7 @@ export default function PointDetailPanel({
                 <Row label="所在楼层" value={node.floor ?? '—'} />
                 <Row label="数量" value={node.count != null ? `${node.count}` : '—'} />
                 <Row label="责任队站" value="乐盈广场21号楼微型站 / 城东救援站" />
-                {node.lastExamAt && <Row label="最近考核" value={`${node.lastExamAt} · 演示数据`} />}
+                {node.lastExamAt && <Row label="最近考核" value={`${node.lastExamAt}`} />}
                 <div className="flex gap-2 py-0.5">
                   <span className="w-16 shrink-0 text-text-3">坐标</span>
                   <button
@@ -168,7 +168,7 @@ export default function PointDetailPanel({
                   <li key={i} className="text-[12px] leading-5 text-text-2">· {h}</li>
                 ))}
               </ul>
-              <div className="mt-1.5 text-[11px] text-text-3">题库依据 · 演示数据</div>
+              <div className="mt-1.5 text-[11px] text-text-3">题库依据</div>
             </Card>
           </div>
 
@@ -184,7 +184,7 @@ export default function PointDetailPanel({
             <button
               onClick={() => {
                 onMarkFamiliar(node.id);
-                showToast(`已标记「${node.name}」为已熟悉 · 演示数据`);
+                showToast(`已标记「${node.name}」为已熟悉`);
               }}
               className="flex h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-green/60 text-[13px] text-green transition hover:bg-green/10"
             >

@@ -19,7 +19,7 @@ export default function ReadinessBadge({
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-px text-[11px] leading-4 select-none ${className}`}
       style={{ color: r.color, borderColor: `${r.color}66`, backgroundColor: `${r.color}1a` }}
-      title={`战备状态按最近考核成绩评定 · 演示数据`}
+      title={`战备状态按最近考核成绩评定`}
     >
       <ShieldCheck className="h-3 w-3" />
       战备 {r.label}

@@ -1,4 +1,4 @@
-// 智能体演示对话脚本（演示数据）
+// 智能体演示对话脚本
 // 每个脚本：用户话术 + 关键词匹配 + 智能体回复（打字机）+ 场景动作 + 业务面板调起
 import type { SceneActionName } from './sceneLog';
 
@@ -24,7 +24,7 @@ export interface AgentSceneAction {
 }
 
 export interface AgentReply {
-  /** 智能体回复文本（打字机输出），末尾统一带「（演示数据）」 */
+  /** 智能体回复文本（打字机输出），末尾统一带「」 */
   text: string;
   /** 该条回复触发的场景动作（写入场景动作日志，source=智能体） */
   actions?: AgentSceneAction[];
@@ -47,10 +47,10 @@ export interface AgentScript {
 }
 
 export const AGENT_WELCOME =
-  '您好，我是预案智能辅助智能体。我可以帮您查询执勤力量、调阅建筑档案、生成灭火预案并联动三维场景。点击下方演示脚本开始体验。（演示数据）';
+  '您好，我是预案智能辅助智能体。我可以帮您查询执勤力量、调阅建筑档案、生成灭火预案并联动三维场景。点击下方演示脚本开始体验。';
 
 export const AGENT_FALLBACK =
-  '当前为前端原型演示模式，仅支持上方演示脚本交互。您可以点击脚本卡片体验完整 Agent 联动流程。（演示数据）';
+  '当前为前端原型演示模式，仅支持上方演示脚本交互。您可以点击脚本卡片体验完整 Agent 联动流程。';
 
 export const AGENT_SCRIPTS: AgentScript[] = [
   {
@@ -60,7 +60,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['执勤力量', '城东', '救援站', '人员', '车辆'],
     replies: [
       {
-        text: '已为您调起执勤力量资源库面板，城东救援站现有在位人员 42 人、车辆 6 辆，详情见面板。正在为您在场景中定位该队站…（演示数据）',
+        text: '已为您调起执勤力量资源库面板，城东救援站现有在位人员 42 人、车辆 6 辆，详情见面板。正在为您在场景中定位该队站…',
         openPanel: 'force-resource',
         actions: [
           {
@@ -86,7 +86,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['金茂', '建筑档案', '消防设施', '烟感', '大厦'],
     replies: [
       {
-        text: '已打开金茂大厦单建筑档案。该楼 5F 有 2 项烟感告警、1 项手动报警装置离线，建议优先核查。已切换场景至 5F 并高亮异常设施。（演示数据）',
+        text: '已打开金茂大厦单建筑档案。该楼 5F 有 2 项烟感告警、1 项手动报警装置离线，建议优先核查。已切换场景至 5F 并高亮异常设施。',
         openPanel: 'building-profile',
         actions: [
           {
@@ -112,7 +112,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['预案', '火灾', '被困', '演练', '生成'],
     replies: [
       {
-        text: '收到，正在为您设置演练情景并生成预案…（演示数据）',
+        text: '收到，正在为您设置演练情景并生成预案…',
         openPanel: 'drill-scenario',
         actions: [
           {
@@ -124,7 +124,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
         ],
       },
       {
-        text: '预案已生成，共 6 个分组。已在场景中切换至 5F、标绘进攻与疏散路线并高亮关键设备。（演示数据）',
+        text: '预案已生成，共 6 个分组。已在场景中切换至 5F、标绘进攻与疏散路线并高亮关键设备。',
         actions: [
           {
             action: 'showRoute',
@@ -155,7 +155,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['熟悉', '考核', '导览', '训练'],
     replies: [
       {
-        text: '已为您打开熟悉考核模块。您可以从「按建筑层数 / 按固定消防设施 / 按重点部位」三条路径开始引导式熟悉，我在熟悉过程中随时答疑；熟悉完成后可按岗位进入在线考核。（演示数据）',
+        text: '已为您打开熟悉考核模块。您可以从「按建筑层数 / 按固定消防设施 / 按重点部位」三条路径开始引导式熟悉，我在熟悉过程中随时答疑；熟悉完成后可按岗位进入在线考核。',
         openPanel: 'training',
         actions: [
           {
@@ -175,7 +175,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['警情', '接警', '实战', '指挥', '报警'],
     replies: [
       {
-        text: '已切换至实战指挥模块，实时警情通道已接入。左侧为警情列表，右上为灾情变量监测，我将随灾情变化实时推送力量调度 / 战术战法 / 处置要点建议。（演示数据）',
+        text: '已切换至实战指挥模块，实时警情通道已接入。左侧为警情列表，右上为灾情变量监测，我将随灾情变化实时推送力量调度 / 战术战法 / 处置要点建议。',
         openPanel: 'command',
         actions: [
           {
@@ -201,7 +201,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['对抗'],
     replies: [
       {
-        text: '对抗模式已开启。预案输出智能体正在随机生成初步灾情，随后对抗智能体将不按剧本主动制造突发特情，请及时对每条动态调整作出响应，结束后将给出对抗评估。（演示数据）',
+        text: '对抗模式已开启。预案输出智能体正在随机生成初步灾情，随后对抗智能体将不按剧本主动制造突发特情，请及时对每条动态调整作出响应，结束后将给出对抗评估。',
         openPanel: 'confront-mode',
         actions: [
           {
@@ -221,7 +221,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['收起', '关闭面板', '收起来'],
     replies: [
       {
-        text: '好的，已为您收起当前模块的全部业务面板，场景视野已清空。（演示数据）',
+        text: '好的，已为您收起当前模块的全部业务面板，场景视野已清空。',
         openPanel: 'close-panels',
         actions: [
           { action: 'resetView', target: '恢复园区俯瞰视角', label: 'resetView → 园区俯瞰' },
@@ -236,7 +236,7 @@ export const AGENT_SCRIPTS: AgentScript[] = [
     keywords: ['复位', '重置', '清除', '恢复'],
     replies: [
       {
-        text: '好的，已复位场景视角并清除标记与路线。（演示数据）',
+        text: '好的，已复位场景视角并清除标记与路线。',
         actions: [
           { action: 'hideRoute', target: '全部路线', label: 'hideRoute → 全部路线' },
           { action: 'removeMarker', target: '全部标记', label: 'removeMarker → 全部标记' },

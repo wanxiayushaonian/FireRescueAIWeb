@@ -213,7 +213,7 @@ function QuizRunner({
         {Array.from({ length: 8 }).map((_, i) => (
           <div key={i} className="h-10 animate-pulse rounded-md bg-bg-panel-2" style={{ opacity: 1 - i * 0.07 }} />
         ))}
-        <div className="mt-2 text-center text-[13px] text-text-3">考核试卷加载中… · 演示数据</div>
+        <div className="mt-2 text-center text-[13px] text-text-3">考核试卷加载中…</div>
       </div>
     );
   }
@@ -222,7 +222,7 @@ function QuizRunner({
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <img src={paperState === 'empty' ? '/empty-box.svg' : '/error-radar.svg'} alt="" className="h-[90px] w-[120px] opacity-80" />
         <div className="text-[13px] text-text-2">
-          {paperState === 'empty' ? '暂无考核试卷数据 · 演示数据' : '试卷请求失败，请检查网络后重试'}
+          {paperState === 'empty' ? '暂无考核试卷数据' : '试卷请求失败，请检查网络后重试'}
         </div>
       </div>
     );
@@ -233,7 +233,7 @@ function QuizRunner({
       <div className="flex h-full flex-col items-center justify-center gap-3">
         <ClipboardCheck className="h-10 w-10 animate-pulse text-cyan" />
         <div className="text-[15px] font-bold text-text-1">评分中…</div>
-        <div className="text-[12px] text-text-3">正在核对答案与知识点分布 · 演示数据</div>
+        <div className="text-[12px] text-text-3">正在核对答案与知识点分布</div>
         <div className="flex w-64 flex-col gap-2">
           {[0, 1, 2].map((i) => (
             <div key={i} className="h-6 animate-pulse rounded-md bg-bg-panel-2" style={{ opacity: 1 - i * 0.2 }} />
@@ -443,7 +443,7 @@ function QuizRunner({
                       : `✗ 正确答案：${q.answer.map((i) => (q.type === 'judge' ? q.options[i] : String.fromCharCode(65 + i))).join('、')}`}
                   </div>
                   <div className="mt-0.5 text-[12px] leading-5 text-text-2">
-                    解析：{q.analysis} · 演示数据
+                    解析：{q.analysis}
                   </div>
                 </motion.div>
               )}
@@ -503,7 +503,7 @@ function QuizRunner({
           >
             {mm}:{ss}
           </motion.div>
-          <div className="mt-1 text-[11px] text-text-3">{postNameOf(post)} · 限时 10 分钟 · 演示数据</div>
+          <div className="mt-1 text-[11px] text-text-3">{postNameOf(post)} · 限时 10 分钟</div>
         </div>
 
         <div className="flex-1 rounded-lg border border-violet/40 bg-violet/5 p-3">
@@ -525,7 +525,7 @@ function QuizRunner({
                   animate={{ opacity: 1, y: 0 }}
                   className="rounded-md border border-violet/30 bg-bg-panel-2/60 px-2 py-1.5 text-[12px] leading-5 text-text-2"
                 >
-                  {h} · 演示数据
+                  {h}
                 </motion.div>
               ))
             )}
@@ -658,7 +658,7 @@ function ResultReview({
         {[0, 1, 2].map((i) => (
           <div key={i} className="h-20 animate-pulse rounded-lg bg-bg-panel-2" style={{ opacity: 1 - i * 0.2 }} />
         ))}
-        <div className="text-center text-[13px] text-text-3">成绩加载中… · 演示数据</div>
+        <div className="text-center text-[13px] text-text-3">成绩加载中…</div>
       </div>
     );
   }
@@ -799,7 +799,7 @@ function ResultReview({
       {wrongList.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-green/40 bg-green/5 py-10">
           <UserCheck className="h-10 w-10 text-green" />
-          <div className="text-[15px] font-bold text-green">全部答对，无错题 · 演示数据</div>
+          <div className="text-[15px] font-bold text-green">全部答对，无错题</div>
         </div>
       ) : (
         <div className="space-y-3 pb-4">
@@ -828,9 +828,9 @@ function ResultReview({
                   <span className="text-red line-through">你的答案：{yourAns}</span>
                   <span className="text-green">正确答案：{rightAns}</span>
                 </div>
-                <div className="mb-1 text-[12px] leading-5 text-text-2">解析：{qu.analysis} · 演示数据</div>
+                <div className="mb-1 text-[12px] leading-5 text-text-2">解析：{qu.analysis}</div>
                 <div className="mb-2 text-[12px] leading-5 text-amber">
-                  错因：对「{qu.knowledge}」掌握不牢，建议结合关联点位实地复盘强化 · 演示数据
+                  错因：对「{qu.knowledge}」掌握不牢，建议结合关联点位实地复盘强化
                 </div>
                 {node && (
                   <button
@@ -841,7 +841,7 @@ function ResultReview({
                         params: { lng: node.lng, lat: node.lat },
                         source: '面板',
                       });
-                      showToast('可返回熟悉模块复习该点位 · 演示数据');
+                      showToast('可返回熟悉模块复习该点位');
                     }}
                     className="cursor-pointer rounded-md border border-line bg-bg-panel-2 px-2 py-1 text-[12px] text-text-2 transition hover:border-cyan hover:text-cyan"
                     title="点击定位相关知识点位"
@@ -881,7 +881,7 @@ function ResultReview({
           返回熟悉
         </button>
         <button
-          onClick={() => showToast('成绩单已导出 · 演示数据')}
+          onClick={() => showToast('成绩单已导出')}
           className="ml-auto flex h-9 items-center gap-1.5 rounded-md border border-line px-4 text-[13px] text-text-2 transition hover:border-line-glow hover:text-cyan"
         >
           <Download className="h-4 w-4" />

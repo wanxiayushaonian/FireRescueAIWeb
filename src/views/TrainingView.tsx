@@ -98,7 +98,7 @@ export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) 
         params: { lng: n.lng, lat: n.lat },
         source: '面板',
       });
-      showToast('已在地图定位该点位 · 演示数据');
+      showToast('已在地图定位该点位');
     }
   };
 
@@ -113,7 +113,7 @@ export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) 
 
   const agentHint = (topic: string) => {
     if (onRequestAgentHint) onRequestAgentHint(topic);
-    else showToast('请通过右下角智能体悬浮窗提问 · 演示数据');
+    else showToast('请通过右下角智能体悬浮窗提问');
   };
 
   // 引导步联动右面板:仅选中展示,不计熟悉度(熟悉度由章节完成统一回写 +4)

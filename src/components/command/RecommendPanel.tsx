@@ -58,7 +58,7 @@ function RecommendCard({
         <span className="ml-auto font-mono text-[11px] text-text-3">{rec.ts}</span>
       </div>
       <p className="mt-1.5 text-[13px] leading-5 text-text-1">{rec.content}</p>
-      <div className="mt-1 text-[11px] text-text-3">依据：{rec.basis} · 演示数据</div>
+      <div className="mt-1 text-[11px] text-text-3">依据：{rec.basis}</div>
       <div className="mt-2 flex items-center gap-2">
         {rec.type === 'force' && !rec.adopted && !rec.ignored && (
           <button
@@ -163,8 +163,7 @@ function ReviewDialog({
           <Bot className="h-4 w-4 text-violet" />
           <span className="text-[15px] font-bold text-text-1">战后决策评估</span>
           <span className="font-mono text-[11px] text-violet">{review.incidentId}</span>
-          <span className="ml-auto rounded-full border border-amber/70 px-1.5 py-px text-[11px] text-amber">演示数据</span>
-          <button onClick={onClose} className="rounded p-1 text-text-3 transition hover:bg-red/20 hover:text-red">
+          <button onClick={onClose} className="ml-auto rounded p-1 text-text-3 transition hover:bg-red/20 hover:text-red">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -180,7 +179,7 @@ function ReviewDialog({
             <div>
               <div className="text-[12px] text-text-2">总评</div>
               <div className="mt-1 text-[15px] font-bold text-green">{review.conclusion}</div>
-              <div className="mt-1 text-[11px] text-text-3">评估智能体复盘生成 · 演示数据</div>
+              <div className="mt-1 text-[11px] text-text-3">评估智能体复盘生成</div>
             </div>
           </motion.div>
           {/* 评分维度 */}
@@ -478,7 +477,7 @@ export default function RecommendPanel({
                 title: imp.content.length > 28 ? `${imp.content.slice(0, 28)}…` : imp.content,
                 status: '待落地',
                 summary: [imp.content],
-                sourceDetail: `来源：实战指挥 · 战后决策评估（${review.incidentId}）→ ${imp.target} · 演示数据`,
+                sourceDetail: `来源：实战指挥 · 战后决策评估（${review.incidentId}）→ ${imp.target}`,
               });
               onFlushImprovement(imp.id, incident.id);
             }}
