@@ -386,8 +386,9 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       />
 
       {/* 顶部居中:真实/模拟模式切换(真实=incidents DB;模拟=liveChannel 状态机演示)。
-          top-[60px] 堆叠在 GIS 图层控制条(top-3)之下,避免两条重叠 */}
-      <div className="absolute left-1/2 top-[60px] z-30 flex -translate-x-1/2 items-center gap-1 rounded-md border border-line bg-bg-panel/90 p-1 backdrop-blur-[8px]">
+          top-[60px] 堆叠在 GIS 图层控制条(top-3)之下,避免两条重叠。
+          pointer-events-auto:内容层(App.tsx)为 pointer-events-none,顶部控件须显式恢复交互。 */}
+      <div className="pointer-events-auto absolute left-1/2 top-[60px] z-50 flex -translate-x-1/2 items-center gap-1 rounded-md border border-line bg-bg-panel/90 p-1 backdrop-blur-[8px]">
         <button
           onClick={() => setMode('real')}
           className={`rounded px-3 py-1 text-[12px] transition ${mode === 'real' ? 'bg-cyan/15 text-cyan' : 'text-text-3 hover:text-text-1'}`}
@@ -411,7 +412,7 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
       {/* 右上悬浮:预案库 + 现场视频回传(选中警情后视频可用)。
           right-[440px]:让开右侧 C 面板(vars,right:16 width:400 → 左边缘 right:416),
           留 24px 间隙避免水平 bleed;top-[110px] 紧贴模式切换条(top-[60px])下方 */}
-      <div className="absolute right-[440px] top-[15px] z-30 flex items-center gap-2">
+      <div className="pointer-events-auto absolute right-[440px] top-[15px] z-50 flex items-center gap-2">
         <button
           onClick={() => {
             // 预案库 480×560 浮层会完全遮挡右侧 vars/recommend 及左侧 intel(宽度 560 溢出到库面板区域),

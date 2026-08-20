@@ -14,7 +14,7 @@ export default function DisposalFlowBar(props: {
 }) {
   const idx = props.stage ? STAGE_ORDER.indexOf(props.stage) : -1;
   return (
-    <div className="absolute left-1/2 top-[110px] z-30 flex -translate-x-1/2 items-center gap-2 rounded-md border border-line bg-bg-panel/90 p-1.5 backdrop-blur-[8px]">
+    <div className="pointer-events-auto absolute left-1/2 top-[110px] z-50 flex -translate-x-1/2 items-center gap-2 rounded-md border border-line bg-bg-panel/90 p-1.5 backdrop-blur-[8px]">
       {!props.demoActive ? (
         <button
           onClick={props.onStart}
