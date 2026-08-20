@@ -315,7 +315,9 @@ export function buildScript(ctx: ScriptContext): ScriptAction[] {
   const { incidentId, address, lng, lat, routes } = ctx;
   const t: ScriptAction[] = [];
   let cursor = 0;
-  const at = (ms: number, a: Omit<ScriptAction, 'at'>): void => {
+  // 分配式 Omit:对判别联合逐成员生效(普通 Omit 会退化为共同键,拒绝各成员专有字段)
+  type ScriptActionSpec = ScriptAction extends { at: number } ? Omit<ScriptAction, 'at'> : never;
+  const at = (ms: number, a: ScriptActionSpec): void => {
     cursor += ms;
     t.push({ ...a, at: cursor } as ScriptAction);
   };
@@ -1245,6 +1247,11 @@ export class FlowDirector {
       case 'convoy':
         this.handlers.convoy(a.action);
         break;
+      default: {
+        // 穷举守卫:全部 case 覆盖后 a 窄化为 never,这里对 never 赋值即编译期穷举校验
+        const _exhaustive: never = a;
+        throw new Error('Unknown ScriptAction kind');
+      }
     }
   }
 }
