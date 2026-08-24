@@ -15,8 +15,8 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { key: 'overview', label: '态势总览', icon: Radar },
   { key: 'objects', label: '对象总览', icon: Building2 },
-  { key: 'drill', label: '演练对抗', icon: Target },
   { key: 'training', label: '熟悉考核', icon: BookOpen },
+  { key: 'drill', label: '演练对抗', icon: Target },
   { key: 'command', label: '实战指挥', icon: Flag },
 ];
 
