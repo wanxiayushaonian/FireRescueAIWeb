@@ -24,6 +24,6 @@ describe('scenario barrel 自注册契约', () => {
   it('getDefaultScenario 返回默认剧本(非空)', () => {
     const def = getDefaultScenario();
     expect(def.id).toBe(DEFAULT_SCENARIO_ID);
-    expect(def.seedEvents.length).toBeGreaterThan(0);
+    expect(def.scenario.fireFloor).toBeTruthy();
   });
 });

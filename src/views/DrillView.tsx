@@ -17,7 +17,7 @@ import ConfrontationPanel from '@/drill/confrontation/ConfrontationPanel';
 import { beginConfrontation } from '@/drill/confrontation/confront-store';
 import { subscribeConfrontation } from '@/drill/confrontation/confront-store';
 import { getDrillState } from '@/mock/drillStore';
-import type { Speed } from '@/lib/drill/timeline-engine';
+import type { Speed } from '@/drill/DrillToolbar';
 import {
   DEFAULT_SCENARIO_ID,
   getScenario,
@@ -191,8 +191,8 @@ export default function DrillView() {
                 seedScenario: {
                   building: gen?.buildingName ?? '21号楼',
                   floor: gen?.floor ?? activeScenario.scenario.fireFloor ?? '5F',
-                  material: gen?.material ?? activeScenario.scenario.material,
-                  trapped: gen?.trapped ?? activeScenario.scenario.trappedCount,
+                  material: gen?.material ?? activeScenario.scenario.material ?? '电气',
+                  trapped: gen?.trapped ?? activeScenario.scenario.trappedCount ?? 5,
                   seed: `#${Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`,
                 },
                 plannedTotal: 3 + Math.floor(Math.random() * 3),

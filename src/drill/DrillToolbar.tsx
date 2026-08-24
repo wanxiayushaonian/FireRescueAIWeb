@@ -7,7 +7,15 @@
  * clock 显示 T+{clock};speed 高亮当前倍率。
  */
 import { Play, Pause, FastForward, Square, Gauge } from 'lucide-react';
-import type { EngineStatus, Speed, ActiveSpeed } from '@/lib/drill/timeline-engine';
+
+/** 引擎状态（原 lib/drill/timeline-engine，2026-08-24 引擎删除后内联——工具条仍在用）。 */
+export type EngineStatus = 'idle' | 'running' | 'paused';
+
+/** 倍率：0=idle | 1=1× | 5=5× */
+export type Speed = 0 | 1 | 5;
+
+/** 可主动设置的倍率（不含 idle 的 0）。 */
+export type ActiveSpeed = 1 | 5;
 
 /** 剧本选项(最小信息,Toolbar 不依赖 domain 类型)。 */
 export interface ScenarioOption {
