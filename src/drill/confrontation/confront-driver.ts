@@ -143,6 +143,7 @@ export class ConfrontDriver {
         comments: data.opinions,
         outcomes,
         archived,
+        source: 'agent',
       };
     }
 
@@ -162,6 +163,7 @@ export class ConfrontDriver {
           ],
       outcomes,
       archived: pass,
+      source: 'fallback',
     };
   }
 

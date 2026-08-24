@@ -21,6 +21,8 @@ export interface ConfrontationReview {
   readonly comments: readonly string[];
   readonly outcomes: readonly ('timely' | 'delayed' | 'ignored')[];
   readonly archived: boolean;
+  /** 评估来源：agent=评估 agent 真实输出；fallback=agent 未响应时的本地规则降级打分（UI 必须显式标注）。 */
+  readonly source: 'agent' | 'fallback';
 }
 
 export interface ConfrontationSeed {

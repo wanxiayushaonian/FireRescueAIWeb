@@ -69,7 +69,7 @@ describe('confront-store', () => {
 
   it('finishConfrontationLocal 写评估并置 finished', () => {
     beginConfrontation({ seedScenario: { building: 'b', floor: 'f', material: 'm', trapped: 1, seed: 's' } });
-    const review = { score: 90, conclusion: '良好', comments: ['ok'], outcomes: ['timely' as const], archived: true };
+    const review = { score: 90, conclusion: '良好', comments: ['ok'], outcomes: ['timely' as const], archived: true, source: 'agent' as const };
     finishConfrontationLocal(review, 3, 100);
     const s = getConfrontationState();
     expect(s.status).toBe('finished');

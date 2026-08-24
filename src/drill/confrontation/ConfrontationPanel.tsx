@@ -190,7 +190,7 @@ export default function ConfrontationPanel() {
       score: review.score,
       status: review.archived ? '已归档' : '需修订',
       summary: [...review.comments],
-      sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}，本局特情 ${injects.length} 条）`,
+      sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}${review.source === 'fallback' ? '，评估 agent 未响应 · 本地规则降级打分' : ''}，本局特情 ${injects.length} 条）`,
     });
 
     driver.clearAll();
@@ -678,7 +678,14 @@ export default function ConfrontationPanel() {
                 <motion.div variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }} className="flex items-center gap-3">
                   <ScoreRing score={conf.review.score} pass={conf.review.archived} />
                   <div>
-                    <div className="text-[11px] text-text-3">对抗评估（{conf.review.score}/100）</div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-text-3">
+                      对抗评估（{conf.review.score}/100）
+                      {conf.review.source === 'fallback' && (
+                        <span className="rounded border border-amber/50 bg-amber/10 px-1 py-px font-medium text-amber">
+                          降级评估 · 规则打分
+                        </span>
+                      )}
+                    </div>
                     <div className={`text-[15px] font-bold ${conf.review.archived ? 'text-green' : 'text-red'}`}>
                       {conf.review.conclusion}
                     </div>
