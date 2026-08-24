@@ -123,10 +123,10 @@ export const TOOLS = [
       required: ['building_id'],
     },
   },
-  // ─── 推演控制 stub(对接推演引擎 6.2/6.3 前,MVP 占位)───
+  // ─── 推演控制(云端 → 浏览器对抗舱;执行结果用 get_scene_command_status 查 ack)───
   {
     name: 'query_scene_state',
-    description: '查询当前演练态势(火势/到场力量/被困/已用路线)。⚠️ 推演引擎(子项目6.2/6.3)未对接,返回 wired=false stub,需在 6.2 完成后对接 DisasterState。',
+    description: '查询演练链路状态。云端→浏览器对抗舱链路已接线,但 mcp 进程读不到浏览器实时态势(进程隔离)——返回已转发条数(观测用);实时态势请依赖剧本 seed 与 inject_event 输入,执行结果用 get_scene_command_status 查 ack。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -137,14 +137,14 @@ export const TOOLS = [
   },
   {
     name: 'inject_event',
-    description: '注入对抗事件(对抗 agent 用,如风向突变/爆炸/二次被困)。⚠️ 推演引擎(6.2)未对接,当前只记日志并经 /scene-events 占位转发,不驱动状态推进。',
+    description: '注入对抗事件(对抗 agent 用,如风向突变/爆炸/二次被困)。经 /scene-events 转发至浏览器对抗舱执行(confront-store.appendInject)。前置:对抗舱处于 running;未开启时执行失败(ack=error)。',
     inputSchema: {
       type: 'object',
       properties: {
         drill_id: { type: 'string', description: '演练会话 id' },
         event: {
           type: 'object',
-          description: '事件载荷(自由结构,常见字段:type=wind_shift/explosion/secondary_trapped, payload={...})',
+          description: '事件载荷(自由结构,常见字段:type=wind_shift/explosion/secondary_trapped, description=事件描述(展示用), payload={...})',
         },
       },
       required: ['drill_id', 'event'],
@@ -164,7 +164,7 @@ export const TOOLS = [
   },
   {
     name: 'report_decision',
-    description: '上报主智能体决策入事件树(供复盘 + 触发渲染)。⚠️ 推演引擎(6.3 DrillRecorder)未对接,当前只记日志并经 /scene-events 占位转发,不写入事件树。',
+    description: '上报主智能体决策。经 /scene-events 转发至浏览器对抗舱执行(confront-store.appendAdjust,作为动态调整进入对抗时间线,供指挥员响应与评估)。前置:对抗舱处于 running;未开启时执行失败(ack=error)。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -398,7 +398,7 @@ export async function handleToolCall(
     };
   }
 
-  // ─── 推演控制 stub(对接推演引擎 6.2/6.3 前,记日志 + 占位转发)───
+  // ─── 推演控制(云端 → 浏览器对抗舱;记日志 + 转发,执行结果查 ack)───
   if (name === 'query_scene_state') {
     const drillId = String(args.drill_id ?? '').trim();
     if (!drillId) {

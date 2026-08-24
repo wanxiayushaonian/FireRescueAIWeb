@@ -107,7 +107,8 @@ describe('tools', () => {
   it('focus_floors 发布命令并返回已下发', async () => {
     const res = await handleToolCall('focus_floors', { story_ids: ['s1'] });
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
-      tool: 'focus_floors', args: { story_ids: ['s1'] },
+      // 生产实现会给 args 补默认 fly_to_first: true(见 tools.ts focus_floors 分支)
+      tool: 'focus_floors', args: { story_ids: ['s1'], fly_to_first: true },
     }));
     expect(res.content[0].text).toContain('已下发');
   });
@@ -237,11 +238,11 @@ describe('tools', () => {
     expect(text).toContain('避难层');
   });
 
-  it('query_scene_state stub 返回 wired=false + 文案含 6.2', async () => {
+  it('query_scene_state 返回 wired=true(链路已接对抗舱)', async () => {
     const res = await handleToolCall('query_scene_state', { drill_id: 'd1' });
     const text = res.content[0].text;
-    expect(text).toContain('"wired": false');
-    expect(text).toContain('6.2');
+    expect(text).toContain('"wired": true');
+    expect(text).toContain('对抗舱');
     expect(text).toContain('"drillId": "d1"');
   });
 
@@ -250,12 +251,12 @@ describe('tools', () => {
     expect(res.isError).toBe(true);
   });
 
-  it('inject_event stub 透传 publishCommand + 返回 wired=false', async () => {
+  it('inject_event 透传 publishCommand + 返回 wired=true', async () => {
     const event = { type: 'wind_shift', payload: { dir: 'NE' } };
     const res = await handleToolCall('inject_event', { drill_id: 'd1', event });
     const text = res.content[0].text;
     expect(text).toContain('"accepted": true');
-    expect(text).toContain('"wired": false');
+    expect(text).toContain('"wired": true');
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
       tool: 'drill_inject_event',
       args: { drill_id: 'd1', event },
@@ -272,12 +273,12 @@ describe('tools', () => {
     expect(res.isError).toBe(true);
   });
 
-  it('report_decision stub 透传 publishCommand + 返回 wired=false', async () => {
+  it('report_decision 透传 publishCommand + 返回 wired=true', async () => {
     const decision = { action: 'dispatch', targets: ['station-a'] };
     const res = await handleToolCall('report_decision', { drill_id: 'd1', decision });
     const text = res.content[0].text;
     expect(text).toContain('"accepted": true');
-    expect(text).toContain('"wired": false');
+    expect(text).toContain('"wired": true');
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
       tool: 'drill_report_decision',
       args: { drill_id: 'd1', decision },

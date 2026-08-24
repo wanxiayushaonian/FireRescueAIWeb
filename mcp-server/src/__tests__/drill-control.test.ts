@@ -17,15 +17,15 @@ beforeEach(() => {
   __resetDrillLogForTest();
 });
 
-describe('querySceneState stub', () => {
-  it('返回 wired=false 占位 + 计数 0', () => {
+describe('querySceneState(链路状态)', () => {
+  it('返回 wired=true + 计数 0', () => {
     const s = querySceneState('d1');
-    expect(s.wired).toBe(false);
+    expect(s.wired).toBe(true);
     expect(s.drillId).toBe('d1');
     expect(s.loggedEvents).toBe(0);
     expect(s.loggedDecisions).toBe(0);
     expect(s.lastEntryTs).toBeNull();
-    expect(s.message).toMatch(/6\.2/);
+    expect(s.message).toMatch(/对抗舱/);
   });
 
   it('inject + report 后计数 + lastEntryTs 更新', () => {
@@ -44,13 +44,13 @@ describe('querySceneState stub', () => {
   });
 });
 
-describe('injectEvent stub', () => {
-  it('记日志 + 返回 wired=false ack + 透传场景命令', () => {
+describe('injectEvent(转发对抗舱)', () => {
+  it('记日志 + 返回 wired=true ack + 透传场景命令', () => {
     const ack = injectEvent('d1', { type: 'explosion', payload: { floor: 'B1' } }, publishCommand);
     expect(ack.accepted).toBe(true);
-    expect(ack.wired).toBe(false);
+    expect(ack.wired).toBe(true);
     expect(ack.drillId).toBe('d1');
-    expect(ack.note).toMatch(/6\.2/);
+    expect(ack.note).toMatch(/对抗舱/);
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
       tool: 'drill_inject_event',
       args: { drill_id: 'd1', event: { type: 'explosion', payload: { floor: 'B1' } } },
@@ -68,12 +68,12 @@ describe('injectEvent stub', () => {
   });
 });
 
-describe('reportDecision stub', () => {
-  it('记日志 + 返回 wired=false ack + 透传场景命令', () => {
+describe('reportDecision(转发对抗舱)', () => {
+  it('记日志 + 返回 wired=true ack + 透传场景命令', () => {
     const ack = reportDecision('d1', { action: 'dispatch', targets: ['station-a'] }, publishCommand);
     expect(ack.accepted).toBe(true);
-    expect(ack.wired).toBe(false);
-    expect(ack.note).toMatch(/6\.3/);
+    expect(ack.wired).toBe(true);
+    expect(ack.note).toMatch(/对抗舱/);
     expect(publishCommand).toHaveBeenCalledWith(expect.objectContaining({
       tool: 'drill_report_decision',
       args: { drill_id: 'd1', decision: { action: 'dispatch', targets: ['station-a'] } },
