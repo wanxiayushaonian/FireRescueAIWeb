@@ -51,7 +51,8 @@ export type UStudioRequestMeta = {
   upstreamUrl: string;
   upstreamMethod: 'POST';
   upstreamParams: unknown;
-  xAppKey: string;
+  /** 只记录是否配置;不得把原始密钥放入日志、Error 或 API 响应。 */
+  xAppKeyConfigured: boolean;
 };
 
 export class UStudioRequestError extends Error {
@@ -59,7 +60,7 @@ export class UStudioRequestError extends Error {
   upstreamUrl: string;
   upstreamMethod: 'POST';
   upstreamParams: unknown;
-  xAppKey: string;
+  xAppKeyConfigured: boolean;
   upstreamStatus?: number;
   upstreamStatusText?: string;
   upstreamResponse?: unknown;
@@ -75,7 +76,7 @@ export class UStudioRequestError extends Error {
     this.upstreamUrl = meta.upstreamUrl;
     this.upstreamMethod = meta.upstreamMethod;
     this.upstreamParams = meta.upstreamParams;
-    this.xAppKey = meta.xAppKey;
+    this.xAppKeyConfigured = meta.xAppKeyConfigured;
     this.upstreamStatus = options.status;
     this.upstreamStatusText = options.statusText;
     this.upstreamResponse = options.response;
@@ -93,7 +94,7 @@ export function describeUStudioError(error: unknown) {
     upstreamStatus: error.upstreamStatus,
     upstreamStatusText: error.upstreamStatusText,
     upstreamResponse: error.upstreamResponse,
-    xAppKey: error.xAppKey,
+    xAppKeyConfigured: error.xAppKeyConfigured,
   };
 }
 
@@ -117,7 +118,7 @@ function createRequestMeta(endpoint: string, body: unknown): UStudioRequestMeta 
     upstreamUrl: joinUrl(HTTP_BASE_URL, endpoint),
     upstreamMethod: 'POST',
     upstreamParams: body ?? {},
-    xAppKey: X_APP_KEY,
+    xAppKeyConfigured: Boolean(X_APP_KEY),
   };
 }
 
@@ -147,7 +148,7 @@ async function fetchOnce(endpoint: string, bodyStr: string, upstreamUrl = joinUr
     console.info('[ustudio] request', {
       url: upstreamUrl,
       method: 'POST',
-      xAppKey: X_APP_KEY,
+      xAppKeyConfigured: Boolean(X_APP_KEY),
       body: bodyForLog,
     });
     return await fetch(upstreamUrl, {
@@ -192,7 +193,7 @@ export async function postUStudio<TRequest, TResult>(endpoint: string, body: TRe
         console.warn(`[ustudio] ${endpoint} 第${attempt}次${timedOut ? '超时' : '网络错误'}，重试…`, {
           url: meta.upstreamUrl,
           method: meta.upstreamMethod,
-          xAppKey: meta.xAppKey,
+          xAppKeyConfigured: meta.xAppKeyConfigured,
           params: meta.upstreamParams,
         });
         continue;
