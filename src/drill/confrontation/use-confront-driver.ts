@@ -1,5 +1,5 @@
 // 对抗舱 driver hook:订阅 store 并在 running + seedReady 时启动注入/调整调度。
-// 特情节奏为串行链:上一条特情落定(成功/失败)后 15-25s 再注入下一条 ——
+// 特情节奏为串行链:上一条特情与 Commander 调整落定后再调度下一条 ——
 // 一次性并行调度会让 plannedTotal 条特情挤在同一时间窗内爆发(一波流)。
 import { useEffect, useRef } from 'react';
 import { ConfrontDriver, type ConfrontAppIds } from './confront-driver';
@@ -29,9 +29,6 @@ export interface UseConfrontDriverOpts {
   /** 特情注入时的 3D 联动(Panel 提供:location 楼层聚焦 + 飞向;缺省无联动)。 */
   readonly onInjectScene?: (evt: { emergency: string; location?: string }) => void;
 }
-
-/** 上一条特情到下一条的间隔(ms,与原型节奏一致)。 */
-const INJECT_CHAIN_GAP_MS = () => 15000 + Math.random() * 10000;
 
 const TOOL_LABELS: Record<string, string> = {
   resolve_operational_context: '统一作战上下文',
@@ -118,7 +115,8 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
       // 串行注入链:round N 落定(注入成功/失败)后 15-25s 排 round N+1
       const runInjectRound = (round: number): void => {
         if (round >= s.plannedTotal) return;
-        const scheduleNext = (): void => driver.after(INJECT_CHAIN_GAP_MS(), () => runInjectRound(round + 1));
+        // Driver 内部统一控制 6~15s 间隔；此处不再叠加第二层等待。
+        const scheduleNext = (): void => runInjectRound(round + 1);
         driver.scheduleInject(round, {
           onThinking: (v) => setThinking(v),
           onStart: () => startAgentActivity(

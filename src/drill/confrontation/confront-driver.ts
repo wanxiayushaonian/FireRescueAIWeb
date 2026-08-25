@@ -1,5 +1,6 @@
 // 对抗舱编排:定时器 + adapter + store 动作。纯逻辑(无 React),可注入 fake adapter 测试。
-// 节奏(照抄原型):开局 → 预案输出 agent 生成部署 → 5s+15~25s 注入特情 →
+// 节奏:开局 → 预案输出 agent 生成部署 → 6~10s 注入首条特情 →
+// 每轮 Commander 完成后 10~15s 再进入下一轮 →
 // 特情后 2.5s 生成调整 → 人响应 → 结束评估。
 import type { ConfrontAdapter } from './confront-adapter';
 import type {
@@ -135,7 +136,7 @@ export class ConfrontDriver {
     onInjectFail(reason?: string): void;
   }): void {
     const first = seqIndex === 0;
-    const gap = first ? 5000 + this.rand(15000, 25000) : this.rand(15000, 25000);
+    const gap = first ? this.rand(6000, 10000) : this.rand(10000, 15000);
     this.later(gap, () => {
       cb.onThinking(true);
       this.doInject(seqIndex + 1, cb);
