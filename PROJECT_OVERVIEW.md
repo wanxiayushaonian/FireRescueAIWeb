@@ -51,7 +51,7 @@
 | **演练对抗** | `src/views/DrillView.tsx` + `src/drill/confrontation/` | 一级:灾情参数/预案输出(mock 模板+真评估)/预案库;二级:对抗舱四角色 agent + 特情去重 + 态势演化 + 3D 联动 + 评估回流预案库 |
 | **实战指挥** | `src/views/CommandView.tsx` | 实时警情(mock 频道) + AI 派遣(plan_dispatch 真实) + 案域三圈 + 处置时间轴 + 车辆动画 + 指挥 agent |
 | **GIS 底座** | `src/components/RealGisMap.tsx` | 高德瓦片 + Leaflet + 路线规划 + 力量/水源/单位图层 + 视角记忆 |
-| **3D 场景** | `src/components/SceneProvider.tsx` + `src/App.tsx`(SceneContainer) | Soonspace 引擎 + 楼层聚焦/炸开 + 设备拾取 + 2D 平面图 + 场内/场外导航 |
+| **3D 场景** | `src/components/SceneProvider.tsx` + `src/App.tsx`(SceneContainer) | Soonspace 引擎 + 楼层聚焦/炸开 + 内容显隐模态(Recipe 白名单,现行唯一显隐方案) + 设备拾取 + 2D 平面图 + 场内/场外导航 |
 | **Agent 对话** | `src/components/assistant-ui/AgentChatThread.tsx` + `src/components/AgentSidebar.tsx` | SSE 流式对话 + 双 tab(业务/全局,9 个平台 app) + 工具调用 + 历史会话 + scene:// 锚点联动 |
 | **建筑档案** | `src/components/panels/BuildingProfilePanel.tsx` | 建筑详情 + 楼层分布 + 消防设施统计 + 关键部位楼层聚焦 |
 | **预案库** | `src/components/panels/PlanLibraryPanel.tsx` | 归档库(演练产出回流,znya 建档) + 正式预案(znya emergency_plans 只读);已挂载演练/指挥两模块 |
@@ -61,8 +61,6 @@
 | 事项 | 优先级 | 说明 |
 |------|--------|------|
 | **黄金演示链三连验收** | 🔴 高 | 平台四角色提示词已同步(2026-08-25);按 `DEMO.md` §5 跑 3 连验收,通过后移动 `demo-baseline` 标签 |
-| **3D 渲染优化** | 🔴 高 | 完整包场景(69k mesh)操作卡顿,需平台配合(精简包/SDK 按类别加载);已做:像素比自适应 + 楼层裁剪 + 高亮先清后加 |
-| **丰度分级** | 🟡 中 | 阻塞于平台能力确认,同上 |
 
 ---
 
@@ -149,18 +147,11 @@ push master → GitHub Actions: quality-gate(npm run verify: typecheck+测试+mc
 - 按 `DEMO.md` §4 脚本连跑 3 次,满足 §5 全部硬性标准后移动 `demo-baseline` 标签
 - 验收记录模板见 `DEMO.md` §7
 
-**2. 3D 渲染优化**
-- **问题**:完整包场景(21D) 69k mesh 全量加载,操作卡顿
-- **已做**:像素比自适应降级 + 楼层裁剪重放 + 高亮"先清后加"(replaceHighlight) + overview 失焦暂停渲染
-- **需平台配合**:精简版场景包 / SDK 按类别加载 API / 重复设施 InstancedMesh
-
 ### 5.2 中优先级 🟡
 
-**3. scene:// 锚点提示词铺开**:`plan/2026-08-24-agent-scene-links.md` 语法待贴入各业务 agent 提示词(演练四角色已完成同步)。
+**2. scene:// 锚点提示词铺开**:`plan/2026-08-24-agent-scene-links.md` 语法待贴入各业务 agent 提示词(演练四角色已完成同步)。
 
-**4. 丰度分级落地**:阻塞于平台能力确认(精简包/SDK 过滤)。
-
-**5. GIS 响应分析(ETA)收尾**:部分完成(`lib/gis/eta-render.ts` + `response-query.ts`,详见 `plan/2026-08-08-gis-analytics-plan.md`)。
+**3. GIS 响应分析(ETA)收尾**:部分完成(`lib/gis/eta-render.ts` + `response-query.ts`,详见 `plan/2026-08-08-gis-analytics-plan.md`)。
 
 ### 5.3 低优先级 🟢
 
@@ -195,8 +186,7 @@ push master → GitHub Actions: quality-gate(npm run verify: typecheck+测试+mc
 
 | 问题 | 现状 | 方案 |
 |------|------|------|
-| 3D 场景加载慢 | 完整包全量加载,等待时间长 | 平台提供精简包 / SDK 按类别加载 |
-| 3D 操作卡顿 | 69k mesh 全量渲染 | 楼层裁剪(已做) + 平台 InstancedMesh + frustumCulled |
+| 3D 场景加载慢/操作卡顿 | 完整包(69k mesh)全量加载渲染,帧率低 | **当前方案 = Recipe 内容显隐模态**(白名单默认显隐 + 楼层裁剪重放 + 像素比自适应 + 高亮先清后加)。进一步优化依赖赛事平台更新 SDK/场景包(精简包/按类别加载),平台不动则不可行,**不列为待办**。"丰度分级(L1-L5)"是已否决旧概念(见 `doc/ref/arch_ref.md`),勿再提 |
 
 ---
 
