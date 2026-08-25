@@ -14,6 +14,7 @@ import {
   setEvaluating,
   finishConfrontationLocal,
   exitConfrontation,
+  isDuplicateEvent,
 } from '../confront-store';
 
 describe('confront-store', () => {
@@ -135,5 +136,51 @@ describe('deploy(初步部署 agent 真实输出)', () => {
     // 重新开局(重新随机)→ 旧部署清空
     beginConfrontation({ seedScenario: { building: 'b', floor: '6F', material: '油气', trapped: 2, seed: 's2' } });
     expect(getConfrontationState().deploy).toBeNull();
+  });
+});
+
+describe('双通道入库去重(2026-08-25 验收:同一 tool-call 经 adapter 与场景总线各送达一次)', () => {
+  beforeEach(() => resetConfrontation());
+  const seed = { building: 'b', floor: '5F', material: '电气', trapped: 2, seed: 's' };
+
+  it('相同特情在窗口内只落一条,且态势增量不重复应用', () => {
+    beginConfrontation({ seedScenario: seed });
+    const evt = { specialType: 'explosion', emergency: '5F 配电间爆炸', location: '5F', delta: { fireLevelDelta: 1 }, tSec: 12 };
+    appendInject(evt);
+    appendInject(evt); // 总线第二份
+    const s = getConfrontationState();
+    expect(s.events.filter((e) => e.kind === 'inject')).toHaveLength(1);
+    expect(s.situation.fireLevel).toBe(2); // 初始 1 + 仅一次 delta
+  });
+
+  it('相同调整只落一条;adapter 两行形态与总线合并行形态视为同一调整', () => {
+    beginConfrontation({ seedScenario: seed });
+    appendInject({ emergency: '特情', tSec: 10 });
+    appendAdjust({ seq: 1, adjustments: ['出水压制', '控制5层火势'], tSec: 13 }); // adapter 形态
+    appendAdjust({ seq: 1, adjustments: ['出水压制：控制5层火势'], tSec: 14 }); // 总线形态(合并行)
+    expect(getConfrontationState().events.filter((e) => e.kind === 'adjust')).toHaveLength(1);
+  });
+
+  it('特情原始别名与 canonical 形态视为同一特情', () => {
+    beginConfrontation({ seedScenario: seed });
+    appendInject({ specialType: 'explosion', emergency: '5F 配电间爆炸起火', tSec: 10 });
+    appendInject({ specialType: '爆炸', emergency: '5F 配电间爆炸起火', tSec: 11 });
+    expect(getConfrontationState().events.filter((e) => e.kind === 'inject')).toHaveLength(1);
+  });
+
+  it('新一局清空去重窗口,相同内容可再次入库', () => {
+    beginConfrontation({ seedScenario: seed });
+    appendInject({ specialType: 'explosion', emergency: '5F 配电间爆炸', tSec: 10 });
+    beginConfrontation({ seedScenario: seed });
+    appendInject({ specialType: 'explosion', emergency: '5F 配电间爆炸', tSec: 10 });
+    expect(getConfrontationState().events.filter((e) => e.kind === 'inject')).toHaveLength(1);
+  });
+
+  it('isDuplicateEvent 只读查询不登记', () => {
+    beginConfrontation({ seedScenario: seed });
+    expect(isDuplicateEvent({ kind: 'inject', specialType: 'explosion', emergency: 'x' })).toBe(false);
+    expect(isDuplicateEvent({ kind: 'inject', specialType: 'explosion', emergency: 'x' })).toBe(false);
+    appendInject({ specialType: 'explosion', emergency: 'x', tSec: 1 });
+    expect(isDuplicateEvent({ kind: 'inject', specialType: 'explosion', emergency: 'x' })).toBe(true);
   });
 });

@@ -136,7 +136,7 @@ export function ConfrontationReviewWorkspace({
                     <div className="flex items-center gap-2 text-[11px]">
                       <span className="font-mono text-text-3">{fmtT(event.tSec)}</span>
                       <span className={event.kind === 'inject' ? 'text-orange' : 'text-cyan'}>
-                        {event.kind === 'inject' ? `突发特情 #${event.seq}` : `指挥调整 #${event.seq}`}
+                        {event.kind === 'inject' ? `突发特情 #${event.seq}` : event.seq === 0 ? '初始部署上报' : `指挥调整 #${event.seq}`}
                       </span>
                       {event.location && <span className="rounded border border-line px-1 text-text-3">{event.location}</span>}
                       {event.respondedWithinSec != null && <span className="ml-auto text-text-3">响应 {event.respondedWithinSec}s</span>}

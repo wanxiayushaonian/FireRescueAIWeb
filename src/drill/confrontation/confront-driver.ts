@@ -211,13 +211,25 @@ export class ConfrontDriver {
   async finishEvaluate(elapsedSec: number): Promise<ConfrontationReview> {
     const state = this.state();
     const events = state.events;
+    const injects = events.filter((e) => e.kind === 'inject');
     const adjusts = events.filter((e) => e.kind === 'adjust');
-    const outcomes = adjusts.map((e): ConfrontationReview['outcomes'][number] => {
-      if (e.respondedWithinSec === undefined) return 'ignored';
-      return e.respondedWithinSec <= 15 ? 'timely' : 'delayed';
+    // outcomes 按特情配对:每条特情消费其后最近一条未配对的调整,行数恒等于特情数。
+    // (2026-08-25 验收实测:此前按 adjust 生成,双通道重复入库时 4 条特情评出 9 行幻影)
+    const consumedAdjusts = new Set<string>();
+    const outcomes = injects.map((inj): ConfrontationReview['outcomes'][number] => {
+      const adjust = adjusts.find((a) => !consumedAdjusts.has(a.id) && a.tSec >= inj.tSec);
+      if (!adjust) return 'ignored';
+      consumedAdjusts.add(adjust.id);
+      if (adjust.respondedWithinSec === undefined) return 'ignored';
+      return adjust.respondedWithinSec <= 15 ? 'timely' : 'delayed';
     });
     const ignored = outcomes.filter((o) => o === 'ignored').length;
     const delayed = outcomes.filter((o) => o === 'delayed').length;
+    // 降级文案的平均响应用时只统计特情轮次调整(seq>=1);seq=0 是 Planner 初始部署上报
+    const roundAdjusts = adjusts.filter((e) => e.seq >= 1);
+    const avgResponseSec = roundAdjusts.length
+      ? Math.round(roundAdjusts.reduce((a, e) => a + (e.respondedWithinSec ?? 30), 0) / roundAdjusts.length)
+      : 8;
 
     const fallbackScore = Math.max(45, Math.min(98, 92 - ignored * 8 - delayed * 3));
     const pass = fallbackScore >= 85;
@@ -232,7 +244,8 @@ export class ConfrontDriver {
         trapped: this.deps.seed?.trapped,
         elapsedSec,
         injectCount: events.filter((e) => e.kind === 'inject').length,
-        adjustCount: adjusts.length,
+        // 只计特情轮次的调整(seq>=1);seq=0 是 Planner 初始部署上报,不算动态调整
+        adjustCount: adjusts.filter((e) => e.seq >= 1).length,
         outcomes,
         initialPlan: state.deploy,
         finalSituation: state.situation,
@@ -278,7 +291,7 @@ export class ConfrontDriver {
       conclusion: pass ? '预案韧性：良好' : '预案韧性：需修订',
       comments: pass
         ? [
-            `特情响应平均用时 ${adjusts.length ? Math.round(adjusts.reduce((a, e) => a + (e.respondedWithinSec ?? 30), 0) / adjusts.length) : 8}s，调整链路完整`,
+            `特情响应平均用时 ${avgResponseSec}s，调整链路完整`,
             `${events.filter((e) => e.kind === 'adjust' && e.adopted === false).length || 2} 次人工改派决策合理`,
             '进攻/疏散路线动态调整后无交叉冲突',
           ]

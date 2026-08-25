@@ -829,7 +829,9 @@ export default function ConfrontationPanel() {
                   e.kind === 'inject'
                     ? `突发特情 #${e.seq}`
                     : e.kind === 'adjust'
-                      ? `部署/战法调整 #${e.seq}${e.adopted === true ? ' · 已采纳' : e.adopted === false ? ' · 人工改派' : ''}`
+                      ? e.seq === 0
+                        ? '初始部署上报'
+                        : `部署/战法调整 #${e.seq}${e.adopted === true ? ' · 已采纳' : e.adopted === false ? ' · 人工改派' : ''}`
                       : e.emergency;
                 const isLatest = i === conf.events.length - 1 && conf.status === 'running';
                 return (

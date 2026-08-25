@@ -13,6 +13,7 @@ import { dispatch, __resetForTest } from '@/lib/scene-command-bus/registry';
 import type { SceneSdkLike } from '@/lib/scene-command-bus/types';
 import { registerConfrontSceneTools } from '../scene-tools';
 import {
+  appendAdjust,
   beginConfrontation,
   getConfrontationState,
   resetConfrontation,
@@ -20,8 +21,8 @@ import {
 
 const SDK = {} as SceneSdkLike;
 
-function cmd(tool: string, args: Record<string, unknown>) {
-  return { id: `cmd-test-${tool}`, tool, args, ts: Date.now() };
+function cmd(tool: string, args: Record<string, unknown>, id?: string) {
+  return { id: id ?? `cmd-test-${tool}-${Math.random().toString(36).slice(2, 8)}`, tool, args, ts: Date.now() };
 }
 
 beforeEach(() => {
@@ -111,6 +112,23 @@ describe('drill_inject_event handler', () => {
     expect(r).toEqual({ status: 'error' });
     expect(getConfrontationState().events.filter((event) => event.kind === 'inject')).toHaveLength(1);
   });
+
+  it('同一特情经双通道重复下发 → 幂等 ok 且不重复入库', async () => {
+    beginConfrontation({
+      plannedTotal: 3,
+      seedScenario: { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#T' },
+    });
+    const args = {
+      drill_id: 'd1',
+      event: { type: 'explosion', description: '5层配电间爆炸', payload: { fireLevelDelta: 1 } },
+    };
+    const r1 = await dispatch(cmd('drill_inject_event', args), SDK);
+    const r2 = await dispatch(cmd('drill_inject_event', args), SDK);
+    expect(r1).toEqual({ status: 'ok' });
+    expect(r2).toEqual({ status: 'ok' });
+    expect(getConfrontationState().events.filter((e) => e.kind === 'inject')).toHaveLength(1);
+    expect(getConfrontationState().situation.fireLevel).toBe(2); // 增量不重复应用
+  });
 });
 
 describe('drill_report_decision handler', () => {
@@ -145,5 +163,41 @@ describe('drill_report_decision handler', () => {
       SDK,
     );
     expect(getConfrontationState().events[0].adjustments).toEqual(['搜救']);
+  });
+
+  it('开局阶段(无特情)的 report_decision 记为 seq=0 初始部署上报', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(
+      cmd('drill_report_decision', { drill_id: 'd1', decision: { action: '首调2站5车', rationale: '按预案' } }),
+      SDK,
+    );
+    expect(getConfrontationState().events[0]).toMatchObject({ kind: 'adjust', seq: 0 });
+  });
+
+  it('特情后的 report_decision seq 对齐特情轮次', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '5层爆炸', payload: { fireLevelDelta: 1 } },
+    }), SDK);
+    await dispatch(
+      cmd('drill_report_decision', { drill_id: 'd1', decision: { action: '撤退', rationale: '安全优先' } }),
+      SDK,
+    );
+    expect(getConfrontationState().events.find((e) => e.kind === 'adjust')?.seq).toBe(1);
+  });
+
+  it('driver 两行形态与总线合并行形态的同一调整只落一条', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '5层爆炸', payload: { fireLevelDelta: 1 } },
+    }), SDK);
+    // adapter 通道(聊天流解析,两行)
+    appendAdjust({ seq: 1, adjustments: ['出水压制', '控制5层火势'], tSec: 20 });
+    // 总线通道(平台执行 MCP 工具,合并行)
+    await dispatch(
+      cmd('drill_report_decision', { drill_id: 'd1', decision: { action: '出水压制', rationale: '控制5层火势' } }),
+      SDK,
+    );
+    expect(getConfrontationState().events.filter((e) => e.kind === 'adjust')).toHaveLength(1);
   });
 });

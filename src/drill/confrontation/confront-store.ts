@@ -3,6 +3,7 @@
 // 时间用真实秒(startedAt / tSec),无 tick / DisasterState 参与对抗演化。
 
 import type { EvaluationDimension, EvaluationImprovement } from '@/lib/agent-evaluate';
+import { canonicalSpecialType } from './special-event-quality';
 
 export type ConfrontKind = 'inject' | 'adjust' | 'manual' | 'evaluate';
 
@@ -119,6 +120,52 @@ let conf: ConfrontationState = {
 let seqCounter = 0;
 let idCounter = 0;
 
+// 双通道入库去重:同一 tool-call 会沿 adapter(聊天流解析)与场景总线(MCP 命令)
+// 各送达一次。内容完全相同的 inject/adjust 在窗口内只落第一条——否则每条调整双倍入库,
+// 评估 outcomes 与特情↔调整配对全被污染(2026-08-25 验收实测:4 条特情评出 9 行"特情")。
+const DEDUP_WINDOW_MS = 30_000;
+const recentEventKeys = new Map<string, number>();
+
+function dedupNormalize(value?: string): string {
+  return (value ?? '').toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
+}
+
+export type DedupCandidate =
+  | { readonly kind: 'inject'; readonly specialType?: string; readonly emergency?: string; readonly location?: string }
+  | { readonly kind: 'adjust'; readonly adjustments?: readonly string[] };
+
+function dedupKeyOf(candidate: DedupCandidate): string {
+  return candidate.kind === 'inject'
+    // specialType 归一到 canonical(两条通道可能分别携带原始别名与 canonical 形态)
+    ? `inject|${canonicalSpecialType({ specialType: candidate.specialType, emergency: candidate.emergency ?? '', location: candidate.location })}|${dedupNormalize(candidate.emergency)}|${dedupNormalize(candidate.location)}`
+    // adjustments 用空串连接:adapter 的 [action, rationale] 两行与总线的 "action:rationale" 合并行收敛同 key
+    : `adjust|${(candidate.adjustments ?? []).map(dedupNormalize).join('')}`;
+}
+
+function pruneDedup(now: number): void {
+  for (const [key, at] of recentEventKeys) {
+    if (now - at > DEDUP_WINDOW_MS) recentEventKeys.delete(key);
+  }
+}
+
+/** 命中重复(窗口内同内容已入库)返回 true;未命中登记本次。 */
+function hitOrMarkDuplicate(candidate: DedupCandidate): boolean {
+  const now = Date.now();
+  pruneDedup(now);
+  const key = dedupKeyOf(candidate);
+  const at = recentEventKeys.get(key);
+  recentEventKeys.set(key, now);
+  return at !== undefined && now - at <= DEDUP_WINDOW_MS;
+}
+
+/** 只读查询(场景总线 handler 幂等应答用:同内容已在库则跳过质量门直接 ok)。 */
+export function isDuplicateEvent(candidate: DedupCandidate): boolean {
+  const now = Date.now();
+  pruneDedup(now);
+  const at = recentEventKeys.get(dedupKeyOf(candidate));
+  return at !== undefined && now - at <= DEDUP_WINDOW_MS;
+}
+
 type Listener = (s: ConfrontationState) => void;
 const listeners = new Set<Listener>();
 
@@ -159,6 +206,7 @@ export function subscribeConfrontation(fn: Listener): () => void {
 }
 
 export function resetConfrontation(): void {
+  recentEventKeys.clear();
   conf = {
     active: false,
     status: 'idle',
@@ -188,6 +236,7 @@ export function beginConfrontation(opts?: {
   plannedTotal?: number;
 }): void {
   seqCounter = 0;
+  recentEventKeys.clear();
   conf = {
     ...conf,
     active: true,
@@ -223,6 +272,7 @@ export function setDeployLines(lines: readonly string[]): void {
 export function appendInject(
   evt: Omit<ConfrontationEvent, 'id' | 'kind' | 'seq'> & { readonly id?: string },
 ): void {
+  if (hitOrMarkDuplicate({ kind: 'inject', specialType: evt.specialType, emergency: evt.emergency, location: evt.location })) return;
   seqCounter += 1;
   const node: ConfrontationEvent = {
     id: evt.id ?? genId('ci'),
@@ -256,6 +306,7 @@ export function appendAdjust(
     readonly emergency?: string;
   },
 ): void {
+  if (hitOrMarkDuplicate({ kind: 'adjust', adjustments: evt.adjustments })) return;
   const node: ConfrontationEvent = {
     id: evt.id ?? genId('ca'),
     seq: evt.seq,

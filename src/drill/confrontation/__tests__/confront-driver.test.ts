@@ -7,11 +7,13 @@ import type { ConfrontationEvent } from '../confront-store';
 
 const SEED = { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#T1' };
 
+let eventSeq = 0;
 function event(
   kind: ConfrontationEvent['kind'],
   extra: Partial<ConfrontationEvent> = {},
 ): ConfrontationEvent {
-  return { id: `${kind}-1`, seq: 1, kind, emergency: '', tSec: 1, ...extra };
+  eventSeq += 1;
+  return { id: `${kind}-${eventSeq}`, seq: 1, kind, emergency: '', tSec: 1, ...extra };
 }
 
 function makeDriver(opts: { evaluateData: EvaluationData | null; events?: readonly ConfrontationEvent[] }): ConfrontDriver {
@@ -43,31 +45,47 @@ const AGENT_DATA: EvaluationData = {
 };
 
 describe('finishEvaluate', () => {
-  it('agent 评估:维度分项与改进措施随 review 透传', async () => {
+  it('agent 评估:维度分项与改进措施随 review 透传,outcomes 按特情配对', async () => {
     const driver = makeDriver({
       evaluateData: AGENT_DATA,
       events: [
-        event('inject', { specialType: 'wind_shift', emergency: '风向突变' }),
-        event('adjust', { adopted: true, respondedWithinSec: 10 }),
-        event('adjust', { adopted: false, respondedWithinSec: 20 }),
-        event('adjust'),
+        event('inject', { specialType: 'wind_shift', emergency: '风向突变', tSec: 10 }),
+        event('adjust', { adopted: true, respondedWithinSec: 10, tSec: 20 }),
+        event('inject', { specialType: 'explosion', emergency: '配电间爆炸', tSec: 30 }),
+        event('adjust', { adopted: false, respondedWithinSec: 20, tSec: 40 }),
+        event('inject', { specialType: 'collapse', emergency: '局部坍塌', tSec: 50 }),
+        event('adjust', { tSec: 60 }),
       ],
     });
     const review = await driver.finishEvaluate(188);
     expect(review.source).toBe('agent');
     expect(review.score).toBe(88);
     expect(review.archived).toBe(true); // ≥85 归档
+    // 行数=特情数:3 条特情 → timely/delayed/ignored 各一
     expect(review.outcomes).toEqual(['timely', 'delayed', 'ignored']);
     expect(review.dimensions).toEqual(AGENT_DATA.dimensions);
     expect(review.improvements).toEqual(AGENT_DATA.improvements);
+  });
+
+  it('Planner 初始部署上报(seq=0)不占特情结果行', async () => {
+    const driver = makeDriver({
+      evaluateData: AGENT_DATA,
+      events: [
+        event('adjust', { seq: 0, adjustments: ['首调2站5车'], tSec: 5 }), // Planner 上报
+        event('inject', { specialType: 'explosion', emergency: '配电间爆炸', tSec: 10 }),
+        event('adjust', { seq: 1, adjustments: ['撤出内攻'], respondedWithinSec: 12, tSec: 20 }),
+      ],
+    });
+    const review = await driver.finishEvaluate(60);
+    expect(review.outcomes).toEqual(['timely']);
   });
 
   it('agent 未响应:本地规则降级打分,无维度/改进措施', async () => {
     const driver = makeDriver({
       evaluateData: null,
       events: [
-        event('adjust', { adopted: true, respondedWithinSec: 10 }),
-        event('adjust'),
+        event('inject', { specialType: 'wind_shift', emergency: '风向突变', tSec: 10 }),
+        event('adjust', { tSec: 20 }), // 未响应 → ignored
       ],
     });
     const review = await driver.finishEvaluate(120);
@@ -83,8 +101,10 @@ describe('finishEvaluate', () => {
     const driver = makeDriver({
       evaluateData: AGENT_DATA,
       events: [
-        event('adjust', { respondedWithinSec: 15 }),
-        event('adjust', { respondedWithinSec: 16 }),
+        event('inject', { emergency: 'a', tSec: 10 }),
+        event('adjust', { respondedWithinSec: 15, tSec: 20 }),
+        event('inject', { emergency: 'b', tSec: 30 }),
+        event('adjust', { respondedWithinSec: 16, tSec: 40 }),
       ],
     });
     const review = await driver.finishEvaluate(60);

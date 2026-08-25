@@ -16,6 +16,7 @@ import {
   appendAdjust,
   appendInject,
   getConfrontationState,
+  isDuplicateEvent,
 } from './confront-store';
 import { evaluateSpecialQuality } from './special-event-quality';
 
@@ -117,6 +118,9 @@ export function registerConfrontSceneTools(
     const hasDelta = fireLevelDelta != null || trappedDelta != null || damageDelta != null || wind != null;
     const delta = hasDelta ? { fireLevelDelta, trappedDelta, damageDelta, wind } : undefined;
     const candidate = { specialType, emergency: description, location, delta };
+    // 幂等短路:同一 tool-call 可能已沿 adapter 通道(聊天流解析)入库;完全相同的特情
+    // 直接返回 ok——若继续走质量门,第二份必被当"类型重复"拒绝,agent 会收到与事实不符的 error。
+    if (isDuplicateEvent({ kind: 'inject', specialType, emergency: description, location })) return;
     const quality = evaluateSpecialQuality(candidate, getConfrontationState().events);
     if (!quality.accepted) throw new Error(`无效特情已拒绝:${quality.reason}`);
     appendInject({
@@ -141,9 +145,11 @@ export function registerConfrontSceneTools(
     const action = String(decision.action ?? '').trim() || '决策';
     const rationale = String(decision.rationale ?? '').trim();
     const line = rationale ? `${action}：${rationale}` : action;
-    // seq 语义与 confront-driver 一致:当前已注入特情轮数(至少 1)
+    // seq 语义与 confront-driver 一致:当前已注入特情轮数。
+    // seq=0 = 开局初始部署上报(Planner,先于任何特情);特情轮次的调整从 1 起,
+    // 与 inject 的 seq 对齐(卡片按 seq 配对;调整入库本身由 store 做双通道去重)。
     const s = getConfrontationState();
-    const seq = Math.max(1, s.events.filter((e) => e.kind === 'inject').length);
+    const seq = s.events.filter((e) => e.kind === 'inject').length;
     appendAdjust({ seq, adjustments: [line], tSec: elapsedSec() });
   });
 }
