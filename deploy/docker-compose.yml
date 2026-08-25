@@ -27,6 +27,10 @@ services:
     environment:
       # BFF 连 mcp 的容器内地址(与 mcp 的 WEB_BFF_URL 对称)
       MCP_INTERNAL_URL: http://mcp:8787
+      # Next standalone 会读取 Docker 自动注入的 HOSTNAME(容器 ID)并只绑定该地址；
+      # 显式监听所有接口，确保端口映射、容器内 healthcheck 和 mcp→bff 均可达。
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
     ports:
       - "3000:3000" # 对外:浏览器访问前端页面 + /api/*(演示用)
     expose:
