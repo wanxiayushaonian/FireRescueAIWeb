@@ -48,7 +48,9 @@ export function registerConfrontSceneTools(addSceneAction?: AddSceneActionFn): v
       String(event.description ?? '').trim() ||
       String(event.type ?? '').trim() ||
       '外部注入特情';
-    appendInject({ emergency: description, tSec: elapsedSec() });
+    const payload = narrowObject(event.payload);
+    const location = String(payload?.location ?? event.location ?? '').trim() || undefined;
+    appendInject({ emergency: description, location, tSec: elapsedSec() });
     // 场景动作日志留痕（中文 target 的 highlight 执行器空转,与 driver 行为一致,仅日志可见）
     addSceneAction?.({
       action: 'highlight',

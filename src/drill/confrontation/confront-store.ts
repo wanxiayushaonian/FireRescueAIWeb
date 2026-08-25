@@ -2,6 +2,8 @@
 // 纯状态容器 + 纯动作:不做定时器/agent 调用(集成层负责编排后调用这些动作)。
 // 时间用真实秒(startedAt / tSec),无 tick / DisasterState 参与对抗演化。
 
+import type { EvaluationDimension, EvaluationImprovement } from '@/lib/agent-evaluate';
+
 export type ConfrontKind = 'inject' | 'adjust' | 'manual' | 'evaluate';
 
 export interface ConfrontationEvent {
@@ -9,6 +11,8 @@ export interface ConfrontationEvent {
   readonly seq: number;
   readonly kind: ConfrontKind;
   readonly emergency: string;
+  /** 特情位置(agent 原始 location,如 "5F影院放映厅";仅 inject 事件有,供特情卡展示/复查) */
+  readonly location?: string;
   readonly adjustments?: readonly string[];
   readonly adopted?: boolean;
   readonly respondedWithinSec?: number;
@@ -23,6 +27,10 @@ export interface ConfrontationReview {
   readonly archived: boolean;
   /** 评估来源：agent=评估 agent 真实输出；fallback=agent 未响应时的本地规则降级打分（UI 必须显式标注）。 */
   readonly source: 'agent' | 'fallback';
+  /** 分项维度评分(agent 评估才有;fallback 为空数组,UI 不渲染该区块) */
+  readonly dimensions?: readonly EvaluationDimension[];
+  /** 改进措施(agent 评估才有;归档时逐条回流预案库「改进措施」) */
+  readonly improvements?: readonly EvaluationImprovement[];
 }
 
 export interface ConfrontationSeed {
@@ -168,6 +176,7 @@ export function appendInject(
     seq: seqCounter,
     kind: 'inject',
     emergency: evt.emergency,
+    location: evt.location,
     tSec: evt.tSec,
   };
   conf = { ...conf, events: [...conf.events, node], review: null };

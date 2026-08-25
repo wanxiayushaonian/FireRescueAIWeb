@@ -18,4 +18,4 @@ export type SceneSdkLike = {
 export type SceneToolHandler = (
   args: Record<string, unknown>,
   sdk: SceneSdkLike,
-) => void | Promise<void>;
+) => void | Promise<void> | unknown | Promise<unknown>;

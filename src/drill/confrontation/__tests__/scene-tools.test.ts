@@ -36,7 +36,7 @@ describe('drill_inject_event handler', () => {
       cmd('drill_inject_event', { drill_id: 'd1', event: { description: '电梯故障' } }),
       SDK,
     );
-    expect(r).toBe('error');
+    expect(r).toEqual({ status: 'error' });
     expect(getConfrontationState().events).toHaveLength(0);
   });
 
@@ -49,7 +49,7 @@ describe('drill_inject_event handler', () => {
       }),
       SDK,
     );
-    expect(r).toBe('ok');
+    expect(r).toEqual({ status: 'ok' });
     const events = getConfrontationState().events;
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe('inject');
@@ -71,7 +71,7 @@ describe('drill_report_decision handler', () => {
       cmd('drill_report_decision', { drill_id: 'd1', decision: { action: 'dispatch' } }),
       SDK,
     );
-    expect(r).toBe('error');
+    expect(r).toEqual({ status: 'error' });
   });
 
   it('对抗舱 running → appendAdjust 写入动态调整(action + rationale)', async () => {
@@ -83,7 +83,7 @@ describe('drill_report_decision handler', () => {
       }),
       SDK,
     );
-    expect(r).toBe('ok');
+    expect(r).toEqual({ status: 'ok' });
     const events = getConfrontationState().events;
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe('adjust');

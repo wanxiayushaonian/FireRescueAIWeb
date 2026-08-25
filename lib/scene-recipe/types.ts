@@ -49,6 +49,8 @@ export interface RecipeRuntime {
   hideLabels(): void;
   setScene(params: unknown): Promise<unknown>;
   flyToObject(id: string): Promise<void>;
+  /** 飞向多个对象整体包围盒中心（楼层段聚焦：一次飞到位）。 */
+  flyToObjects?(ids: string[]): Promise<void>;
   highlightObject(id: string, color?: string): boolean;
   setCameraViewpoint(vp: CameraViewpoint, transition?: boolean): Promise<void>;
   setVirtualRouteVisible(id: string, v: boolean): unknown;

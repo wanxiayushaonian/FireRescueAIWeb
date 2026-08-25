@@ -1,17 +1,35 @@
-import { dispatch } from './registry';
+import { dispatch, type DispatchOutcome } from './registry';
 import type { SceneCommand, SceneSdkLike } from './types';
+
+/** ack 载荷大小上限(统计结果等回传数据,防超长被 BFF/mcp 拒收) */
+const MAX_RESULT_BYTES = 4096;
 
 /**
  * 执行回执上报(ack,尽力而为):命令执行后回 POST BFF → mcp-server 记录状态,
  * agent 可经 get_scene_command_status 查询。单向 fire-and-forget 通道的已知短板
  * (蓝图 #273 建议项)由此补齐;网络/离线失败静默,不影响主链路。
+ * handler 返回值(查询类工具结果)序列化后随 result 回传,超长截断。
  */
-function reportAck(cmd: SceneCommand, status: 'ok' | 'error', message?: string): void {
+function reportAck(cmd: SceneCommand, outcome: DispatchOutcome): void {
   if (typeof window === 'undefined') return;
+  const payload: Record<string, unknown> = {
+    cmd_id: cmd.id,
+    tool: cmd.tool,
+    status: outcome.status,
+  };
+  if (outcome.status === 'error') payload.message = `handler error: ${cmd.tool}`;
+  if (outcome.result !== undefined) {
+    try {
+      const text = JSON.stringify(outcome.result);
+      payload.result = text.length > MAX_RESULT_BYTES ? text.slice(0, MAX_RESULT_BYTES) : outcome.result;
+    } catch {
+      /* 结果不可序列化则跳过 result */
+    }
+  }
   fetch('/api/scene-events/ack', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ cmd_id: cmd.id, tool: cmd.tool, status, message }),
+    body: JSON.stringify(payload),
     keepalive: true,
   }).catch(() => {
     /* ack 失败静默:主链路不受影响 */
@@ -37,9 +55,8 @@ export function connectSceneEvents(url: string, getSdk: () => SceneSdkLike): () 
       } catch {
         console.warn(`[scene-bus] 3D 场景未就绪,仅 GIS 类工具可执行: ${cmd.tool}`);
       }
-      void dispatch(cmd, (sdk ?? null) as SceneSdkLike).then((r) => {
-        if (r === 'ok') reportAck(cmd, 'ok');
-        else if (r === 'error') reportAck(cmd, 'error', `handler error: ${cmd.tool}`);
+      void dispatch(cmd, (sdk ?? null) as SceneSdkLike).then((outcome) => {
+        if (outcome.status === 'ok' || outcome.status === 'error') reportAck(cmd, outcome);
         // no-handler/no-sdk 不报 ack(未知工具/未执行,不算执行失败)
       });
     } catch (err) {

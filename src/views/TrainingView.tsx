@@ -20,7 +20,7 @@ export interface TrainingViewProps {
 }
 
 export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) {
-  const { tree, recipeStore } = useScene();
+  const { tree, recipeStore, runtime } = useScene();
   // 一级 / 二级切换
   const [mode, setMode] = useState<'familiar' | 'exam'>('familiar');
   // 一级左面板页签:AI 六熟悉顺序引导(ref 核心设计)/ 自主浏览(原三分类路径)
@@ -74,8 +74,8 @@ export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) 
     setNodes((prev) =>
       prev.map((x) => (x.id === n.id ? { ...x, familiarity: Math.min(100, x.familiarity + 8) } : x)),
     );
-    // 场景联动:带楼层的点位优先 3D 楼层聚焦(与档案楼层卡片同机制:单层显设备/多层段炸开);
-    // 无楼层或场景未命中(全楼/室外/屋顶等)→ GIS 坐标定位兜底
+    // 场景联动:带楼层的点位优先 3D 楼层聚焦(与档案楼层卡片同机制:单层显设备/多层段炸开
+    // + 镜头飞向楼层段整体中心);无楼层或场景未命中(全楼/室外/屋顶等)→ GIS 坐标定位兜底
     let focused = false;
     if (n.floor && tree && recipeStore) {
       const storyIds = storyIdsForFloorSpec(tree, n.floor);
@@ -86,6 +86,11 @@ export default function TrainingView({ onRequestAgentHint }: TrainingViewProps) 
           yExtend: multi,
           hideDevices: multi,
         });
+        if (runtime && typeof runtime.flyToObjects === 'function') {
+          void runtime.flyToObjects(storyIds).catch(() => {});
+        } else {
+          void runtime?.flyToObject(storyIds[0]).catch(() => {});
+        }
         focused = true;
       }
     }

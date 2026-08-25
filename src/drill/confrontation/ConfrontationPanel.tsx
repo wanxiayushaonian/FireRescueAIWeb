@@ -1,6 +1,6 @@
 // 演练对抗 · 对抗模式（二级界面全屏视图）
 // 由 ScenarioPanel 挂载（Portal 到 body），confront-store + ConfrontDriver 驱动。
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { useScene } from '@/components/SceneProvider';
-import { storyIdsForFloorSpec } from '@/lib/floor-focus';
+import { storyIdsForFloorSpec, extractFloorSpecFromText } from '@/lib/floor-focus';
 import {
   beginConfrontation,
   exitConfrontation,
@@ -38,7 +38,7 @@ import {
   BUILDING_21_SCENE_ID,
   BUILDING_21_ID,
   BUILDING_21_DRILL_ID,
-} from '@/drill/scenarios/building-21';
+} from '@/drill/building-21';
 
 const STATE_OPTIONS: Array<{ value: FetchState; label: string }> = [
   { value: 'ok', label: '正常' },
@@ -66,13 +66,37 @@ export default function ConfrontationPanel() {
   );
 
   // ---- 3D 联动:特情注入 → 楼层聚焦 + 飞向(经 ref 取最新句柄,回调保持稳定引用) ----
-  const { tree: sceneTree, recipeStore, runtime: sceneRuntime } = useScene();
+  const { tree: sceneTree, recipeStore, runtime: sceneRuntime, containerRef } = useScene();
   const sceneRef = useRef({ tree: sceneTree, recipeStore, runtime: sceneRuntime });
   sceneRef.current = { tree: sceneTree, recipeStore, runtime: sceneRuntime };
+
+  // ---- 实时 3D 缩略区:开舱时把主画布容器迁进来(整个容器 div 迁移,ResizeObserver/事件系统
+  // 都绑在容器上,自动适配缩略区尺寸且可交互);关舱时 insertBefore 精确复位。
+  // 布局效应在提交阶段同步执行,无闪烁;React 不管理容器子节点,物理迁移安全。
+  const slotRef = useRef<HTMLDivElement>(null);
+  const [sceneMigrated, setSceneMigrated] = useState(false);
+  useLayoutEffect(() => {
+    const slot = slotRef.current;
+    const el = containerRef?.current;
+    if (!slot || !el) return;
+    const originParent = el.parentElement;
+    const nextSibling = el.nextSibling;
+    slot.appendChild(el);
+    setSceneMigrated(true);
+    return () => {
+      if (originParent) originParent.insertBefore(el, nextSibling);
+      setSceneMigrated(false);
+    };
+  }, [containerRef]);
   const onInjectScene = useCallback((evt: { emergency: string; location?: string }): void => {
     const { tree, recipeStore: store, runtime: rt } = sceneRef.current;
     if (!tree || !store || !rt || !evt.location) return;
-    const storyIds = storyIdsForFloorSpec(tree, evt.location);
+    // agent location 多为自由文本("5F影院放映厅"),整串解析必 miss——先严格、落空再抽取楼层段
+    let storyIds = storyIdsForFloorSpec(tree, evt.location);
+    if (storyIds.length === 0) {
+      const extracted = extractFloorSpecFromText(evt.location);
+      if (extracted) storyIds = storyIdsForFloorSpec(tree, extracted);
+    }
     if (storyIds.length === 0) return; // 楼层未命中(如特情在场景外)静默,不打断对抗
     const single = storyIds.length === 1;
     store.patchStructural({
@@ -81,7 +105,12 @@ export default function ConfrontationPanel() {
       yExtend: !single,
       hideDevices: !single,
     });
-    void rt.flyToObject(storyIds[0]).catch(() => {});
+    // 镜头飞向楼层段整体中心(多层段合并包围盒,一次看全)
+    if (rt && typeof rt.flyToObjects === 'function') {
+      void rt.flyToObjects(storyIds).catch(() => {});
+    } else {
+      void rt.flyToObject(storyIds[0]).catch(() => {});
+    }
   }, []);
 
   useConfrontationDriver({
@@ -192,6 +221,18 @@ export default function ConfrontationPanel() {
       summary: [...review.comments],
       sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}${review.source === 'fallback' ? '，评估 agent 未响应 · 本地规则降级打分' : ''}，本局特情 ${injects.length} 条）`,
     });
+
+    // 改进措施逐条回流预案库(与实战指挥战后评估同模式:待落地,自动关联同建筑演练预案)
+    for (const imp of review.improvements ?? []) {
+      addLibraryItem({
+        kind: '改进措施',
+        title: imp.content,
+        buildingName: conf.seedScenario?.building,
+        status: '待落地',
+        summary: [imp.content],
+        sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}）→ ${imp.target}`,
+      });
+    }
 
     driver.clearAll();
 
@@ -429,8 +470,9 @@ export default function ConfrontationPanel() {
             </span>
           </div>
 
-          {/* 3D 占位缩略区 */}
+          {/* 实时 3D 缩略区:主画布容器经 slot 迁入(useLayoutEffect);场景未就绪时回落 SVG 占位 */}
           <div
+            ref={slotRef}
             className="relative h-[180px] shrink-0 overflow-hidden border-b border-line"
             style={{
               backgroundImage:
@@ -438,31 +480,40 @@ export default function ConfrontationPanel() {
               backgroundSize: '24px 24px',
             }}
           >
-            <svg className="absolute inset-0 h-full w-full" viewBox="0 0 600 180" preserveAspectRatio="none">
-              <motion.polyline
-                points="40,150 180,110 320,120 460,60 560,40"
-                fill="none"
-                stroke="#22d3ee"
-                strokeWidth="2"
-                strokeLinecap="round"
-                initial={{ pathLength: 0, opacity: 0.4 }}
-                animate={{ pathLength: 1, opacity: 1 }}
-                transition={{ duration: 1.2, ease: 'easeOut' }}
-                style={{ filter: 'drop-shadow(0 0 6px rgba(34,211,238,.7))' }}
-              />
-              <motion.polyline
-                points="40,160 200,140 380,150 540,100"
-                fill="none"
-                stroke="#f97316"
-                strokeWidth="1.5"
-                strokeDasharray="6 5"
-                initial={{ pathLength: 0, opacity: 0.3 }}
-                animate={{ pathLength: 1, opacity: 0.8 }}
-                transition={{ duration: 1.4, ease: 'easeOut', delay: 0.3 }}
-                style={{ filter: 'drop-shadow(0 0 5px rgba(249,115,22,.6))' }}
-              />
-            </svg>
-            <span className="absolute bottom-2 left-3 text-[11px] text-text-3">3D 占位缩略区 · 承接本局场景动作</span>
+            {!sceneMigrated && (
+              <>
+                <svg className="absolute inset-0 h-full w-full" viewBox="0 0 600 180" preserveAspectRatio="none">
+                  <motion.polyline
+                    points="40,150 180,110 320,120 460,60 560,40"
+                    fill="none"
+                    stroke="#22d3ee"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    initial={{ pathLength: 0, opacity: 0.4 }}
+                    animate={{ pathLength: 1, opacity: 1 }}
+                    transition={{ duration: 1.2, ease: 'easeOut' }}
+                    style={{ filter: 'drop-shadow(0 0 6px rgba(34,211,238,.7))' }}
+                  />
+                  <motion.polyline
+                    points="40,160 200,140 380,150 540,100"
+                    fill="none"
+                    stroke="#f97316"
+                    strokeWidth="1.5"
+                    strokeDasharray="6 5"
+                    initial={{ pathLength: 0, opacity: 0.3 }}
+                    animate={{ pathLength: 1, opacity: 0.8 }}
+                    transition={{ duration: 1.4, ease: 'easeOut', delay: 0.3 }}
+                    style={{ filter: 'drop-shadow(0 0 5px rgba(249,115,22,.6))' }}
+                  />
+                </svg>
+                <span className="absolute bottom-2 left-3 text-[11px] text-text-3">3D 场景接入中…</span>
+              </>
+            )}
+            {sceneMigrated && (
+              <span className="pointer-events-none absolute bottom-2 left-3 z-10 rounded bg-bg-deep/70 px-1.5 py-px text-[11px] text-text-3">
+                实时场景 · 承接本局场景动作（可拖拽旋转/缩放）
+              </span>
+            )}
           </div>
 
           {/* 特情-调整卡对滚动区（新卡在上） */}
@@ -495,6 +546,11 @@ export default function ConfrontationPanel() {
                           <span className="text-[13px] font-bold text-orange">
                             ⚠ 突发特情 #{inject.seq}：
                           </span>
+                          {inject.location && (
+                            <span className="rounded border border-orange/50 bg-orange/10 px-1 py-px font-mono text-[11px] text-orange">
+                              {inject.location}
+                            </span>
+                          )}
                           <span className="ml-auto font-mono text-[11px] text-text-3">{fmtT(inject.tSec)}</span>
                           <span className="rounded border border-orange/60 px-1 py-px text-[11px] text-orange">对抗智能体</span>
                         </div>
@@ -702,6 +758,55 @@ export default function ConfrontationPanel() {
                     </motion.li>
                   ))}
                 </ul>
+                {/* 维度分项(agent 评估才有;fallback 降级不渲染) */}
+                {conf.review.dimensions && conf.review.dimensions.length > 0 && (
+                  <div className="mt-2 border-t border-line pt-2">
+                    <div className="mb-1 text-[11px] text-text-3">分项维度</div>
+                    {conf.review.dimensions.map((d) => (
+                      <motion.div
+                        key={d.name}
+                        variants={{ hidden: { opacity: 0 }, show: { opacity: 1 } }}
+                        className="mb-1.5"
+                        title={d.comment}
+                      >
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="text-text-2">{d.name}</span>
+                          <span className={`font-mono font-bold ${d.score >= 85 ? 'text-green' : d.score >= 70 ? 'text-amber' : 'text-red'}`}>
+                            {d.score}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 h-1 overflow-hidden rounded bg-bg-panel-2">
+                          <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${d.score}%` }}
+                            transition={{ duration: 0.6, ease: 'easeOut' }}
+                            className={`h-full ${d.score >= 85 ? 'bg-green' : d.score >= 70 ? 'bg-amber' : 'bg-red'}`}
+                          />
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+                {/* 改进措施(agent 评估才有;已随归档逐条回流预案库「改进措施」) */}
+                {conf.review.improvements && conf.review.improvements.length > 0 && (
+                  <div className="mt-2 border-t border-line pt-2">
+                    <div className="mb-1 text-[11px] text-text-3">改进措施 · 已回流预案库</div>
+                    {conf.review.improvements.map((imp) => (
+                      <motion.div
+                        key={imp.content}
+                        variants={{ hidden: { opacity: 0, x: -6 }, show: { opacity: 1, x: 0 } }}
+                        className="mb-1 text-[12px] leading-4 text-text-2"
+                      >
+                        · {imp.content}
+                        {imp.target && (
+                          <span className="ml-1 rounded border border-violet/50 bg-violet/10 px-1 py-px text-[10px] text-violet">
+                            → {imp.target}
+                          </span>
+                        )}
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-2 border-t border-line pt-2">
                   <div className="mb-1 text-[11px] text-text-3">各特情应对结果</div>
                   {conf.review.outcomes.map((o, i) => (

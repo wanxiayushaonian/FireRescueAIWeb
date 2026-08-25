@@ -1,6 +1,10 @@
 import type { SceneCommand, SceneSdkLike, SceneToolHandler } from './types';
 
-export type DispatchResult = 'ok' | 'error' | 'no-handler' | 'no-sdk';
+/** 派发结果:status 兼容旧字符串语义;result 为 handler 返回值(查询类工具经 ack 回传)。 */
+export interface DispatchOutcome {
+  status: 'ok' | 'error' | 'no-handler' | 'no-sdk';
+  result?: unknown;
+}
 
 const handlers = new Map<string, SceneToolHandler>();
 
@@ -15,19 +19,20 @@ export function registerSceneTool(name: string, handler: SceneToolHandler): void
  * - no-handler:未知工具
  * - no-sdk:3D 工具但 sdk 缺位(registry 不感知 sdk 来源,由 transport 在传参前判定)
  * 注意:error 仍不抛出(单命令失败不中断命令流)。
+ * handler 的返回值(如 query_scene_facilities 的统计结果)随 result 返回,由 transport 经 ack 回传。
  */
-export async function dispatch(cmd: SceneCommand, sdk: SceneSdkLike): Promise<DispatchResult> {
+export async function dispatch(cmd: SceneCommand, sdk: SceneSdkLike): Promise<DispatchOutcome> {
   const handler = handlers.get(cmd.tool);
   if (!handler) {
     console.warn(`[scene-bus] unknown tool: ${cmd.tool}`);
-    return 'no-handler';
+    return { status: 'no-handler' };
   }
   try {
-    await handler(cmd.args ?? {}, sdk);
-    return 'ok';
+    const result = await handler(cmd.args ?? {}, sdk);
+    return result === undefined ? { status: 'ok' } : { status: 'ok', result };
   } catch (err) {
     console.error(`[scene-bus] handler error for ${cmd.tool}:`, err);
-    return 'error';
+    return { status: 'error' };
   }
 }
 

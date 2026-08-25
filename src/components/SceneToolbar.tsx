@@ -23,7 +23,15 @@ const LEVEL_BUTTONS: { lvl: LayerLevel; icon: LucideIcon; label: string }[] = [
   { lvl: 'multi', icon: Columns3, label: '多层' },
 ];
 
-export default function SceneToolbar() {
+export default function SceneToolbar({
+  placement = 'top',
+  compact = false,
+}: {
+  /** 上下贴边位置(演练对抗顶部有自有工具条+两侧浮动面板,传 bottom 彻底避让) */
+  placement?: 'top' | 'bottom';
+  /** 紧凑模式:隐藏设备搜索(演练对抗只保留楼层显隐,避让两侧浮动面板) */
+  compact?: boolean;
+}) {
   const { tree, recipeStore, runtime, view, initialView } = useScene();
   const buildings = useMemo(() => extractBuildings(tree), [tree]);
   // 未定义楼层(名不可解析)是建模残缺产物:不计入楼层数,也不进 chip 云供选择
@@ -163,7 +171,7 @@ export default function SceneToolbar() {
 
   const locate = (it: DeviceSearchItem): void => {
     void runtime?.flyToObject(it.outId).catch(() => {});
-    runtime?.highlightObject(it.outId, '#22d3ee');
+    runtime?.replaceHighlight([it.outId], '#22d3ee');
     setQuery('');
     searchRef.current?.blur();
   };
@@ -213,32 +221,39 @@ export default function SceneToolbar() {
   const searchActive = query.trim().length > 0;
 
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-3 z-20 w-[min(620px,calc(100%-24px))] -translate-x-1/2">
-      {/* 主条 */}
+    <div
+      className={`pointer-events-auto absolute left-1/2 z-20 -translate-x-1/2 ${
+        placement === 'bottom' ? 'bottom-6' : 'top-3'
+      } ${compact ? '' : 'w-[min(620px,calc(100%-24px))]'}`}
+    >      {/* 主条 */}
       <div className="flex items-center gap-1.5 rounded-full border border-line bg-bg-panel/85 px-2.5 py-1.5 shadow-lg shadow-black/30 backdrop-blur-[8px]">
         {/* 搜索 */}
-        <div className="flex min-w-0 flex-1 items-center gap-1.5">
-          <Search className="h-3.5 w-3.5 shrink-0 text-text-3" />
-          <input
-            ref={searchRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && results[0]) locate(results[0]);
-              if (e.key === 'Escape') {
-                setQuery('');
-                searchRef.current?.blur();
-              }
-            }}
-            placeholder="搜索设备 / 类型 / 楼层…"
-            className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-text-1 placeholder:text-text-3/60 focus:outline-none"
-          />
-          {!searchActive && (
-            <span className="shrink-0 font-mono text-[10px] text-text-3/70">{searchItems.length}</span>
-          )}
-        </div>
+        {!compact && (
+          <>
+            <div className="flex min-w-0 flex-1 items-center gap-1.5">
+              <Search className="h-3.5 w-3.5 shrink-0 text-text-3" />
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && results[0]) locate(results[0]);
+                  if (e.key === 'Escape') {
+                    setQuery('');
+                    searchRef.current?.blur();
+                  }
+                }}
+                placeholder="搜索设备 / 类型 / 楼层…"
+                className="h-6 min-w-0 flex-1 bg-transparent text-[12px] text-text-1 placeholder:text-text-3/60 focus:outline-none"
+              />
+              {!searchActive && (
+                <span className="shrink-0 font-mono text-[10px] text-text-3/70">{searchItems.length}</span>
+              )}
+            </div>
 
-        <span className="h-4 w-px shrink-0 bg-line" />
+            <span className="h-4 w-px shrink-0 bg-line" />
+          </>
+        )}
 
         {/* 层级切换 */}
         <div className="flex shrink-0 gap-0.5 rounded-full border border-line bg-bg-panel p-0.5">
@@ -293,15 +308,17 @@ export default function SceneToolbar() {
         </button>
       </div>
 
-      {/* 下拉区:搜索结果优先,否则楼层 chip 云 */}
+      {/* 下拉区:搜索结果优先,否则楼层 chip 云(绝对定位;top 向下展开,bottom 向上展开) */}
       <AnimatePresence initial={false}>
         {(searchActive || (chipsOpen && level !== 'whole')) && (
           <motion.div
-            initial={{ opacity: 0, y: -4 }}
+            initial={{ opacity: 0, y: placement === 'bottom' ? 4 : -4 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
+            exit={{ opacity: 0, y: placement === 'bottom' ? 4 : -4 }}
             transition={{ duration: 0.15 }}
-            className="mt-1.5 max-h-[320px] overflow-y-auto rounded-xl border border-line bg-bg-panel/92 p-2 shadow-xl shadow-black/40 backdrop-blur-[8px] [scrollbar-width:thin]"
+            className={`absolute left-0 right-0 max-h-[320px] overflow-y-auto rounded-xl border border-line bg-bg-panel/92 p-2 shadow-xl shadow-black/40 backdrop-blur-[8px] [scrollbar-width:thin] ${
+              placement === 'bottom' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+            }`}
           >
             {searchActive ? (
               results.length === 0 ? (

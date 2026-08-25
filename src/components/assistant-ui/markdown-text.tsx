@@ -13,6 +13,7 @@ import { type FC, memo, useState } from "react";
 import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
+import { SceneLink } from "@/components/assistant-ui/scene-link";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
@@ -140,15 +141,26 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  a: ({ className, ...props }) => (
-    <a
-      className={cn(
-        "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
-        className,
-      )}
-      {...props}
-    />
-  ),
+  a: ({ className, href, children, ...props }) => {
+    // 场景锚点(scene://):渲染为可点击 chip,点击联动 3D(楼层聚焦/设备飞向/类型高亮)
+    if (typeof href === "string" && href.startsWith("scene://")) {
+      return (
+        <SceneLink href={href}>{children}</SceneLink>
+      );
+    }
+    return (
+      <a
+        className={cn(
+          "aui-md-a text-primary hover:text-primary/80 underline underline-offset-2",
+          className,
+        )}
+        href={href}
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
   blockquote: ({ className, ...props }) => (
     <blockquote
       className={cn(

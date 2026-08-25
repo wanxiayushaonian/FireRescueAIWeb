@@ -17,7 +17,7 @@ export async function POST(req: Request): Promise<Response> {
   } catch {
     return new Response(JSON.stringify({ message: 'body 读取失败' }), { status: 400 });
   }
-  if (!bodyText || bodyText.length > 4096) {
+  if (!bodyText || bodyText.length > 16384) {
     return new Response(JSON.stringify({ message: 'body 缺失或超长' }), { status: 400 });
   }
   try {

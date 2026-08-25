@@ -80,10 +80,15 @@ export default function FamiliarPathPanel({
   /** 当前站下标 + 暂停标记;站点序列与完成文案经 ref(回调闭包外读写) */
   const [tourIdx, setTourIdx] = useState(0);
   const [tourPaused, setTourPaused] = useState(false);
+  /** 导览速度档位:1×=慢(4s/站) 2×=中(2.5s/站) 3×=快(1.2s/站) */
+  const [tourSpeed, setTourSpeed] = useState<1 | 2 | 3>(2);
   const tourNodesRef = useRef<FamiliarNode[]>([]);
   const tourDoneTextRef = useRef('导览完成');
   // 导览程序选中点位时置位，避免触发「手动暂停」逻辑
   const tourTicking = useRef(false);
+
+  /** 每站停留毫秒数(速度档位) */
+  const TOUR_SPEED_MS: Record<1 | 2 | 3, number> = { 1: 4000, 2: 2500, 3: 1200 };
 
   const stopTour = (done = false, doneText?: string) => {
     setTouringPath(null);
@@ -115,7 +120,7 @@ export default function FamiliarPathPanel({
     visitNode(pathNodes[0], opts?.firstLogPrefix ?? '');
   };
 
-  // 导览主时钟:2.5s/站自动推进;暂停/停止时卸载
+  // 导览主时钟:按速度档位推进(1×=4s / 2×=2.5s / 3×=1.2s 每站);暂停/停止时卸载
   useEffect(() => {
     if (!touringPath || tourPaused) return;
     const iv = window.setInterval(() => {
@@ -129,10 +134,10 @@ export default function FamiliarPathPanel({
         visitNode(nodes[next]);
         return next;
       });
-    }, 2500);
+    }, TOUR_SPEED_MS[tourSpeed]);
     return () => window.clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [touringPath, tourPaused]);
+  }, [touringPath, tourPaused, tourSpeed]);
 
   /** 站控:上一站/下一站(手动跳站不暂停导览) */
   const jumpTour = (delta: number): void => {
@@ -315,6 +320,21 @@ export default function FamiliarPathPanel({
             >
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
+            {/* 速度档位:1×慢(4s/站) 2×中(2.5s/站) 3×快(1.2s/站) */}
+            <div className="flex items-center gap-0.5 rounded border border-line/70 bg-bg-deep/60 px-0.5 py-px" title="导览速度(每站停留)">
+              {([1, 2, 3] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setTourSpeed(s)}
+                  className={`rounded px-1 py-px font-num text-[10px] leading-3 transition ${
+                    tourSpeed === s ? 'bg-cyan/25 text-cyan' : 'text-text-3 hover:text-text-1'
+                  }`}
+                  title={`${s}× ${s === 1 ? '慢(4s/站)' : s === 2 ? '中(2.5s/站)' : '快(1.2s/站)'}`}
+                >
+                  {s}×
+                </button>
+              ))}
+            </div>
             <button
               onClick={() => setTourPaused((v) => !v)}
               className="rounded p-1 text-text-3 transition hover:bg-white/5 hover:text-cyan"

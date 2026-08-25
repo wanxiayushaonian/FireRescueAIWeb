@@ -144,6 +144,9 @@ export class ConfrontDriver {
         outcomes,
         archived,
         source: 'agent',
+        // 维度分项 + 改进措施随真实评估透传(UI 渲染 + 归档回流预案库)
+        dimensions: data.dimensions,
+        improvements: data.improvements,
       };
     }
 

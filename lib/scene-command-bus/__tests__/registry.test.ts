@@ -17,7 +17,7 @@ describe('scene-command-bus registry', () => {
     __resetForTest();
     await expect(
       dispatch({ id: '2', tool: 'nope', args: {}, ts: 0 }, fakeSdk),
-    ).resolves.toBe('no-handler');
+    ).resolves.toEqual({ status: 'no-handler' });
   });
 
   it('handler 成功返回 ok,失败返回 error(供 transport ack)', async () => {
@@ -26,8 +26,16 @@ describe('scene-command-bus registry', () => {
     const ok = vi.fn().mockResolvedValue(undefined);
     registerSceneTool('a', err);
     registerSceneTool('b', ok);
-    await expect(dispatch({ id: '3', tool: 'a', args: {}, ts: 0 }, fakeSdk)).resolves.toBe('error');
-    await expect(dispatch({ id: '4', tool: 'b', args: {}, ts: 0 }, fakeSdk)).resolves.toBe('ok');
+    await expect(dispatch({ id: '3', tool: 'a', args: {}, ts: 0 }, fakeSdk)).resolves.toEqual({ status: 'error' });
+    await expect(dispatch({ id: '4', tool: 'b', args: {}, ts: 0 }, fakeSdk)).resolves.toEqual({ status: 'ok' });
+  });
+
+  it('handler 返回值随 result 返回(查询类工具 ack 数据源)', async () => {
+    __resetForTest();
+    registerSceneTool('q', async () => ({ total: 3, fireByTypeLabel: { 室内消火栓: 2 } }));
+    const out = await dispatch({ id: '5', tool: 'q', args: {}, ts: 0 }, fakeSdk);
+    expect(out.status).toBe('ok');
+    expect(out.result).toEqual({ total: 3, fireByTypeLabel: { 室内消火栓: 2 } });
   });
 
   it('handler 抛错被吞掉,不卡死后续命令', async () => {

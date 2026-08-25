@@ -163,6 +163,17 @@ export const TOOLS = [
     },
   },
   {
+    name: 'query_scene_facilities',
+    description: '查询建筑内部消防设施数量(按类型/楼层分组)——数据来自 3D 场景包(浏览器在线解析场景树),数据库无此粒度。返回 total/fireByTypeLabel(中文类型→数量)/fireByFloor(楼层→数量)/floors。调用后需用 get_scene_command_status(cmd_id) 查询结果(浏览器在线解析并回传)。可传 floor/type 过滤。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        floor: { type: 'string', description: '楼层过滤(楼层标签子串,如 "5F"/"B1";可选)' },
+        type: { type: 'string', description: '类型过滤(类型名或中文标签子串,如 "IndoorFireHydrant"/"消火栓";可选)' },
+      },
+    },
+  },
+  {
     name: 'report_decision',
     description: '上报主智能体决策。经 /scene-events 转发至浏览器对抗舱执行(confront-store.appendAdjust,作为动态调整进入对抗时间线,供指挥员响应与评估)。前置:对抗舱处于 running;未开启时执行失败(ack=error)。',
     inputSchema: {
@@ -349,7 +360,27 @@ export async function handleToolCall(
       };
     }
     return {
-      content: [{ type: 'text', text: JSON.stringify({ cmd_id: st.cmdId, tool: st.tool, status: st.status, message: st.message ?? null, ts: st.ts }, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify({ cmd_id: st.cmdId, tool: st.tool, status: st.status, message: st.message ?? null, result: st.result ?? null, ts: st.ts }, null, 2) }],
+    };
+  }
+
+  if (name === 'query_scene_facilities') {
+    // 浏览器在线解析场景包统计;结果经 ack 回传,agent 用 get_scene_command_status 查。
+    const args2: Record<string, unknown> = {};
+    if (args.floor != null) args2.floor = String(args.floor);
+    if (args.type != null) args2.type = String(args.type);
+    const cmd: SceneCommand = {
+      id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tool: 'query_scene_facilities',
+      args: args2,
+      ts: Date.now(),
+    };
+    publishCommand(cmd);
+    return {
+      content: [{
+        type: 'text',
+        text: `已下发 query_scene_facilities (cmd_id=${cmd.id})。请调用 get_scene_command_status(cmd_id) 获取统计结果(浏览器在线解析场景包后回传;若 status=not_found 说明浏览器未加载场景或未在线)。`,
+      }],
     };
   }
 

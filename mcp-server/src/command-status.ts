@@ -6,6 +6,8 @@ export interface CommandStatus {
   tool: string;
   status: 'ok' | 'error';
   message?: string;
+  /** handler 返回值(查询类工具如 query_scene_facilities 的统计结果) */
+  result?: unknown;
   ts: number; // 状态落库时间
 }
 
@@ -13,8 +15,14 @@ const TTL_MS = 10 * 60 * 1000; // 10 分钟过期(演示期足够;防表无限�
 
 const statuses = new Map<string, CommandStatus>();
 
-export function recordCommandStatus(cmdId: string, tool: string, status: 'ok' | 'error', message?: string): void {
-  statuses.set(cmdId, { cmdId, tool, status, message, ts: Date.now() });
+export function recordCommandStatus(
+  cmdId: string,
+  tool: string,
+  status: 'ok' | 'error',
+  message?: string,
+  result?: unknown,
+): void {
+  statuses.set(cmdId, { cmdId, tool, status, message, result, ts: Date.now() });
 }
 
 /** 查询命令执行状态;不存在/过期返回 null(调用方按"未执行或已过期"处理)。 */

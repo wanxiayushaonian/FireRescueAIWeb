@@ -35,6 +35,13 @@ async function statusOf(url: string, init?: RequestInit): Promise<number> {
 }
 
 describe('http 鉴权与路由', () => {
+  it('/healthz 无需 appKey 且返回服务状态', async () => {
+    const { port } = await start();
+    const res = await fetch(`http://localhost:${port}/healthz`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ status: 'ok', service: 'firerescue-mcp' });
+  });
+
   it('/sse 无 appKey → 401', async () => {
     const { port } = await start();
     expect(await statusOf(`http://localhost:${port}/sse`)).toBe(401);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseFloorToken, parseFloorSpec, storyIdsForFloorSpec } from '../floor-focus';
+import { parseFloorToken, parseFloorSpec, storyIdsForFloorSpec, extractFloorSpecFromText } from '../floor-focus';
 import type { SceneTreeNode } from '../device-tree';
 
 describe('parseFloorToken', () => {
@@ -103,5 +103,35 @@ describe('storyIdsForFloorSpec', () => {
   it('树里没有 Story → 空数组', () => {
     const noStory: SceneTreeNode = { id: 'r', name: 'r', type: 'Site', children: [{ id: 'x', name: '草地', type: 'Ground', children: [] }] };
     expect(storyIdsForFloorSpec(noStory, '1F')).toEqual([]);
+  });
+});
+
+describe('extractFloorSpecFromText(对抗特情 location 自由文本抽取)', () => {
+  it.each([
+    ['5F影院放映厅', '5F'],
+    ['5F电气起火点及周边办公区', '5F'],
+    ['B1配电间', 'B1'],
+    ['21号楼5F餐饮厨房', '5F'],
+    ['低区 1-13F 办公区', '1F,2F,3F,4F,5F,6F,7F,8F,9F,10F,11F,12F,13F'],
+    ['8F至10F 客房', '8F,9F,10F'],
+    ['13F避难层与25F避难层', '13F,25F'],
+  ])('抽取 %s → %s', (input, expected) => {
+    expect(extractFloorSpecFromText(input)).toBe(expected);
+  });
+
+  it.each([
+    '21号楼',
+    '被困5人',
+    '配电间冒烟',
+    '',
+    'T+00:00',
+  ])('无楼层语义 %s → null', (input) => {
+    expect(extractFloorSpecFromText(input)).toBeNull();
+  });
+
+  it('抽取结果可直接供 storyIdsForFloorSpec 命中场景树', () => {
+    const spec = extractFloorSpecFromText('5F影院放映厅');
+    expect(spec).toBe('5F');
+    expect(storyIdsForFloorSpec(fakeTree(), spec!)).toEqual(['o5']);
   });
 });

@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { handleToolCall, TOOLS } from '../tools.js';
 import { publishCommand } from '../command-bus.js';
+import { recordCommandStatus, __resetStatusesForTest } from '../command-status.js';
+
+const publishCommandMock = vi.mocked(publishCommand);
 
 vi.mock('../command-bus.js', () => ({
   publishCommand: vi.fn(),
@@ -49,6 +52,7 @@ vi.mock('../business-client.js', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  __resetStatusesForTest();
 });
 
 describe('tools', () => {
@@ -171,6 +175,41 @@ describe('tools', () => {
   it('get_scene_command_status 缺 cmd_id → 标记错误', async () => {
     const res = await handleToolCall('get_scene_command_status', {});
     expect(res.isError).toBe(true);
+  });
+
+  it('TOOLS 含 query_scene_facilities(场景包内部消防设施统计)', () => {
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain('query_scene_facilities');
+  });
+
+  it('query_scene_facilities 发布命令,返回 cmd_id 引导查结果', async () => {
+    publishCommandMock.mockClear();
+    const res = await handleToolCall('query_scene_facilities', { floor: '5F' });
+    expect(publishCommandMock).toHaveBeenCalledTimes(1);
+    const cmd = publishCommandMock.mock.calls[0][0];
+    expect(cmd.tool).toBe('query_scene_facilities');
+    expect(cmd.args).toEqual({ floor: '5F' });
+    const text = res.content[0].text;
+    expect(text).toContain(cmd.id);
+    expect(text).toContain('get_scene_command_status');
+  });
+
+  it('query_scene_facilities 无过滤参数时 args 为空对象', async () => {
+    publishCommandMock.mockClear();
+    await handleToolCall('query_scene_facilities', {});
+    const cmd = publishCommandMock.mock.calls[0][0];
+    expect(cmd.args).toEqual({});
+  });
+
+  it('get_scene_command_status 返回 handler 结果(result 字段)', async () => {
+    const cmdId = `cmd_${Date.now()}_res`;
+    recordCommandStatus(cmdId, 'query_scene_facilities', 'ok', undefined, {
+      total: 128, fireByTypeLabel: { 室内消火栓: 128 }, floors: ['5F'],
+    });
+    const res = await handleToolCall('get_scene_command_status', { cmd_id: cmdId });
+    const parsed = JSON.parse(res.content[0].text) as { status: string; result: { total: number } };
+    expect(parsed.status).toBe('ok');
+    expect(parsed.result.total).toBe(128);
   });
 
   it('TOOLS 含 5C 新工具(query_building_profile/query_facilities/query_key_parts/query_scene_state/inject_event/report_decision)', () => {

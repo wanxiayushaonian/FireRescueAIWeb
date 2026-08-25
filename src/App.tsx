@@ -43,8 +43,9 @@ export default function App() {
   );
 }
 
-/** 3D 场景容器：始终存在，跨模块复用。演练(drill)时 3D 为纯背景——隐藏全部交互浮层,
- *  避免与演练自己的顶部条/参数条/右栏重合(此前帧率/工具栏/书签条全叠在演练 UI 上)。 */
+/** 3D 场景容器：始终存在，跨模块复用。演练(drill)时 3D 为纯背景——隐藏其余交互浮层,
+ *  避免与演练自己的顶部条/参数条/右栏重合(此前帧率/书签条全叠在演练 UI 上);
+ *  楼层显隐工具栏(SceneToolbar)按需求保留:下移避让演练工具条 + 紧凑模式(去搜索)避让两侧浮动面板。 */
 function SceneContainer({ module }: { module: ModuleKey }) {
   const { containerRef, view, progress } = useScene();
   const isDrill = module === 'drill';
@@ -52,8 +53,9 @@ function SceneContainer({ module }: { module: ModuleKey }) {
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
       <div ref={containerRef} className="absolute inset-0" />
-      {/* 顶部居中工具栏:层级切换+当前楼层徽章+楼层chip云+设备搜索(与场景深度联动) */}
-      {!isDrill && <SceneToolbar />}
+      {/* 顶部居中工具栏:层级切换+当前楼层徽章+楼层chip云+设备搜索(与场景深度联动);
+          演练模块贴底+紧凑(无搜索):顶部有演练工具条、两侧有浮动面板,底部中央唯一无遮挡 */}
+      {isDrill ? <SceneToolbar placement="bottom" compact /> : <SceneToolbar />}
       {/* 整体建筑视角下 hover 楼层浮层标签(仅整体视角开启 hover raycast;双击直达单层) */}
       {!isDrill && <SceneFloorHoverLabel />}
       {/* 单/多层视角下 hover 设备轻提示(名称+类型+楼层;与楼层浮标经多订阅通道并存) */}

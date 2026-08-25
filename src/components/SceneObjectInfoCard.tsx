@@ -281,7 +281,8 @@ export default function SceneObjectInfoCard() {
     void runtime?.flyToObject(card.node.outId).catch(() => {});
   };
   const highlight = (): void => {
-    runtime?.highlightObject(card.node.outId, '#22d3ee');
+    // 替换式高亮:先清旧再高亮当前(soonspace 高亮集合累积,不撤会让 draw calls 持续上涨)
+    runtime?.replaceHighlight([card.node.outId], '#22d3ee');
   };
   const focusFloor = (): void => {
     if (!card.story) return;

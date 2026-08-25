@@ -57,6 +57,13 @@ export function startHttp(opts: {
     cors(res, req);
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
+    // 容器/部署健康检查:不暴露密钥、session 或业务数据。
+    if (url.pathname === '/healthz' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify({ status: 'ok', service: 'firerescue-mcp' }));
+      return;
+    }
+
     // MCP Streamable HTTP(/mcp):平台 uagent 兼容协议;initialize 建 session,后续复用
     if (url.pathname === '/mcp') {
       if (!appKeyAuthorized(req, url)) {
@@ -150,7 +157,7 @@ export function startHttp(opts: {
       req.on('end', () => {
         try {
           const parsed = JSON.parse(body || '{}') as {
-            cmd_id?: unknown; tool?: unknown; status?: unknown; message?: unknown;
+            cmd_id?: unknown; tool?: unknown; status?: unknown; message?: unknown; result?: unknown;
           };
           if (typeof parsed.cmd_id === 'string' && parsed.cmd_id
               && (parsed.status === 'ok' || parsed.status === 'error')) {
@@ -159,6 +166,7 @@ export function startHttp(opts: {
               typeof parsed.tool === 'string' ? parsed.tool : '',
               parsed.status,
               typeof parsed.message === 'string' ? parsed.message.slice(0, 200) : undefined,
+              parsed.result,
             );
           }
           res.writeHead(204); res.end();

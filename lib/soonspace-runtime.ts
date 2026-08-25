@@ -637,6 +637,80 @@ export class SoonspaceRuntime {
     throw new Error('当前引擎不支持飞行定位');
   }
 
+  /**
+   * 相机飞向多个对象的整体包围盒中心（楼层段聚焦用：多个 Story 一次飞到位）。
+   * 世界盒手算：递归收集对象几何盒(boundingBox)的 8 角点经 matrixWorld 变换合并
+   * （soonspacejs 无 box3/worldPosition 出口，flyToObj 内部自算世界盒但只支持单对象）。
+   * 优先 SDK flyToBoundingBox；无几何对象时兜底 flyToObj(首对象)。
+   */
+  async flyToObjects(objectIds: string[]): Promise<void> {
+    const ssp = this.getSsp();
+    if (!ssp) throw new Error('当前引擎未就绪');
+    const objs = objectIds
+      .map((id) => ssp?.getObjectById?.(id))
+      .filter(Boolean) as AnyObject[];
+    if (objs.length === 0) throw new Error('未找到可飞行定位的对象');
+    if (objs.length === 1) {
+      // 单对象直接用引用飞(SDK 自算世界盒;不 id 回查——对象.id 是 three 数字,非 outId)
+      if (typeof ssp.flyToObj === 'function') {
+        await ssp.flyToObj(objs[0], undefined, { enableTransition: true });
+        this.render();
+        return;
+      }
+      await this.flyToObject(String(objs[0].out_instance_id ?? objs[0].name ?? ''));
+      return;
+    }
+    // 手算世界合并盒（角点 × matrixWorld 列主序 4x4，与 getObjectWorldPosition 同法）
+    const pts: Array<{ x: number; y: number; z: number }> = [];
+    const collect = (o: AnyObject): void => {
+      const g = o.geometry as AnyObject | undefined;
+      let b = g?.boundingBox as { min?: { x: number; y: number; z: number }; max?: { x: number; y: number; z: number } } | undefined;
+      if (!b?.min && typeof g?.computeBoundingBox === 'function') {
+        try { g.computeBoundingBox(); } catch { /* 不可计算则跳过 */ }
+        b = g?.boundingBox as typeof b | undefined;
+      }
+      const m = (o.matrixWorld as AnyObject | undefined)?.elements as number[] | undefined;
+      if (b?.min && b.max && Array.isArray(m) && m.length >= 16) {
+        const corners = [
+          [b.min.x, b.min.y, b.min.z], [b.max.x, b.min.y, b.min.z],
+          [b.min.x, b.max.y, b.min.z], [b.min.x, b.min.y, b.max.z],
+          [b.max.x, b.max.y, b.min.z], [b.max.x, b.min.y, b.max.z],
+          [b.min.x, b.max.y, b.max.z], [b.max.x, b.max.y, b.max.z],
+        ];
+        for (const [x, y, z] of corners) {
+          pts.push({
+            x: m[0] * x + m[4] * y + m[8] * z + m[12],
+            y: m[1] * x + m[5] * y + m[9] * z + m[13],
+            z: m[2] * x + m[6] * y + m[10] * z + m[14],
+          });
+        }
+      }
+      for (const c of (o.children as AnyObject[] | undefined) ?? []) collect(c);
+    };
+    for (const o of objs) collect(o);
+    if (pts.length > 0) {
+      const merged = {
+        min: {
+          x: Math.min(...pts.map((p) => p.x)),
+          y: Math.min(...pts.map((p) => p.y)),
+          z: Math.min(...pts.map((p) => p.z)),
+        },
+        max: {
+          x: Math.max(...pts.map((p) => p.x)),
+          y: Math.max(...pts.map((p) => p.y)),
+          z: Math.max(...pts.map((p) => p.z)),
+        },
+      };
+      if (typeof ssp.flyToBoundingBox === 'function') {
+        await ssp.flyToBoundingBox(merged as AnyObject, undefined, { enableTransition: true });
+        this.render();
+        return;
+      }
+    }
+    // 无几何/无多点能力兜底：飞首对象(SDK 自算世界盒)
+    await this.flyToObject(String(objs[0].out_instance_id ?? objs[0].name ?? ''));
+  }
+
   syncUserAddedInstancesDisplay(patch: AnyObject = {}): unknown {
     return this.sdk?.syncUserInstancePlacementDisplay?.(patch) ?? { placed: [], skipped: [], apiModelIds: [] };
   }
@@ -714,6 +788,17 @@ export class SoonspaceRuntime {
   highlightObject(id: string, color?: string | number): boolean {
     this.sdk?.heighLight?.(id, color);
     return true;
+  }
+
+  /**
+   * 替换式高亮:先清掉上一轮全部高亮再加新的(soonspace 高亮集合是累积的,
+   * 只加不撤会让 outline selection 越积越多、draw calls 持续上涨——所有高亮
+   * 调用点都应走这里,避免演示中每点一次累积一批)。
+   * 空数组 = 仅清除全部高亮。
+   */
+  replaceHighlight(ids: string[], color?: string | number): void {
+    this.clearAllHighlight();
+    for (const id of ids) this.sdk?.heighLight?.(id, color);
   }
 
   clearObjectHighlight(id: string): void {

@@ -2,6 +2,7 @@ import { registerSceneTool } from './registry';
 import type { SceneSdkLike } from './types';
 import type { RecipeStore } from '../scene-recipe/store';
 import { getGlobalRecipeStore } from '../scene-recipe/global-store';
+import { countSceneFacilities } from '../scene-facilities';
 
 // 聚焦高亮色:与 FIRE_TYPE_COLORS 告警色一致,agent 不操心配色。
 const FOCUS_HIGHLIGHT_COLOR = '#f87171';
@@ -87,6 +88,16 @@ export function registerDefaultTools(_sdk: SceneSdkLike, addons?: RegisterToolsA
       hideDevices: !isFocusSingle,
     });
     if (flyToFirst) await sdk.fly(storyIds[0]);
+  });
+
+  // 查询类:场景包消防设施统计(数据库无此粒度,数据源=浏览器场景树)。
+  // handler 返回值经 dispatch → ack 回传 mcp-server,agent 用 get_scene_command_status 查询。
+  registerSceneTool('query_scene_facilities', async (args) => {
+    const tree = typeof window !== 'undefined' ? window.__sceneTree : undefined;
+    if (!tree) throw new Error('场景树未就绪:浏览器未加载场景包,无法统计内部消防设施');
+    const floor = args.floor != null ? String(args.floor) : undefined;
+    const type = args.type != null ? String(args.type) : undefined;
+    return countSceneFacilities(tree, { floor, type });
   });
 }
 

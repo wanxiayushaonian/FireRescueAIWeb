@@ -176,6 +176,8 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
             const t = (await tRes.json()) as SceneTreeNode;
             treeRef.current = t;
             setTree(t);
+            // 挂 window:供 lib 层(scene-command-bus handler)解析场景包统计消防设施
+            if (typeof window !== 'undefined') window.__sceneTree = t;
           }
         } catch {
           /* switchFloor 无 tree 时跳过 */
@@ -194,6 +196,7 @@ export function SceneProvider({ initialSceneId = '', children }: SceneProviderPr
             return sdk.setScene(p as LayerApplyParams);
           },
           flyToObject: (id) => rt.flyToObject(id),
+          flyToObjects: (ids) => rt.flyToObjects(ids),
           highlightObject: (id, c) => rt.highlightObject(id, c),
           setCameraViewpoint: (vp, tr) => rt.setCameraViewpoint(vp, tr),
           setVirtualRouteVisible: (id, v) => rt.setVirtualRouteVisible(id, v),

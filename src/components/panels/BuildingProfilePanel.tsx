@@ -137,7 +137,7 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
 
   // 楼层聚焦(经 Recipe 单一真相源):单层 → 只显该层+设备;多层段 → 只显这些层+炸开+藏设备。
   // detailLevel 保持 full(preset 基线):structure 的 hideWindowAndDoor 会把草地/马路/周边底模藏掉。
-  const { tree, recipeStore, sceneId } = useScene();
+  const { runtime, tree, recipeStore, sceneId } = useScene();
   const [activeFloor, setActiveFloor] = useState<string | null>(null);
   useEffect(() => {
     setActiveFloor(null);
@@ -174,6 +174,12 @@ export default function BuildingProfilePanel({ buildingId, onBuildingChange }: B
       // 单层聚焦看细节 → 显设备;多层段炸开看分布 → 藏设备减压(与 focus_floors 策略一致)
       hideDevices: multi,
     });
+    // 镜头飞向楼层段整体中心(单层=该层;多层=合并包围盒中心,一次看全整段)
+    if (runtime && typeof runtime.flyToObjects === 'function') {
+      void runtime.flyToObjects(storyIds).catch(() => {});
+    } else {
+      void runtime?.flyToObject(storyIds[0]).catch(() => {});
+    }
     setActiveFloor(kf.floor);
     showToast(multi ? `已聚焦 ${kf.floor}(炸开展示)` : `已聚焦 ${kf.floor}`);
   };
@@ -563,7 +569,7 @@ function StructureGroup({
               </span>
               <span className="text-[13px] text-text-1">避难层</span>
               {d.refugeFloorArea != null && (
-                <span className="ml-auto text-[11px] text-text-3">面积 {d.refugeFloorArea} m²</span>
+                <span className="ml-auto text-[11px] text-text-3">面积合计 {d.refugeFloorArea} m²</span>
               )}
             </button>
           ))}

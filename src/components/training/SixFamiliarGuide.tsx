@@ -152,7 +152,7 @@ export default function SixFamiliarGuide({
       // 整体视角下的类型高亮(2026-08-19 前三章联动:出入口/室外消火栓等场景包室外对象)
       if (step.highlightTypes?.length && runtime) {
         const hits = deviceIndex.filter((d) => step.highlightTypes!.includes(d.type)).slice(0, 12);
-        for (const h of hits) runtime.highlightObject(h.outId, '#22d3ee');
+        runtime.replaceHighlight(hits.map((h) => h.outId), '#22d3ee');
         if (hits.length === 0) showToast(`场景中未找到 ${step.highlightTypes.join('/')} 类型对象,无法高亮`);
       }
       return;
@@ -166,8 +166,12 @@ export default function SixFamiliarGuide({
           yExtend: multi,
           hideDevices: multi,
         });
-        // 镜头飞向首层(多层段飞向最低层,炸开视角自然覆盖整段)
-        void runtime?.flyToObject(storyIds[0]).catch(() => {});
+        // 镜头飞向楼层段整体中心(单层=该层;多层=合并包围盒中心,一次看全整段)
+        if (runtime && typeof runtime.flyToObjects === 'function') {
+          void runtime.flyToObjects(storyIds).catch(() => {});
+        } else {
+          void runtime?.flyToObject(storyIds[0]).catch(() => {});
+        }
         if (step.highlightTypes?.length) {
           // 聚焦后高亮本层目标类型设备(前 6 个)
           const floors = new Set(parseFloorSpec(step.floorSpec) ?? []);
@@ -175,7 +179,7 @@ export default function SixFamiliarGuide({
             (d) => step.highlightTypes!.includes(d.type)
               && (floors.size === 0 || floors.has(parseFloorToken(d.storyLabel ?? '') ?? Number.NaN)),
           ).slice(0, 6);
-          for (const h of hits) runtime?.highlightObject(h.outId, '#22d3ee');
+          runtime?.replaceHighlight(hits.map((h) => h.outId), '#22d3ee');
         }
       }
     }

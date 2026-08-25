@@ -84,7 +84,7 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
         driver.scheduleInject(round, {
           onThinking: (v) => setThinking(v),
           onInject: (evt) => {
-            appendInject({ emergency: evt.emergency, tSec: elapsedNow() });
+            appendInject({ emergency: evt.emergency, location: evt.location, tSec: elapsedNow() });
             // 3D 联动:特情楼层聚焦 + 飞向(场景日志同步记录;此前中文 target 的
             // highlight 动作会被执行器按"非 id"跳过,属空转)
             addSceneAction({

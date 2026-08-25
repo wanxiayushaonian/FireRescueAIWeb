@@ -71,10 +71,11 @@ export IMAGE_BFF=firerescue-bff
 export IMAGE_MCP=firerescue-mcp
 export TAG=local
 cd "$APP_DIR/deploy"
-docker compose up -d --remove-orphans
+docker compose up -d --remove-orphans --wait --wait-timeout 180
 docker image prune -f || true
 
 echo "==> 部署完成!"
-echo "   curl -s -o /dev/null -w '%{http_code}' \"http://localhost:8787/sse?appKey=\$(grep MCP_APP_KEY .env | cut -d= -f2)\""
+echo "   BFF health: http://localhost:3000/api/health"
+echo "   MCP health: http://localhost:8787/healthz"
 echo "   agent 连接: http://<本机公网IP>:8787/sse?appKey=<MCP_APP_KEY>"
 echo "   (需在防火墙/安全组放行 8787)"
