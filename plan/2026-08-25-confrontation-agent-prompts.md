@@ -80,5 +80,5 @@ Evaluator 读取完整 timeline 评分复盘
 ## 6. 平台同步状态
 
 2026-08-25:四个 App 的 `config.instructions` / `pub_config.instructions` **已同步为 confront-v2.2**
-(用户在平台操作完成)。下一步:按 `../DEMO.md` §4/§5 跑三连完整验收,通过后移动
-`demo-baseline` 标签(当前停在 034cf46,即四角色重构前的链路验证点)。
+(用户在平台操作完成)。同日晚间三连验收通过(含 BUG-A 双通道去重修复回归,见
+`../doc/demo-validation-v3-2026-08-25.md`),`demo-baseline` 标签已移动至验收提交。
