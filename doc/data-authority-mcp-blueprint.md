@@ -26,7 +26,9 @@ Node MCP 中的 `query_building_profile/query_facilities/query_key_parts/query_k
 | 正式作战预案 | `emergency_plans` 及 9 类结构化子表 | `plan_id/building_id` | `query_operational_plan` | 默认只返回发布/审核通过版本；草稿、缺章节、过期均告警 |
 | 水源、消防站、警情点位 | znya 对应表 | 业务 UUID + GCJ02 | `query_water_sources/query_stations/query_incidents` | 坐标必须声明 GCJ02；无更新时间时按静态档案处理 |
 | 到场路线和 ETA | AMap + znya 点位 | 站点/目标坐标 | `plan_dispatch`，再 `show_route` | 路径是规划结果；是否可派仍由力量可用性决定 |
-| 历史预案经验 | pgvector 知识库 | `kb_id/document_id/chunk_id` | `query_knowledge` | 只能作为参考证据，不能覆盖当前正式预案和当前态势 |
+| 历史预案经验 | pgvector 知识库(**) | `kb_id/document_id/chunk_id` | `query_knowledge` | 只能作为参考证据，不能覆盖当前正式预案和当前态势 |
+
+> (**) 2026-08-25 裁定：历史知识检索**改走赛事平台原生知识库挂载**(agent 直接挂库)，不依赖自建 embedding 链路；`query_knowledge` 工具保留但提示词不再依赖。
 | 当前演练状态、特情、决策、评估 | 浏览器 confront-store + 服务端 DrillSession | `drill_id` | `query_scene_state/inject_event/report_decision` | `online=true` 才是实时；`persisted=true` 是最近快照、明确非实时 |
 
 ## 3. 统一 ID 图
