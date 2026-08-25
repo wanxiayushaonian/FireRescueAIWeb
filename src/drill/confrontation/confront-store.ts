@@ -51,6 +51,24 @@ export interface ConfrontationReview {
   readonly improvements?: readonly EvaluationImprovement[];
 }
 
+export type ConfrontAgentRole = 'planner' | 'adversary' | 'commander' | 'evaluator';
+
+export interface ConfrontAgentToolStep {
+  readonly name: string;
+  readonly status: 'calling' | 'done';
+}
+
+/** 可展示的执行轨迹：只记录阶段和工具名，不保存模型原始 reasoning/参数/结果。 */
+export interface ConfrontAgentActivity {
+  readonly role: ConfrontAgentRole;
+  readonly appIdSuffix: string;
+  readonly status: 'running' | 'success' | 'error';
+  readonly phase: string;
+  readonly startedAt: number;
+  readonly finishedAt?: number;
+  readonly tools: readonly ConfrontAgentToolStep[];
+}
+
 export interface ConfrontationSeed {
   readonly building: string;
   readonly floor: string;
@@ -76,6 +94,7 @@ export interface ConfrontationState {
   readonly lastRound: { readonly score: number; readonly archived: boolean } | null;
   /** 初步部署行(预案输出 agent 真实输出;null=未生成,UI 回落静态摘要) */
   readonly deploy: readonly string[] | null;
+  readonly agentActivity: ConfrontAgentActivity | null;
 }
 
 let conf: ConfrontationState = {
@@ -94,6 +113,7 @@ let conf: ConfrontationState = {
   plannedTotal: 0,
   lastRound: null,
   deploy: null,
+  agentActivity: null,
 };
 
 let seqCounter = 0;
@@ -119,6 +139,10 @@ function cloneState(s: ConfrontationState): ConfrontationState {
     situation: { ...s.situation },
     review: s.review ? { ...s.review } : null,
     lastRound: s.lastRound ? { ...s.lastRound } : null,
+    agentActivity: s.agentActivity ? {
+      ...s.agentActivity,
+      tools: s.agentActivity.tools.map((tool) => ({ ...tool })),
+    } : null,
   };
 }
 
@@ -151,6 +175,7 @@ export function resetConfrontation(): void {
     plannedTotal: 0,
     lastRound: null,
     deploy: null,
+    agentActivity: null,
   };
   seqCounter = 0;
   emit();
@@ -184,6 +209,7 @@ export function beginConfrontation(opts?: {
     plannedTotal: opts?.plannedTotal ?? 3,
     lastRound: null,
     deploy: null,
+    agentActivity: null,
   };
   emit();
 }
@@ -258,6 +284,82 @@ export function setThinking(v: boolean): void {
   emit();
 }
 
+export function startAgentActivity(
+  role: ConfrontAgentRole,
+  appId: string,
+  phase: string,
+): void {
+  conf = {
+    ...conf,
+    thinking: role === 'adversary',
+    agentActivity: {
+      role,
+      appIdSuffix: appId.slice(-6) || '未配置',
+      status: 'running',
+      phase,
+      startedAt: Date.now(),
+      tools: [],
+    },
+  };
+  emit();
+}
+
+export function updateAgentActivity(update: {
+  phase?: string;
+  toolName?: string;
+  toolStatus?: ConfrontAgentToolStep['status'];
+}): void {
+  const activity = conf.agentActivity;
+  if (!activity || activity.status !== 'running') return;
+  let tools = activity.tools;
+  if (update.toolName) {
+    if (update.toolStatus === 'done') {
+      let updated = false;
+      tools = tools.map((tool) => {
+        if (!updated && tool.name === update.toolName && tool.status === 'calling') {
+          updated = true;
+          return { ...tool, status: 'done' as const };
+        }
+        return tool;
+      });
+      if (!updated) tools = [...tools, { name: update.toolName, status: 'done' as const }];
+    } else {
+      tools = [...tools, { name: update.toolName, status: 'calling' as const }];
+    }
+  }
+  conf = {
+    ...conf,
+    agentActivity: {
+      ...activity,
+      phase: update.phase ?? activity.phase,
+      tools,
+    },
+  };
+  emit();
+}
+
+export function finishAgentActivity(status: 'success' | 'error', phase: string): void {
+  const activity = conf.agentActivity;
+  if (!activity) return;
+  conf = {
+    ...conf,
+    thinking: false,
+    agentActivity: {
+      ...activity,
+      status,
+      phase,
+      finishedAt: Date.now(),
+      tools: activity.tools.map((tool) => ({ ...tool, status: 'done' })),
+    },
+  };
+  emit();
+}
+
+export function setEvaluating(v: boolean): void {
+  conf = { ...conf, evaluating: v };
+  emit();
+}
+
 export function finishConfrontationLocal(
   review: ConfrontationReview,
   finalSeq: number,
@@ -289,6 +391,13 @@ export function reopenConfrontation(): void {
 }
 
 export function exitConfrontation(): void {
-  conf = { ...conf, active: false, status: conf.status === 'running' ? 'idle' : conf.status, thinking: false, seedLoading: false };
+  conf = {
+    ...conf,
+    active: false,
+    status: conf.status === 'running' ? 'idle' : conf.status,
+    thinking: false,
+    seedLoading: false,
+    agentActivity: conf.agentActivity?.status === 'running' ? null : conf.agentActivity,
+  };
   emit();
 }

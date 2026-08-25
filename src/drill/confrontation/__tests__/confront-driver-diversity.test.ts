@@ -72,4 +72,38 @@ describe('ConfrontDriver 特情去重与角色分工', () => {
     await vi.waitFor(() => expect(onAdjust).toHaveBeenCalled());
     expect(seenAppIds).toEqual(['commander']);
   });
+
+  it('Adversary 真实请求整个期间保持 thinking=true，并透传工具进度', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    let resolveAgent!: (value: SpecialEventOutput) => void;
+    const pending = new Promise<SpecialEventOutput>((resolve) => { resolveAgent = resolve; });
+    const adapter = {
+      injectSpecial: vi.fn(async (_ctx, _round, progress) => {
+        progress?.({ type: 'tool-call', toolName: 'query_key_parts' });
+        return pending;
+      }),
+    } as unknown as ConfrontAdapter;
+    const onThinking = vi.fn();
+    const onStart = vi.fn();
+    const onProgress = vi.fn();
+    const onInject = vi.fn();
+    const driver = new ConfrontDriver({
+      adapter,
+      appIds: { planner: 'planner', adversary: 'adversary', commander: 'commander' },
+      buildingId: 'b', sceneId: 's', drillId: 'd', seed,
+    });
+    driver.scheduleInject(0, { onThinking, onStart, onProgress, onInject, onInjectFail: vi.fn() });
+    await vi.advanceTimersByTimeAsync(25_001);
+    expect(onThinking).toHaveBeenLastCalledWith(true);
+    expect(onStart).toHaveBeenCalledTimes(1);
+    expect(onProgress).toHaveBeenCalledWith({ type: 'tool-call', toolName: 'query_key_parts' });
+
+    resolveAgent({
+      specialType: 'collapse', emergency: '5F吊顶局部坍塌', location: '5F', delta: { damageDelta: 1 },
+    });
+    await vi.waitFor(() => expect(onInject).toHaveBeenCalledTimes(1));
+    expect(onThinking).toHaveBeenLastCalledWith(false);
+    driver.clearAll();
+  });
 });

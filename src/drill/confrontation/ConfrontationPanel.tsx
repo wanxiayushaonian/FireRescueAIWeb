@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Bot, Swords, TriangleAlert, Shuffle, ChevronDown,
-  Check, PencilLine, Stamp, ClipboardCheck, Timer,
+  Check, PencilLine, Timer,
 } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { useScene } from '@/components/SceneProvider';
@@ -13,9 +13,12 @@ import { storyIdsForFloorSpec, extractFloorSpecFromText } from '@/lib/floor-focu
 import {
   beginConfrontation,
   exitConfrontation,
+  finishAgentActivity,
   respondAdjustment,
   finishConfrontationLocal,
   getConfrontationState,
+  setEvaluating,
+  startAgentActivity,
   subscribeConfrontation,
 } from './confront-store';
 import type { ConfrontationEvent, ConfrontationState } from './confront-store';
@@ -23,7 +26,8 @@ import { ConfrontDriver } from './confront-driver';
 import type { ConfrontAppIds } from './confront-driver';
 import { ConfrontAdapter } from './confront-adapter';
 import { useConfrontationDriver } from './use-confront-driver';
-import { ShuffleText, Dots, ScoreRing, TimelineNode } from './confrontation-uis';
+import { AgentActivityStrip, ShuffleText, Dots, ScoreRing, TimelineNode } from './confrontation-uis';
+import { ConfrontationReviewWorkspace } from './ConfrontationReviewWorkspace';
 import { fmtT, randInt, deployLines } from './confront-helpers';
 import { addSceneAction } from '@/mock/sceneLog';
 import { addLibraryItem } from '@/mock/planLibrary';
@@ -34,6 +38,7 @@ import {
   ADVERSARY_APP_ID,
   DRILL_COMMANDER_APP_ID,
   DRILL_PLANNER_APP_ID,
+  EVALUATE_APP_ID,
 } from '@/lib/agent-app-ids';
 import {
   BUILDING_21_SCENE_ID,
@@ -53,8 +58,10 @@ export default function ConfrontationPanel() {
   const [demoState, setDemoState] = useState<FetchState>('ok');
   const [nowSec, setNowSec] = useState(0);
   const [hlId, setHlId] = useState<string | null>(null);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const toastedGen = useRef(0);
+  const openedReviewGen = useRef(0);
   const hlTimer = useRef<number | null>(null);
 
   const adapter = useMemo(() => new ConfrontAdapter(), []);
@@ -148,6 +155,13 @@ export default function ConfrontationPanel() {
     }
   }, [conf.review, conf.generation]);
 
+  useEffect(() => {
+    if (conf.review && conf.status === 'finished' && openedReviewGen.current !== conf.generation) {
+      openedReviewGen.current = conf.generation;
+      setReviewOpen(true);
+    }
+  }, [conf.review, conf.status, conf.generation]);
+
   const injects = useMemo(() => conf.events.filter((e) => e.kind === 'inject'), [conf.events]);
   const adjusts = useMemo(() => conf.events.filter((e) => e.kind === 'adjust'), [conf.events]);
   const tSecNow = conf.status === 'running' ? nowSec : conf.events.length ? conf.events[conf.events.length - 1].tSec : 0;
@@ -217,7 +231,21 @@ export default function ConfrontationPanel() {
       getState: () => ({ events: conf.events, situation: conf.situation, deploy: conf.deploy }),
     });
 
-    const review = await driver.finishEvaluate(elapsedSec);
+    setEvaluating(true);
+    startAgentActivity('evaluator', EVALUATE_APP_ID, '正在汇总完整时间线并执行七维评分');
+    let review;
+    try {
+      review = await driver.finishEvaluate(elapsedSec);
+    } catch {
+      finishAgentActivity('error', '评估服务异常，请稍后重试');
+      setEvaluating(false);
+      showToast('评估服务异常，请稍后重试');
+      return;
+    }
+    finishAgentActivity(
+      'success',
+      review.source === 'agent' ? '真实评估智能体已生成完整复盘' : '评估智能体未响应，规则降级复盘已生成',
+    );
     finishConfrontationLocal(review, conf.events.length + 1, elapsedSec);
 
     addLibraryItem({
@@ -482,6 +510,10 @@ export default function ConfrontationPanel() {
               <Timer className="h-3.5 w-3.5" />{fmtT(tSecNow)}
             </span>
           </div>
+
+          <AnimatePresence initial={false}>
+            {conf.agentActivity && <AgentActivityStrip activity={conf.agentActivity} />}
+          </AnimatePresence>
 
           {/* 实时 3D 缩略区:主画布容器经 slot 迁入(useLayoutEffect);场景未就绪时回落 SVG 占位 */}
           <div
@@ -752,116 +784,28 @@ export default function ConfrontationPanel() {
             )}
             {conf.review && !conf.evaluating && (
               <motion.div
-                initial="hidden"
-                animate="show"
-                variants={{ show: { transition: { staggerChildren: 0.1 } } }}
-                className="relative rounded-lg border border-violet/60 bg-violet/5 p-3"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-lg border border-violet/60 bg-violet/5 p-3"
               >
-                <motion.div variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }} className="flex items-center gap-3">
+                <div className="flex items-center gap-3">
                   <ScoreRing score={conf.review.score} pass={conf.review.archived} />
-                  <div>
-                    <div className="flex items-center gap-1.5 text-[11px] text-text-3">
-                      对抗评估（{conf.review.score}/100）
-                      {conf.review.source === 'fallback' && (
-                        <span className="rounded border border-amber/50 bg-amber/10 px-1 py-px font-medium text-amber">
-                          降级评估 · 规则打分
-                        </span>
-                      )}
-                    </div>
-                    <div className={`text-[15px] font-bold ${conf.review.archived ? 'text-green' : 'text-red'}`}>
+                  <div className="min-w-0">
+                    <div className="text-[11px] text-text-3">综合评估 · {conf.review.score}/100</div>
+                    <div className={`line-clamp-2 text-[13px] font-bold leading-5 ${conf.review.archived ? 'text-green' : 'text-amber'}`}>
                       {conf.review.conclusion}
                     </div>
+                    <span className={`mt-1 inline-flex rounded border px-1 py-px text-[10px] ${conf.review.source === 'agent' ? 'border-green/50 bg-green/10 text-green' : 'border-amber/50 bg-amber/10 text-amber'}`}>
+                      {conf.review.source === 'agent' ? '真实评估智能体' : '降级评估 · 规则打分'}
+                    </span>
                   </div>
-                </motion.div>
-                <ul className="mt-2 flex flex-col gap-1">
-                  {conf.review.comments.map((c) => (
-                    <motion.li
-                      key={c}
-                      variants={{ hidden: { opacity: 0, x: -6 }, show: { opacity: 1, x: 0 } }}
-                      className="flex gap-1.5 text-[12px] leading-4 text-text-2"
-                    >
-                      <ClipboardCheck className="mt-0.5 h-3 w-3 shrink-0 text-violet" />{c}
-                    </motion.li>
-                  ))}
-                </ul>
-                {/* 维度分项(agent 评估才有;fallback 降级不渲染) */}
-                {conf.review.dimensions && conf.review.dimensions.length > 0 && (
-                  <div className="mt-2 border-t border-line pt-2">
-                    <div className="mb-1 text-[11px] text-text-3">分项维度</div>
-                    {conf.review.dimensions.map((d) => (
-                      <motion.div
-                        key={d.name}
-                        variants={{ hidden: { opacity: 0 }, show: { opacity: 1 } }}
-                        className="mb-1.5"
-                        title={d.comment}
-                      >
-                        <div className="flex items-center justify-between text-[12px]">
-                          <span className="text-text-2">{d.name}</span>
-                          <span className={`font-mono font-bold ${d.score >= 85 ? 'text-green' : d.score >= 70 ? 'text-amber' : 'text-red'}`}>
-                            {d.score}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 h-1 overflow-hidden rounded bg-bg-panel-2">
-                          <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${d.score}%` }}
-                            transition={{ duration: 0.6, ease: 'easeOut' }}
-                            className={`h-full ${d.score >= 85 ? 'bg-green' : d.score >= 70 ? 'bg-amber' : 'bg-red'}`}
-                          />
-                        </div>
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-                {/* 改进措施(agent 评估才有;已随归档逐条回流预案库「改进措施」) */}
-                {conf.review.improvements && conf.review.improvements.length > 0 && (
-                  <div className="mt-2 border-t border-line pt-2">
-                    <div className="mb-1 text-[11px] text-text-3">改进措施 · 已回流预案库</div>
-                    {conf.review.improvements.map((imp) => (
-                      <motion.div
-                        key={imp.content}
-                        variants={{ hidden: { opacity: 0, x: -6 }, show: { opacity: 1, x: 0 } }}
-                        className="mb-1 text-[12px] leading-4 text-text-2"
-                      >
-                        · {imp.content}
-                        {imp.target && (
-                          <span className="ml-1 rounded border border-violet/50 bg-violet/10 px-1 py-px text-[10px] text-violet">
-                            → {imp.target}
-                          </span>
-                        )}
-                      </motion.div>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-2 border-t border-line pt-2">
-                  <div className="mb-1 text-[11px] text-text-3">各特情应对结果</div>
-                  {conf.review.outcomes.map((o, i) => (
-                    <motion.div
-                      key={i}
-                      variants={{ hidden: { opacity: 0 }, show: { opacity: 1 } }}
-                      className="flex items-center gap-1.5 text-[12px] leading-5"
-                    >
-                      {o === 'timely' ? (
-                        <><Check className="h-3 w-3 text-green" /><span className="text-green">✓ 及时调整</span></>
-                      ) : o === 'delayed' ? (
-                        <><TriangleAlert className="h-3 w-3 text-amber" /><span className="text-amber">⚠ 调整滞后</span></>
-                      ) : (
-                        <><TriangleAlert className="h-3 w-3 text-red" /><span className="text-red">✗ 未响应</span></>
-                      )}
-                      <span className="text-text-3">· 特情 #{i + 1}</span>
-                    </motion.div>
-                  ))}
                 </div>
-                {conf.review.archived && (
-                  <motion.div
-                    initial={{ scale: 1.6, rotate: 0, opacity: 0 }}
-                    animate={{ scale: 1, rotate: -8, opacity: 1 }}
-                    transition={{ duration: 0.4, type: 'spring', bounce: 0.5 }}
-                    className="absolute right-2 top-2 flex items-center gap-1 rounded-full border-2 border-green px-2 py-px text-[12px] font-bold text-green"
-                  >
-                    <Stamp className="h-3 w-3" />已归档
-                  </motion.div>
-                )}
+                <button
+                  onClick={() => setReviewOpen(true)}
+                  className="mt-3 h-9 w-full rounded-md bg-violet text-[12px] font-bold text-white transition hover:brightness-110 hover:shadow-[0_0_14px_rgba(124,58,237,.45)]"
+                >
+                  查看完整评估复盘
+                </button>
               </motion.div>
             )}
             {conf.status === 'finished' && (
@@ -875,6 +819,16 @@ export default function ConfrontationPanel() {
           </div>
         </div>
       </div>
+      <AnimatePresence>
+        {reviewOpen && conf.review && (
+          <ConfrontationReviewWorkspace
+            review={conf.review}
+            events={conf.events}
+            building={conf.seedScenario?.building ?? '未指定建筑'}
+            onClose={() => setReviewOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>,
     document.body,
   );

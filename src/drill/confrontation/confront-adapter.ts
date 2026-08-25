@@ -44,6 +44,15 @@ export interface SpecialEventOutput {
   readonly delta?: ConfrontationDelta;
 }
 
+/** UI 可安全展示的进度事件；刻意不携带 reasoning、工具参数或工具返回正文。 */
+export type ConfrontAgentProgressEvent =
+  | { readonly type: 'connected' }
+  | { readonly type: 'tool-call'; readonly toolName: string }
+  | { readonly type: 'tool-result'; readonly toolName: string }
+  | { readonly type: 'finalizing' };
+
+export type ConfrontAgentProgress = (event: ConfrontAgentProgressEvent) => void;
+
 function narrowObject(v: unknown): Record<string, unknown> | undefined {
   if (v && typeof v === 'object' && !Array.isArray(v)) return v as Record<string, unknown>;
   return undefined;
@@ -76,17 +85,31 @@ function pickFinite(args: Record<string, unknown>, nested: Record<string, unknow
 async function firstToolCall(
   stream: ReadableStream<Uint8Array>,
   toolName: string,
+  onProgress?: ConfrontAgentProgress,
 ): Promise<ToolCallEvent | null> {
   for await (const ev of parseAgentChatSSE(stream)) {
-    if (ev.type === 'tool-call' && ev.toolName === toolName) return ev;
+    if (ev.type === 'conversation_id') onProgress?.({ type: 'connected' });
+    if (ev.type === 'tool-call') {
+      onProgress?.({ type: 'tool-call', toolName: ev.toolName });
+      if (ev.toolName === toolName) return ev;
+    }
+    if (ev.type === 'tool-result') onProgress?.({ type: 'tool-result', toolName: ev.toolName });
+    if (ev.type === 'text') onProgress?.({ type: 'finalizing' });
   }
   return null;
 }
 
 /** 取首个 text 事件并按标点拆成非空短句。 */
-async function extractTextLines(stream: ReadableStream<Uint8Array>): Promise<string[]> {
+async function extractTextLines(
+  stream: ReadableStream<Uint8Array>,
+  onProgress?: ConfrontAgentProgress,
+): Promise<string[]> {
   for await (const ev of parseAgentChatSSE(stream)) {
+    if (ev.type === 'conversation_id') onProgress?.({ type: 'connected' });
+    if (ev.type === 'tool-call') onProgress?.({ type: 'tool-call', toolName: ev.toolName });
+    if (ev.type === 'tool-result') onProgress?.({ type: 'tool-result', toolName: ev.toolName });
     if (ev.type === 'text') {
+      onProgress?.({ type: 'finalizing' });
       const content = typeof ev.content === 'string' ? ev.content : '';
       const lines = content
         .split(/[,，。;；]/)
@@ -140,7 +163,10 @@ export class ConfrontAdapter {
   }
 
   /** 预案输出 agent:生成初步部署(解析 report_decision 或 text 摘要)。 */
-  async generateInitialPlan(ctx: AdapterCtx): Promise<{ deployLines: string[] } | null> {
+  async generateInitialPlan(
+    ctx: AdapterCtx,
+    onProgress?: ConfrontAgentProgress,
+  ): Promise<{ deployLines: string[] } | null> {
     try {
       const stream = await this.run(
         `[对抗开局] 演练开始:${ctx.seed.building} ${ctx.seed.floor} ${ctx.seed.material}起火,被困${ctx.seed.trapped}人。` +
@@ -148,7 +174,7 @@ export class ConfrontAdapter {
         ctx,
       );
       // 优先 report_decision tool-call;没有时回退到 text 内容
-      const tc = await firstToolCall(stream, 'report_decision');
+      const tc = await firstToolCall(stream, 'report_decision', onProgress);
       const args = narrowObject(tc?.args);
       if (args) {
         const decision = narrowObject(args.decision);
@@ -161,7 +187,7 @@ export class ConfrontAdapter {
         if (deployLines.length > 0) return { deployLines };
       }
       // text 回退:把首个 text 事件按逗号/句号拆成部署行
-      const textLines = await extractTextLines(stream);
+      const textLines = await extractTextLines(stream, onProgress);
       if (textLines.length > 0) return { deployLines: textLines };
       return { deployLines: [`${ctx.seed.building} ${ctx.seed.floor} 灭火救援处置`] };
     } catch (err) {
@@ -174,6 +200,7 @@ export class ConfrontAdapter {
   async injectSpecial(
     ctx: AdapterCtx,
     round: ConfrontRoundContext,
+    onProgress?: ConfrontAgentProgress,
   ): Promise<SpecialEventOutput | null> {
     try {
       const history = round.recentEvents.slice(-6).map((event) => ({
@@ -199,7 +226,7 @@ export class ConfrontAdapter {
         ctx,
         round,
       );
-      const tc = await firstToolCall(stream, 'inject_event');
+      const tc = await firstToolCall(stream, 'inject_event', onProgress);
       const args = narrowObject(tc?.args);
       if (!args) return null;
       const event = narrowObject(args.event);
@@ -230,6 +257,7 @@ export class ConfrontAdapter {
     ctx: AdapterCtx,
     injectText: string,
     round?: ConfrontRoundContext,
+    onProgress?: ConfrontAgentProgress,
   ): Promise<{ adjustments: string[] } | null> {
     try {
       const stream = await this.run(
@@ -242,7 +270,7 @@ export class ConfrontAdapter {
         ctx,
         round,
       );
-      const tc = await firstToolCall(stream, 'report_decision');
+      const tc = await firstToolCall(stream, 'report_decision', onProgress);
       const args = narrowObject(tc?.args);
       if (!args) return null;
       const decision = narrowObject(args.decision);

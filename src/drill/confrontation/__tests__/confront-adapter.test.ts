@@ -142,4 +142,26 @@ describe('confront-adapter', () => {
     expect(request?.content).toContain('已被拒绝');
     expect(request?.forwardedProps?.status).toMatchObject({ round: 2, usedSpecialTypes: ['explosion'] });
   });
+
+  it('只透传可展示的连接/工具进度，不暴露 reasoning 正文或工具数据', async () => {
+    const progress: unknown[] = [];
+    const adapter = new ConfrontAdapter({
+      postChat: fakePost([
+        { type: 'conversation_id', conversation_id: 'conv-1' },
+        { type: 'reasoning', content: '不应进入 UI 的模型原始思维' },
+        { type: 'tool-call', toolCallId: 'q1', toolName: 'query_key_parts', args: { secret: 'x' } },
+        { type: 'tool-result', toolCallId: 'q1', toolName: 'query_key_parts', result: { rows: ['敏感正文'] } },
+        { type: 'tool-call', toolCallId: 'i1', toolName: 'inject_event', args: { event: { type: 'collapse', description: '吊顶局部坍塌', payload: { location: '5F', damageDelta: 1 } } } },
+      ]),
+    });
+    await adapter.injectSpecial(CTX, ROUND, (event) => progress.push(event));
+    expect(progress).toEqual([
+      { type: 'connected' },
+      { type: 'tool-call', toolName: 'query_key_parts' },
+      { type: 'tool-result', toolName: 'query_key_parts' },
+      { type: 'tool-call', toolName: 'inject_event' },
+    ]);
+    expect(JSON.stringify(progress)).not.toContain('模型原始思维');
+    expect(JSON.stringify(progress)).not.toContain('敏感正文');
+  });
 });

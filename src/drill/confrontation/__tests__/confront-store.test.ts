@@ -8,6 +8,10 @@ import {
   respondAdjustment,
   setThinking,
   setDeployLines,
+  startAgentActivity,
+  updateAgentActivity,
+  finishAgentActivity,
+  setEvaluating,
   finishConfrontationLocal,
   exitConfrontation,
 } from '../confront-store';
@@ -82,6 +86,25 @@ describe('confront-store', () => {
   it('setThinking 切换研判态', () => {
     setThinking(true);
     expect(getConfrontationState().thinking).toBe(true);
+  });
+
+  it('记录安全的智能体执行轨迹与真实工具状态', () => {
+    startAgentActivity('adversary', '2089649115801305090', '正在读取当前态势');
+    updateAgentActivity({ phase: '正在查询重点部位', toolName: 'query_key_parts', toolStatus: 'calling' });
+    updateAgentActivity({ phase: '重点部位已返回', toolName: 'query_key_parts', toolStatus: 'done' });
+    finishAgentActivity('success', '特情已通过多样性校验');
+    const activity = getConfrontationState().agentActivity;
+    expect(activity).toMatchObject({
+      role: 'adversary', appIdSuffix: '305090', status: 'success',
+      phase: '特情已通过多样性校验',
+      tools: [{ name: 'query_key_parts', status: 'done' }],
+    });
+    expect(getConfrontationState().thinking).toBe(false);
+  });
+
+  it('setEvaluating 控制真实评估等待态', () => {
+    setEvaluating(true);
+    expect(getConfrontationState().evaluating).toBe(true);
   });
 
   it('finishConfrontationLocal 写评估并置 finished', () => {
