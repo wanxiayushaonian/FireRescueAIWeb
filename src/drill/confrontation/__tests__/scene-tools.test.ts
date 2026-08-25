@@ -227,4 +227,34 @@ describe('drill_report_decision handler', () => {
       { kind: 'warning', label: '力量明细未取得' },
     ]);
   });
+
+  it('P1b:同轮次已有调整时,不同内容的 report_decision 被拒绝', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '5层爆炸', payload: { fireLevelDelta: 1 } },
+    }), SDK);
+    await dispatch(
+      cmd('drill_report_decision', { drill_id: 'd1', decision: { action: '内攻', rationale: '第一版' } }),
+      SDK,
+    );
+    const r = await dispatch(
+      cmd('drill_report_decision', { drill_id: 'd1', decision: { action: '改外攻', rationale: '第二版不同内容' } }),
+      SDK,
+    );
+    expect(r).toEqual({ status: 'error' });
+    expect(getConfrontationState().events.filter((e) => e.kind === 'adjust')).toHaveLength(1);
+  });
+
+  it('P1b:同轮次相同内容(双通道第二份)幂等 ok 不拒绝', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '5层爆炸', payload: { fireLevelDelta: 1 } },
+    }), SDK);
+    const args = { drill_id: 'd1', decision: { action: '内攻', rationale: '同内容' } };
+    const r1 = await dispatch(cmd('drill_report_decision', args), SDK);
+    const r2 = await dispatch(cmd('drill_report_decision', args), SDK);
+    expect(r1).toEqual({ status: 'ok' });
+    expect(r2).toEqual({ status: 'ok' });
+    expect(getConfrontationState().events.filter((e) => e.kind === 'adjust')).toHaveLength(1);
+  });
 });

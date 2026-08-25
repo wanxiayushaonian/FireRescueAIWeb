@@ -164,6 +164,12 @@ export function registerConfrontSceneTools(
     // 与 inject 的 seq 对齐(卡片按 seq 配对;调整入库本身由 store 做双通道去重)。
     const s = getConfrontationState();
     const seq = s.events.filter((e) => e.kind === 'inject').length;
+    // P1b:同轮次重复建议门控——先查幂等(双通道第二份同内容→ok),再查该轮次已有调整(拒绝)
+    if (isDuplicateEvent({ kind: 'adjust', adjustments: [line] })) return;
+    const existingSameRound = s.events.find((e) => e.kind === 'adjust' && e.seq === seq);
+    if (existingSameRound) {
+      throw new Error(`轮次 ${seq} 已有调整建议,拒绝重复上报`);
+    }
     appendAdjust({ seq, adjustments: [line], evidence: evidence.length ? evidence : undefined, tSec: elapsedSec() });
   });
 }
