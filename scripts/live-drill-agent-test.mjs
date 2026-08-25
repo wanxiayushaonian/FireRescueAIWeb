@@ -179,13 +179,13 @@ let injected = null;
   if (injected) console.log(`   特情=${injected.emergency}\n   location=${injected.location ?? '(无)'} type=${injected.type ?? '(无)'}`);
 }
 
-// ===== 3. 动态调整(planner,串联真实特情) =====
-console.log('\n── 3/4 动态调整 generateAdjustment → planner(以上一步真实特情为输入)');
+// ===== 3. 动态调整(commander,串联真实特情) =====
+console.log('\n── 3/4 动态调整 generateAdjustment → commander(以上一步真实特情为输入)');
 {
   const injectText = injected?.emergency ?? '5F 强电井火势沿电缆竖向蔓延至 8F';
   const stats = { events: {}, toolCalls: [] };
-  const { stream, t0 } = await runAgent(PLANNER,
-    `[特情响应] 突发特情:${injectText}\n请调用 report_decision 给出部署/战法动态调整(action=调整动作,rationale=依据)。`);
+  const { stream, t0 } = await runAgent(DRILL_COMMANDER,
+    `[指挥调整] 突发特情:${injectText}\n请调用 report_decision 给出部署/战法动态调整(action=调整动作,rationale=依据)。`);
   const tc = await firstToolCall(parseSSE(stream), 'report_decision', stats);
   const args = narrowObj(tc?.args);
   let adjustments = null;
@@ -208,7 +208,30 @@ if (process.argv.includes('--skip-evaluate')) {
   } else {
     const process_data = {
       building: SEED.building, floor: SEED.floor, material: SEED.material, trapped: SEED.trapped,
-      elapsedSec: 188, injectCount: 3, adjustCount: 3, outcomes: ['timely', 'delayed', 'timely'],
+      elapsedSec: 188,
+      injectCount: injected ? 1 : 0,
+      adjustCount: report.steps.adjustment?.adjustments?.length ? 1 : 0,
+      outcomes: ['timely'],
+      initialPlan: report.steps.initialPlan?.deployLines ?? [],
+      finalSituation: { fireLevel: 2, trappedCount: SEED.trapped, damageLevel: 0 },
+      uniqueSpecialTypes: injected?.type ? [injected.type] : [],
+      timeline: [
+        ...(injected ? [{
+          kind: 'inject',
+          specialType: injected.type,
+          emergency: injected.emergency,
+          location: injected.location,
+          delta: report.rawQuality.injectPayload ?? {},
+          tSec: 61,
+        }] : []),
+        ...(report.steps.adjustment?.adjustments?.length ? [{
+          kind: 'adjust',
+          adjustments: report.steps.adjustment.adjustments,
+          adopted: true,
+          respondedWithinSec: 26,
+          tSec: 87,
+        }] : []),
+      ],
     };
     const prompt = `你是消防救援预案评估专家。请根据给定的过程数据，完成客观、专业的评估。
 只输出一个 JSON 对象，不要输出任何其他文字。JSON 结构：
