@@ -155,10 +155,13 @@ console.log('\n── 2/4 特情注入 injectSpecial → adversary', adversaryAp
 let injected = null;
 {
   const stats = { events: {}, toolCalls: [] };
-  const statusLine = `火势=1级;${SEED.floor} ${SEED.material}起火;被困${SEED.trapped}人`;
+  const situation = { fireLevel: 1, trappedCount: SEED.trapped, damageLevel: 0 };
   const { stream, t0 } = await runAgent(adversaryApp,
-    `[导调触发] drill_id=${DRILL_ID}\n当前态势:${statusLine}\n` +
-    '请调用 inject_event 注入一个突发特情(event.type/description/payload.location/payload.fireLevelDelta 等)。');
+    `[导调触发] drill_id=${DRILL_ID};round=1\n` +
+    `当前态势:${JSON.stringify(situation)}\n` +
+    '已用特情类型:[]\n最近事件与决策:[]\n' +
+    '请调用且只调用一次 inject_event。event 必须同时包含 type/description/payload;' +
+    'description 要写清具体位置、事故机理和直接影响，并通过 payload 给出 location 以及至少一个合理状态增量。');
   const tc = await firstToolCall(parseSSE(stream), 'inject_event', stats);
   const args = narrowObj(tc?.args);
   if (args) {
@@ -184,8 +187,23 @@ console.log('\n── 3/4 动态调整 generateAdjustment → commander(以上�
 {
   const injectText = injected?.emergency ?? '5F 强电井火势沿电缆竖向蔓延至 8F';
   const stats = { events: {}, toolCalls: [] };
+  const situation = {
+    fireLevel: 1 + Number(report.rawQuality.injectPayload?.fireLevelDelta ?? 0),
+    trappedCount: SEED.trapped + Number(report.rawQuality.injectPayload?.trappedDelta ?? 0),
+    damageLevel: Number(report.rawQuality.injectPayload?.damageDelta ?? 0),
+    ...(report.rawQuality.injectPayload?.wind ? { wind: report.rawQuality.injectPayload.wind } : {}),
+  };
+  const recentEvents = injected ? [{
+    seq: 1, kind: 'inject', emergency: injected.emergency,
+    specialType: injected.type, location: injected.location,
+    delta: report.rawQuality.injectPayload ?? {},
+  }] : [];
   const { stream, t0 } = await runAgent(DRILL_COMMANDER,
-    `[指挥调整] 突发特情:${injectText}\n请调用 report_decision 给出部署/战法动态调整(action=调整动作,rationale=依据)。`);
+    `[指挥调整] 突发特情:${injectText}\n` +
+    `当前态势:${JSON.stringify(situation)}\n` +
+    `最近事件与已有决策:${JSON.stringify(recentEvents)}\n` +
+    '请作为演练指挥官调用且只调用一次 report_decision，给出针对该特情、' +
+    '与已有部署不冲突的动态调整(action/rationale/tactic)。');
   const tc = await firstToolCall(parseSSE(stream), 'report_decision', stats);
   const args = narrowObj(tc?.args);
   let adjustments = null;
