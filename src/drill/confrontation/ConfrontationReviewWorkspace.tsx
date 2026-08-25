@@ -19,7 +19,7 @@ export function ConfrontationReviewWorkspace({
   building: string;
   onClose: () => void;
 }) {
-  const evidence = events.filter((event) => event.kind === 'inject' || event.kind === 'adjust');
+  const evidence = events.filter((event) => event.kind === 'inject' || event.kind === 'adjust' || event.kind === 'manual');
   return (
     <motion.div
       className="fixed inset-0 z-[110] flex items-center justify-center bg-bg-deep/85 p-8 backdrop-blur-sm"
@@ -132,11 +132,11 @@ export function ConfrontationReviewWorkspace({
               </div>
               <div className="flex flex-col gap-2">
                 {evidence.map((event) => (
-                  <div key={event.id} className={`rounded-lg border p-3 ${event.kind === 'inject' ? 'border-orange/45 bg-orange/5' : 'border-cyan/45 bg-cyan/5'}`}>
+                  <div key={event.id} className={`rounded-lg border p-3 ${event.kind === 'inject' ? 'border-orange/45 bg-orange/5' : event.kind === 'manual' ? 'border-amber/50 bg-amber/5' : 'border-cyan/45 bg-cyan/5'}`}>
                     <div className="flex items-center gap-2 text-[11px]">
                       <span className="font-mono text-text-3">{fmtT(event.tSec)}</span>
-                      <span className={event.kind === 'inject' ? 'text-orange' : 'text-cyan'}>
-                        {event.kind === 'inject' ? `突发特情 #${event.seq}` : event.seq === 0 ? '初始部署上报' : `指挥调整 #${event.seq}`}
+                      <span className={event.kind === 'inject' ? 'text-orange' : event.kind === 'manual' ? 'text-amber' : 'text-cyan'}>
+                        {event.kind === 'inject' ? `突发特情 #${event.seq}` : event.kind === 'manual' ? `人工改派方案 #${event.seq}` : event.seq === 0 ? '初始部署上报' : `指挥调整 #${event.seq}`}
                       </span>
                       {event.location && <span className="rounded border border-line px-1 text-text-3">{event.location}</span>}
                       {event.respondedWithinSec != null && <span className="ml-auto text-text-3">响应 {event.respondedWithinSec}s</span>}
@@ -144,6 +144,9 @@ export function ConfrontationReviewWorkspace({
                     <div className="mt-1 text-[12px] leading-5 text-text-2">
                       {event.kind === 'inject' ? event.emergency : event.adjustments?.join('；')}
                     </div>
+                    {event.kind === 'manual' && event.note && (
+                      <div className="mt-1 text-[11px] leading-5 text-text-3">处置原因：{event.note}</div>
+                    )}
                   </div>
                 ))}
               </div>

@@ -35,6 +35,12 @@ export interface ConfrontRoundContext {
   readonly usedTypes: readonly string[];
   /** 第一次候选被程序规则拒绝后，二次请求明确告知原因。 */
   readonly rejectionReason?: string;
+  /** P0:人工改派后的有效部署基线(最近一次人工决策)。Commander 必须在其基础上调整。 */
+  readonly manualBaseline?: {
+    readonly lines: readonly string[];
+    readonly note?: string;
+    readonly atSec?: number;
+  };
 }
 
 export interface SpecialEventOutput {
@@ -264,6 +270,12 @@ export class ConfrontAdapter {
         `[指挥调整] 突发特情:${injectText}\n` +
           `当前态势:${JSON.stringify(round?.situation ?? {})}\n` +
           `最近事件与已有决策:${JSON.stringify(round?.recentEvents.slice(-6) ?? [])}\n` +
+          (round?.manualBaseline
+            ? `⚠️ 人工已改派:以下是指挥人员确定的当前有效部署基线(T+${round.manualBaseline.atSec ?? '?'}s),` +
+              `你的调整必须在尊重该人工方案的前提下给出(可补充/细化,不得推翻其核心安排):\n` +
+              `${round.manualBaseline.lines.join('\n')}\n` +
+              (round.manualBaseline.note ? `人工处置原因:${round.manualBaseline.note}\n` : '')
+            : '') +
           '请作为演练指挥官调用且只调用一次 report_decision，给出针对该特情、' +
           '与已有部署不冲突的动态调整(action/rationale/tactic)。' +
           'action 必须写具体部署变化，不得只写“内攻推进/外围控制/增援”等泛化标题。',

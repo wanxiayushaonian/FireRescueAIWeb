@@ -15,6 +15,7 @@ import type {
   SpecialEventOutput,
 } from './confront-adapter';
 import { canonicalSpecialType, evaluateSpecialQuality } from './special-event-quality';
+import { selectEffectiveDeploy } from './confront-store';
 
 export interface ConfrontAppIds {
   readonly planner: string;
@@ -100,11 +101,18 @@ export class ConfrontDriver {
         location: event.location,
       }))
       .filter((type) => type !== 'unknown');
+    // P0:人工改派后的有效部署基线(最近一次人工决策优先于 Planner 初始部署)
+    const effective = selectEffectiveDeploy({ events: current.events, deploy: current.deploy });
+    const manualBaseline =
+      effective?.source === 'manual'
+        ? { lines: effective.lines, note: effective.note, atSec: effective.atSec }
+        : undefined;
     return {
       round,
       situation: current.situation,
       recentEvents: current.events.slice(-8),
       usedTypes: [...new Set(usedTypes)],
+      ...(manualBaseline ? { manualBaseline } : {}),
       ...(rejectionReason ? { rejectionReason } : {}),
     };
   }
@@ -256,6 +264,20 @@ export class ConfrontDriver {
             emergency: event.emergency,
             location: event.location,
           })))],
+        // P0:人工决策闭环——"智能体建议 ↔ 人员决策"成对对比,评估人机协同质量
+        manualDecisions: events
+          .filter((e) => e.kind === 'manual')
+          .map((m) => {
+            const origin = adjusts.find((a) => a.id === m.supersedes);
+            return {
+              round: m.seq,
+              atSec: m.tSec,
+              agentSuggestion: origin?.adjustments ?? null,
+              humanDecision: m.adjustments ?? [],
+              note: m.note ?? null,
+              responseSec: origin?.respondedWithinSec ?? null,
+            };
+          }),
         timeline: events.map((event) => ({
           seq: event.seq,
           kind: event.kind,

@@ -15,6 +15,7 @@ import {
   exitConfrontation,
   finishAgentActivity,
   respondAdjustment,
+  appendManualDecision,
   finishConfrontationLocal,
   getConfrontationState,
   setEvaluating,
@@ -28,6 +29,7 @@ import { ConfrontAdapter } from './confront-adapter';
 import { useConfrontationDriver } from './use-confront-driver';
 import { AgentActivityStrip, ShuffleText, Dots, ScoreRing, TimelineNode } from './confrontation-uis';
 import { ConfrontationReviewWorkspace } from './ConfrontationReviewWorkspace';
+import { ManualDecisionDialog } from './ManualDecisionDialog';
 import { fmtT, randInt, deployLines } from './confront-helpers';
 import { addSceneAction } from '@/mock/sceneLog';
 import { addLibraryItem } from '@/mock/planLibrary';
@@ -58,6 +60,7 @@ export default function ConfrontationPanel() {
   const [demoState, setDemoState] = useState<FetchState>('ok');
   const [nowSec, setNowSec] = useState(0);
   const [hlId, setHlId] = useState<string | null>(null);
+  const [manualEditId, setManualEditId] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [sceneStageMode, setSceneStageMode] = useState<'standard' | 'immersive'>('standard');
   const [sceneFocusLabel, setSceneFocusLabel] = useState('全楼');
@@ -252,6 +255,32 @@ export default function ConfrontationPanel() {
     }
   };
 
+  // P0:人工改派 = 打开编辑工作台;保存后落独立 manual 决策事件并成为后续轮次部署基线
+  const manualTarget = manualEditId
+    ? (conf.events.find((e) => e.id === manualEditId && e.kind === 'adjust') ?? null)
+    : null;
+  const manualSpecial = manualTarget
+    ? (conf.events.find((e) => e.kind === 'inject' && e.seq === manualTarget.seq) ?? null)
+    : null;
+
+  const handleManualSave = (adjustId: string, lines: string[], note: string) => {
+    const target = conf.events.find((e) => e.id === adjustId && e.kind === 'adjust');
+    if (!target) return;
+    const elapsedSec = conf.startedAt
+      ? Math.max(0, Math.round((Date.now() - conf.startedAt) / 1000))
+      : 0;
+    respondAdjustment(adjustId, false, elapsedSec);
+    appendManualDecision({
+      seq: target.seq,
+      lines,
+      note,
+      supersedes: adjustId,
+      tSec: elapsedSec,
+    });
+    setManualEditId(null);
+    showToast('人工决策已记录，后续调整将以此为部署基线');
+  };
+
   const finishConfrontation = async () => {
     if (conf.status !== 'running') return;
     const elapsedSec = conf.startedAt
@@ -348,10 +377,20 @@ export default function ConfrontationPanel() {
         : '待机';
 
   // 中央卡片序列：初步部署卡 + 特情/调整卡（新卡在上）
-  const pairs: Array<{ inject: ConfrontationEvent; adjust?: ConfrontationEvent }> = injects
+  const pairs: Array<{ inject: ConfrontationEvent; adjust?: ConfrontationEvent; manual?: ConfrontationEvent }> = injects
     .slice()
     .sort((a, b) => b.seq - a.seq)
-    .map((inj) => ({ inject: inj, adjust: adjusts.find((a) => a.seq === inj.seq) }));
+    .map((inj) => {
+      const adjust = adjusts.find((a) => a.seq === inj.seq);
+      return {
+        inject: inj,
+        adjust,
+        // P0:该轮调整被人工改派时,挂出人工方案卡
+        manual: adjust
+          ? conf.events.find((e) => e.kind === 'manual' && e.supersedes === adjust.id)
+          : undefined,
+      };
+    });
 
   return createPortal(
     <div
@@ -647,7 +686,7 @@ export default function ConfrontationPanel() {
             ) : (
               <div className="flex flex-col gap-3">
                 <AnimatePresence initial={false}>
-                  {pairs.map(({ inject, adjust }) => (
+                  {pairs.map(({ inject, adjust, manual }) => (
                     <motion.div
                       key={inject.id}
                       initial={{ opacity: 0, y: -10 }}
@@ -717,10 +756,7 @@ export default function ConfrontationPanel() {
                                   <Check className="h-3 w-3" />采纳调整
                                 </button>
                                 <button
-                                  onClick={() => {
-                                    handleRespond(adjust.id, false);
-                                    showToast('已记录人工决策');
-                                  }}
+                                  onClick={() => setManualEditId(adjust.id)}
                                   className="flex h-7 items-center gap-1 rounded-md border border-line px-2 text-[12px] text-text-2 transition hover:border-line-glow hover:text-cyan"
                                 >
                                   <PencilLine className="h-3 w-3" />人工改派
@@ -749,6 +785,28 @@ export default function ConfrontationPanel() {
                             </div>
                           </div>
                         )
+                      )}
+
+                      {/* P0 人工改派方案卡(该轮调整被人工改派时展示,为后续轮次部署基线) */}
+                      {manual && (
+                        <div className="ml-5 rounded-lg border border-amber/50 bg-amber/5 p-3">
+                          <div className="flex items-center gap-2 text-[13px] font-bold text-amber">
+                            ⇄ 人工改派方案（指挥人员）
+                            <span className="rounded border border-amber/50 px-1 py-px text-[10px]">后续轮次以此为基线</span>
+                          </div>
+                          <ul className="mt-1 flex flex-col gap-1">
+                            {manual.adjustments?.map((a) => (
+                              <li key={a} className="flex gap-1.5 text-[13px] leading-5 text-text-2">
+                                <span className="text-amber">·</span>{a}
+                              </li>
+                            ))}
+                          </ul>
+                          {manual.note && (
+                            <div className="mt-1.5 border-t border-amber/20 pt-1.5 text-[12px] leading-5 text-text-3">
+                              处置原因：{manual.note}
+                            </div>
+                          )}
+                        </div>
                       )}
                     </motion.div>
                   ))}
@@ -822,9 +880,9 @@ export default function ConfrontationPanel() {
               )}
               {conf.events.map((e, i) => {
                 const color =
-                  e.kind === 'inject' ? '#f97316' : e.kind === 'adjust' ? '#22d3ee' : '#34d399';
+                  e.kind === 'inject' ? '#f97316' : e.kind === 'adjust' ? '#22d3ee' : e.kind === 'manual' ? '#f59e0b' : '#34d399';
                 const badge =
-                  e.kind === 'inject' ? '对抗智能体' : e.kind === 'adjust' ? '动态调整' : '评估';
+                  e.kind === 'inject' ? '对抗智能体' : e.kind === 'adjust' ? '动态调整' : e.kind === 'manual' ? '人工决策' : '评估';
                 const text =
                   e.kind === 'inject'
                     ? `突发特情 #${e.seq}`
@@ -832,7 +890,9 @@ export default function ConfrontationPanel() {
                       ? e.seq === 0
                         ? '初始部署上报'
                         : `部署/战法调整 #${e.seq}${e.adopted === true ? ' · 已采纳' : e.adopted === false ? ' · 人工改派' : ''}`
-                      : e.emergency;
+                      : e.kind === 'manual'
+                        ? `人工改派方案 #${e.seq}`
+                        : e.emergency;
                 const isLatest = i === conf.events.length - 1 && conf.status === 'running';
                 return (
                   <TimelineNode
@@ -907,6 +967,15 @@ export default function ConfrontationPanel() {
           />
         )}
       </AnimatePresence>
+      {manualTarget && (
+        <ManualDecisionDialog
+          seq={manualTarget.seq}
+          specialText={manualSpecial?.emergency ?? '（关联特情未找到）'}
+          agentLines={manualTarget.adjustments ?? []}
+          onSave={(draft) => handleManualSave(manualTarget.id, draft.lines, draft.note)}
+          onCancel={() => setManualEditId(null)}
+        />
+      )}
     </div>,
     document.body,
   );

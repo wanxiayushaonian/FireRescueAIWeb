@@ -153,4 +153,39 @@ describe('finishEvaluate', () => {
       ],
     });
   });
+
+  it('P0:评估进程携带 manualDecisions(建议↔人工成对),供评估对比', async () => {
+    let process: Record<string, unknown> | undefined;
+    const adj = { id: 'adj-1', seq: 1, kind: 'adjust' as const, emergency: '', adjustments: ['agent:撤出5F'], adopted: false, respondedWithinSec: 9, tSec: 20 };
+    const manual = { id: 'cm-1', seq: 1, kind: 'manual' as const, emergency: '人工:改外部压制', adjustments: ['人工:高喷车外部压制'], note: '5F结构不稳', supersedes: 'adj-1', tSec: 60 };
+    const adapter = {
+      evaluateDrill: async (input: { process: Record<string, unknown> }) => {
+        process = input.process;
+        return AGENT_DATA;
+      },
+    } as unknown as ConfrontAdapter;
+    const driver = new ConfrontDriver({
+      adapter,
+      appIds: { planner: 'p', adversary: 'a', commander: 'c' },
+      buildingId: 'b', sceneId: 's', drillId: 'd', seed: SEED,
+      getState: () => ({
+        events: [event('inject', { specialType: 'collapse', emergency: '坍塌', tSec: 10 }), adj, manual],
+        situation: { fireLevel: 2, trappedCount: 5, damageLevel: 1 },
+        deploy: ['初始部署'],
+      }),
+    });
+    await driver.finishEvaluate(90);
+    expect(process).toMatchObject({
+      manualDecisions: [
+        {
+          round: 1,
+          atSec: 60,
+          agentSuggestion: ['agent:撤出5F'],
+          humanDecision: ['人工:高喷车外部压制'],
+          note: '5F结构不稳',
+          responseSec: 9,
+        },
+      ],
+    });
+  });
 });

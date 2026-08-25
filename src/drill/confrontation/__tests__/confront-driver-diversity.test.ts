@@ -73,6 +73,60 @@ describe('ConfrontDriver 特情去重与角色分工', () => {
     expect(seenAppIds).toEqual(['commander']);
   });
 
+  it('P0:存在人工改派时 Commander 收到 manualBaseline,且无人工时不含该字段', async () => {
+    vi.useFakeTimers();
+    const manualEvent: ConfrontationEvent = {
+      id: 'cm1', seq: 1, kind: 'manual', emergency: '撤出5F改外部压制',
+      adjustments: ['撤出5F内攻', '改高喷车外部压制'], note: '5F结构不稳', tSec: 60,
+    };
+    const contexts: ConfrontRoundContext[] = [];
+    const adapter = {
+      generateAdjustment: vi.fn(async (_ctx, _injectText, round: ConfrontRoundContext) => {
+        contexts.push(round);
+        return { adjustments: ['按人工基线细化'] };
+      }),
+    } as unknown as ConfrontAdapter;
+    const driver = new ConfrontDriver({
+      adapter,
+      appIds: { planner: 'planner', adversary: 'adversary', commander: 'commander' },
+      buildingId: 'b', sceneId: 's', drillId: 'd', seed,
+      getState: () => ({
+        events: [prior, manualEvent],
+        situation: { fireLevel: 2, trappedCount: 5, damageLevel: 1 },
+        deploy: ['初始部署'],
+      }),
+    });
+    driver.scheduleAdjustment('特情2', { onAdjust: vi.fn() });
+    await vi.advanceTimersByTimeAsync(2501);
+    await vi.waitFor(() => expect(contexts.length).toBe(1));
+    expect(contexts[0].manualBaseline).toMatchObject({
+      lines: ['撤出5F内攻', '改高喷车外部压制'],
+      note: '5F结构不稳',
+      atSec: 60,
+    });
+    driver.clearAll();
+
+    // 无人工作出时,Commander 上下文不含 manualBaseline
+    const noManual: ConfrontRoundContext[] = [];
+    const adapter2 = {
+      generateAdjustment: vi.fn(async (_ctx, _injectText, round: ConfrontRoundContext) => {
+        noManual.push(round);
+        return { adjustments: ['x'] };
+      }),
+    } as unknown as ConfrontAdapter;
+    const driver2 = new ConfrontDriver({
+      adapter: adapter2,
+      appIds: { planner: 'planner', adversary: 'adversary', commander: 'commander' },
+      buildingId: 'b', sceneId: 's', drillId: 'd', seed,
+      getState: () => ({ events: [prior], situation: { fireLevel: 2, trappedCount: 5, damageLevel: 0 }, deploy: ['初始部署'] }),
+    });
+    driver2.scheduleAdjustment('特情', { onAdjust: vi.fn() });
+    await vi.advanceTimersByTimeAsync(2501);
+    await vi.waitFor(() => expect(noManual.length).toBe(1));
+    expect(noManual[0].manualBaseline).toBeUndefined();
+    driver2.clearAll();
+  });
+
   it('Adversary 真实请求整个期间保持 thinking=true，并透传工具进度', async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);

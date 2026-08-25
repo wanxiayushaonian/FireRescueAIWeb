@@ -15,6 +15,8 @@ import {
   finishConfrontationLocal,
   exitConfrontation,
   isDuplicateEvent,
+  appendManualDecision,
+  selectEffectiveDeploy,
 } from '../confront-store';
 
 describe('confront-store', () => {
@@ -182,5 +184,49 @@ describe('双通道入库去重(2026-08-25 验收:同一 tool-call 经 adapter �
     expect(isDuplicateEvent({ kind: 'inject', specialType: 'explosion', emergency: 'x' })).toBe(false);
     appendInject({ specialType: 'explosion', emergency: 'x', tSec: 1 });
     expect(isDuplicateEvent({ kind: 'inject', specialType: 'explosion', emergency: 'x' })).toBe(true);
+  });
+});
+
+describe('P0 人工决策闭环', () => {
+  beforeEach(() => resetConfrontation());
+  const seed = { building: 'b', floor: '5F', material: '电气', trapped: 2, seed: 's' };
+
+  it('appendManualDecision 落独立 manual 事件(含 note/supersedes,摘要取首行)', () => {
+    beginConfrontation({ seedScenario: seed });
+    appendInject({ emergency: '特情', tSec: 10 });
+    appendAdjust({ seq: 1, adjustments: ['agent 建议'], tSec: 15 });
+    const adjId = getConfrontationState().events.find((e) => e.kind === 'adjust')!.id;
+    appendManualDecision({ seq: 1, lines: ['人工方案 A', '人工方案 B'], note: '现场水源不足', supersedes: adjId, tSec: 60 });
+    const manual = getConfrontationState().events.find((e) => e.kind === 'manual');
+    expect(manual).toMatchObject({
+      seq: 1,
+      adjustments: ['人工方案 A', '人工方案 B'],
+      note: '现场水源不足',
+      supersedes: adjId,
+      emergency: '人工方案 A',
+    });
+  });
+
+  it('selectEffectiveDeploy:无人工决策用 planner 部署,有人工决策以最近一条为准', () => {
+    beginConfrontation({ seedScenario: seed });
+    expect(selectEffectiveDeploy(getConfrontationState())).toBeNull();
+    setDeployLines(['planner 部署']);
+    expect(selectEffectiveDeploy(getConfrontationState())).toMatchObject({ source: 'planner', lines: ['planner 部署'] });
+    appendInject({ emergency: '特情', tSec: 10 });
+    appendManualDecision({ seq: 1, lines: ['人工方案'], tSec: 60 });
+    expect(selectEffectiveDeploy(getConfrontationState())).toMatchObject({ source: 'manual', lines: ['人工方案'] });
+    appendManualDecision({ seq: 2, lines: ['人工方案 v2'], tSec: 90 });
+    expect(selectEffectiveDeploy(getConfrontationState())?.lines).toEqual(['人工方案 v2']);
+  });
+
+  it('manual 事件不影响特情↔调整配对(不参与 outcomes 行)', () => {
+    beginConfrontation({ seedScenario: seed });
+    appendInject({ specialType: 'explosion', emergency: '爆炸', delta: { fireLevelDelta: 1 }, tSec: 10 });
+    appendAdjust({ seq: 1, adjustments: ['agent 建议'], tSec: 15 });
+    appendManualDecision({ seq: 1, lines: ['人工方案'], tSec: 60 });
+    const s = getConfrontationState();
+    expect(s.events.filter((e) => e.kind === 'inject')).toHaveLength(1);
+    expect(s.events.filter((e) => e.kind === 'adjust')).toHaveLength(1);
+    expect(s.situation.fireLevel).toBe(2); // manual 不带 delta,态势不变
   });
 });

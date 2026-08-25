@@ -35,6 +35,10 @@ export interface ConfrontationEvent {
   readonly adjustments?: readonly string[];
   readonly adopted?: boolean;
   readonly respondedWithinSec?: number;
+  /** manual 事件:人工处置原因(人员填写)。 */
+  readonly note?: string;
+  /** manual 事件:被改派的 adjust 事件 id(评估对比"建议 vs 人工"用)。 */
+  readonly supersedes?: string;
   readonly tSec: number;
 }
 
@@ -328,6 +332,41 @@ export function respondAdjustment(eventId: string, adopted: boolean, elapsedSec:
     }),
   };
   emit();
+}
+
+/** P0 人工决策闭环:人工改派工作台保存时落独立 manual 事件。
+ *  seq = 被改派调整对应的特情轮次;emergency = 首行摘要(时间轴/快照用)。 */
+export function appendManualDecision(evt: {
+  readonly seq: number;
+  readonly lines: readonly string[];
+  readonly note?: string;
+  readonly supersedes?: string;
+  readonly tSec: number;
+}): void {
+  const node: ConfrontationEvent = {
+    id: genId('cm'),
+    seq: evt.seq,
+    kind: 'manual',
+    emergency: evt.lines[0] ?? '人工决策',
+    adjustments: [...evt.lines],
+    note: evt.note,
+    supersedes: evt.supersedes,
+    tSec: evt.tSec,
+  };
+  conf = { ...conf, events: [...conf.events, node] };
+  emit();
+}
+
+/** 当前有效部署基线:有任一人工决策后,以最近一次人工方案为准(后续轮次 Commander 必须尊重);
+ *  否则为 Planner 初始部署。 */
+export function selectEffectiveDeploy(
+  state: Pick<ConfrontationState, 'events' | 'deploy'>,
+): { readonly lines: readonly string[]; readonly source: 'planner' | 'manual'; readonly note?: string; readonly atSec?: number } | null {
+  const manual = [...state.events].reverse().find((e) => e.kind === 'manual' && e.adjustments?.length);
+  if (manual?.adjustments) {
+    return { lines: manual.adjustments, source: 'manual', note: manual.note, atSec: manual.tSec };
+  }
+  return state.deploy?.length ? { lines: state.deploy, source: 'planner' } : null;
 }
 
 export function setThinking(v: boolean): void {
