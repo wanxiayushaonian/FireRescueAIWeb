@@ -43,14 +43,15 @@ describe('drill_query_state handler', () => {
       seedScenario: { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#TEST' },
     });
     await dispatch(cmd('drill_inject_event', {
-      drill_id: 'd1', event: { description: '风向突变', payload: { location: '5F' } },
+      drill_id: 'd1', event: { type: 'wind_shift', description: '风向突变', payload: { location: '5F', wind: '西北' } },
     }), SDK);
     const r = await dispatch(cmd('drill_query_state', { drill_id: 'd1' }), SDK);
     expect(r.result).toMatchObject({
       active: true,
       status: 'running',
       seed: { floor: '5F', trapped: 5 },
-      events: [{ kind: 'inject', emergency: '风向突变', location: '5F' }],
+      situation: { fireLevel: 1, trappedCount: 5, damageLevel: 0, wind: '西北' },
+      events: [{ kind: 'inject', type: 'wind_shift', emergency: '风向突变', location: '5F' }],
     });
   });
 
@@ -71,11 +72,14 @@ describe('drill_inject_event handler', () => {
   });
 
   it('对抗舱 running → appendInject 写入特情', async () => {
-    beginConfrontation({ plannedTotal: 3 });
+    beginConfrontation({
+      plannedTotal: 3,
+      seedScenario: { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#TEST' },
+    });
     const r = await dispatch(
       cmd('drill_inject_event', {
         drill_id: 'd1',
-        event: { type: 'explosion', description: '5层配电间爆炸' },
+        event: { type: 'explosion', description: '5层配电间爆炸', payload: { fireLevelDelta: 1 } },
       }),
       SDK,
     );
@@ -83,15 +87,29 @@ describe('drill_inject_event handler', () => {
     const events = getConfrontationState().events;
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe('inject');
+    expect(events[0].specialType).toBe('explosion');
     expect(events[0].emergency).toBe('5层配电间爆炸');
+    expect(getConfrontationState().situation.fireLevel).toBe(2);
   });
 
   it('event 缺 description 时回退 type,再回退占位文案', async () => {
     beginConfrontation({ plannedTotal: 3 });
-    await dispatch(cmd('drill_inject_event', { drill_id: 'd1', event: { type: 'wind_shift' } }), SDK);
+    await dispatch(cmd('drill_inject_event', { drill_id: 'd1', event: { type: 'wind_shift', payload: { wind: '西北' } } }), SDK);
     expect(getConfrontationState().events[0].emergency).toBe('wind_shift');
-    await dispatch(cmd('drill_inject_event', { drill_id: 'd1', event: {} }), SDK);
+    await dispatch(cmd('drill_inject_event', { drill_id: 'd1', event: { payload: { trappedDelta: 1 } } }), SDK);
     expect(getConfrontationState().events[1].emergency).toBe('外部注入特情');
+  });
+
+  it('同类型第二次注入 → error 且不写入 store', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '第一次爆炸', payload: { fireLevelDelta: 1 } },
+    }), SDK);
+    const r = await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '另一处爆炸', payload: { damageDelta: 1 } },
+    }), SDK);
+    expect(r).toEqual({ status: 'error' });
+    expect(getConfrontationState().events.filter((event) => event.kind === 'inject')).toHaveLength(1);
   });
 });
 

@@ -25,7 +25,7 @@ export const TRAINING_APP_ID = (process.env.NEXT_PUBLIC_TRAINING_APP_ID ?? '').t
 export const GLOBAL_ASSISTANT_APP_ID = (process.env.NEXT_PUBLIC_GLOBAL_AGENT_APP_ID ?? '').trim();
 
 /**
- * 演练指挥 agent app_id(演练推演的程序化决策 agent,经 AgentRunner 触发)。
+ * 演练指挥 agent app_id(对抗舱每轮特情后的动态指挥决策)。
  * 平台建「演练指挥官」应用后以 NEXT_PUBLIC_DRILL_COMMANDER_APP_ID 注入;
  * 未配回退通用 app(无指挥角色配置,3D 联动与决策质量受限——2026-08-17 实测)。
  */
@@ -45,9 +45,8 @@ export const DRILL_PLANNER_APP_ID = (process.env.NEXT_PUBLIC_DRILL_PLANNER_APP_I
 export const COMMAND_APP_ID = (process.env.NEXT_PUBLIC_COMMAND_APP_ID ?? '').trim() || COMMANDER_APP_ID;
 
 /**
- * 对抗 agent app_id(演练推演特情注入)。在 uagent 平台创建对抗 agent 应用后,
- * 以构建环境变量 NEXT_PUBLIC_ADVERSARY_APP_ID 注入即可启用——剧本侧按此值
- * 自动把 adversaryEveryNTicks 从 0 解禁,无需改代码。
+ * 对抗 agent app_id(对抗舱定时特情注入)。轮次、当前态势、历史特情和已用类型
+ * 由 ConfrontDriver 显式传入，不依赖旧 tick 引擎。
  */
 export const ADVERSARY_APP_ID = (process.env.NEXT_PUBLIC_ADVERSARY_APP_ID ?? '').trim();
 
@@ -70,7 +69,7 @@ function globalEntry(): { global?: string } {
 export const AGENT_APP_IDS: Record<ModuleKey, ModuleAgentIds> = {
   overview: { business: OVERVIEW_APP_ID, ...globalEntry() },
   objects: { business: OBJECTS_APP_ID, ...globalEntry() },
-  drill: { business: COMMANDER_APP_ID, ...globalEntry() },
+  drill: { business: DRILL_COMMANDER_APP_ID, ...globalEntry() },
   training: { business: TRAINING_APP_ID, ...globalEntry() },
   command: { business: COMMAND_APP_ID, ...globalEntry() },
 };

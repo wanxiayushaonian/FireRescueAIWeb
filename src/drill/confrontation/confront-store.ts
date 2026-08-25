@@ -6,13 +6,31 @@ import type { EvaluationDimension, EvaluationImprovement } from '@/lib/agent-eva
 
 export type ConfrontKind = 'inject' | 'adjust' | 'manual' | 'evaluate';
 
+export interface ConfrontationDelta {
+  readonly fireLevelDelta?: number;
+  readonly trappedDelta?: number;
+  readonly damageDelta?: number;
+  readonly wind?: string;
+}
+
+/** 本局可演化态势;每条特情的 delta 必须落到这里,下一轮 Agent 读取新状态。 */
+export interface ConfrontationSituation {
+  readonly fireLevel: number;
+  readonly trappedCount: number;
+  readonly damageLevel: number;
+  readonly wind?: string;
+}
+
 export interface ConfrontationEvent {
   readonly id: string;
   readonly seq: number;
   readonly kind: ConfrontKind;
   readonly emergency: string;
+  /** 对抗特情类型(wind_shift/explosion/...)，去重与评估的核心字段。 */
+  readonly specialType?: string;
   /** 特情位置(agent 原始 location,如 "5F影院放映厅";仅 inject 事件有,供特情卡展示/复查) */
   readonly location?: string;
+  readonly delta?: ConfrontationDelta;
   readonly adjustments?: readonly string[];
   readonly adopted?: boolean;
   readonly respondedWithinSec?: number;
@@ -48,6 +66,7 @@ export interface ConfrontationState {
   readonly seedError: string | null;
   readonly thinking: boolean;
   readonly seedScenario: ConfrontationSeed | null;
+  readonly situation: ConfrontationSituation;
   readonly events: readonly ConfrontationEvent[];
   readonly review: ConfrontationReview | null;
   readonly evaluating: boolean;
@@ -66,6 +85,7 @@ let conf: ConfrontationState = {
   seedError: null,
   thinking: false,
   seedScenario: null,
+  situation: { fireLevel: 0, trappedCount: 0, damageLevel: 0 },
   events: [],
   review: null,
   evaluating: false,
@@ -94,8 +114,9 @@ function genId(prefix: string): string {
 function cloneState(s: ConfrontationState): ConfrontationState {
   return {
     ...s,
-    events: s.events.map((e) => ({ ...e })),
+    events: s.events.map((e) => ({ ...e, delta: e.delta ? { ...e.delta } : undefined })),
     seedScenario: s.seedScenario ? { ...s.seedScenario } : null,
+    situation: { ...s.situation },
     review: s.review ? { ...s.review } : null,
     lastRound: s.lastRound ? { ...s.lastRound } : null,
   };
@@ -121,6 +142,7 @@ export function resetConfrontation(): void {
     seedError: null,
     thinking: false,
     seedScenario: null,
+    situation: { fireLevel: 0, trappedCount: 0, damageLevel: 0 },
     events: [],
     review: null,
     evaluating: false,
@@ -149,6 +171,11 @@ export function beginConfrontation(opts?: {
     seedError: opts?.seedError ?? null,
     thinking: false,
     seedScenario: opts?.seedScenario ?? null,
+    situation: {
+      fireLevel: opts?.seedScenario ? 1 : 0,
+      trappedCount: opts?.seedScenario?.trapped ?? 0,
+      damageLevel: 0,
+    },
     events: [],
     review: null,
     evaluating: false,
@@ -176,10 +203,23 @@ export function appendInject(
     seq: seqCounter,
     kind: 'inject',
     emergency: evt.emergency,
+    specialType: evt.specialType,
     location: evt.location,
+    delta: evt.delta ? { ...evt.delta } : undefined,
     tSec: evt.tSec,
   };
-  conf = { ...conf, events: [...conf.events, node], review: null };
+  const delta = evt.delta;
+  conf = {
+    ...conf,
+    situation: {
+      fireLevel: Math.max(0, Math.min(5, conf.situation.fireLevel + (delta?.fireLevelDelta ?? 0))),
+      trappedCount: Math.max(0, conf.situation.trappedCount + (delta?.trappedDelta ?? 0)),
+      damageLevel: Math.max(0, Math.min(5, conf.situation.damageLevel + (delta?.damageDelta ?? 0))),
+      ...(delta?.wind ? { wind: delta.wind } : conf.situation.wind ? { wind: conf.situation.wind } : {}),
+    },
+    events: [...conf.events, node],
+    review: null,
+  };
   emit();
 }
 

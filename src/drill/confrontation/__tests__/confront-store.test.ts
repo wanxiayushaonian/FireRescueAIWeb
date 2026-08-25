@@ -28,6 +28,23 @@ describe('confront-store', () => {
     expect(s.active).toBe(true);
     expect(s.status).toBe('running');
     expect(s.seedScenario?.floor).toBe('5F');
+    expect(s.situation).toEqual({ fireLevel: 1, trappedCount: 5, damageLevel: 0 });
+  });
+
+  it('appendInject 保存类型/delta 并演化火势、被困、损伤和风向', () => {
+    beginConfrontation({ seedScenario: { building: 'b', floor: '5F', material: '电气', trapped: 2, seed: 's' } });
+    appendInject({
+      specialType: 'wind_shift',
+      emergency: '风向突变且新增被困',
+      location: '6F',
+      delta: { fireLevelDelta: 1, trappedDelta: 2, damageDelta: 1, wind: '西北' },
+      tSec: 12,
+    });
+    const s = getConfrontationState();
+    const event = s.events[0];
+    expect(event.specialType).toBe('wind_shift');
+    expect(event.delta).toEqual({ fireLevelDelta: 1, trappedDelta: 2, damageDelta: 1, wind: '西北' });
+    expect(s.situation).toEqual({ fireLevel: 2, trappedCount: 4, damageLevel: 1, wind: '西北' });
   });
 
   it('appendInject 追加特情且 seq 自增', () => {

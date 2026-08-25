@@ -3,13 +3,18 @@
 // 特情后 2.5s 生成调整 → 人响应 → 结束评估。
 import type { ConfrontAdapter } from './confront-adapter';
 import type {
+  ConfrontationEvent,
   ConfrontationSeed,
   ConfrontationReview,
+  ConfrontationSituation,
 } from './confront-store';
+import type { ConfrontRoundContext, SpecialEventOutput } from './confront-adapter';
+import { canonicalSpecialType, evaluateSpecialQuality } from './special-event-quality';
 
 export interface ConfrontAppIds {
   readonly planner: string;
   readonly adversary: string;
+  readonly commander: string;
 }
 
 export interface ConfrontDriverDeps {
@@ -20,7 +25,13 @@ export interface ConfrontDriverDeps {
   readonly drillId: string;
   readonly seed: ConfrontationSeed | null;
   /** 本局事件流(评估用:按响应用时判定 timely/delayed/ignored;Task 6 接入)。 */
-  readonly events?: readonly { readonly kind: string; readonly adopted?: boolean; readonly respondedWithinSec?: number }[];
+  readonly events?: readonly ConfrontationEvent[];
+  /** 实时读对抗舱真相源，避免 driver 只拿到开局空快照。 */
+  readonly getState?: () => {
+    readonly events: readonly ConfrontationEvent[];
+    readonly situation: ConfrontationSituation;
+    readonly deploy: readonly string[] | null;
+  };
 }
 
 type TimerId = ReturnType<typeof setTimeout>;
@@ -62,6 +73,37 @@ export class ConfrontDriver {
     };
   }
 
+  private state() {
+    return this.deps.getState?.() ?? {
+      events: this.deps.events ?? [],
+      situation: {
+        fireLevel: this.deps.seed ? 1 : 0,
+        trappedCount: this.deps.seed?.trapped ?? 0,
+        damageLevel: 0,
+      },
+      deploy: null,
+    };
+  }
+
+  private roundContext(round: number, rejectionReason?: string): ConfrontRoundContext {
+    const current = this.state();
+    const usedTypes = current.events
+      .filter((event) => event.kind === 'inject')
+      .map((event) => canonicalSpecialType({
+        specialType: event.specialType,
+        emergency: event.emergency,
+        location: event.location,
+      }))
+      .filter((type) => type !== 'unknown');
+    return {
+      round,
+      situation: current.situation,
+      recentEvents: current.events.slice(-8),
+      usedTypes: [...new Set(usedTypes)],
+      ...(rejectionReason ? { rejectionReason } : {}),
+    };
+  }
+
   /** 开局:生成初步部署(集成层调 beginConfrontation + seed 后调用)。 */
   startInitialPlan(cb: { onPlan(lines: string[]): void; onFail(): void }): void {
     if (!this.deps.seed) return;
@@ -74,33 +116,59 @@ export class ConfrontDriver {
   /** 规划特情注入节奏(先 thinking 骨架,再注入)。 */
   scheduleInject(seqIndex: number, cb: {
     onThinking(v: boolean): void;
-    onInject(evt: { emergency: string; location?: string }): void;
-    onInjectFail(): void;
+    onInject(evt: SpecialEventOutput): void;
+    onInjectFail(reason?: string): void;
   }): void {
     const first = seqIndex === 0;
     const gap = first ? 5000 + this.rand(15000, 25000) : this.rand(15000, 25000);
     this.later(Math.max(0, gap - 3000), () => cb.onThinking(true));
     this.later(gap, () => {
       cb.onThinking(false);
-      this.doInject(cb);
+      this.doInject(seqIndex + 1, cb);
     });
   }
 
-  private doInject(cb: {
-    onInject(evt: { emergency: string; location?: string }): void;
-    onInjectFail(): void;
+  private doInject(round: number, cb: {
+    onInject(evt: SpecialEventOutput): void;
+    onInjectFail(reason?: string): void;
   }): void {
-    const statusLine = this.statusLine();
-    void this.deps.adapter.injectSpecial(this.ctx(this.deps.appIds.adversary), statusLine).then((out) => {
-      if (out) cb.onInject({ emergency: out.emergency, location: out.location });
-      else cb.onInjectFail();
-    });
+    void (async () => {
+      const history = this.state().events;
+      const first = await this.deps.adapter.injectSpecial(
+        this.ctx(this.deps.appIds.adversary),
+        this.roundContext(round),
+      );
+      if (!first) { cb.onInjectFail('对抗 Agent 未返回合法特情'); return; }
+      let quality = evaluateSpecialQuality(first, history);
+      if (quality.accepted) {
+        cb.onInject({ ...first, specialType: quality.canonicalType });
+        return;
+      }
+
+      // 只重试一次:把程序判定的冲突原因显式告知 Agent。
+      const retry = await this.deps.adapter.injectSpecial(
+        this.ctx(this.deps.appIds.adversary),
+        this.roundContext(round, quality.reason),
+      );
+      if (!retry) { cb.onInjectFail(`重复特情已拒绝:${quality.reason}`); return; }
+      quality = evaluateSpecialQuality(retry, history);
+      if (!quality.accepted) {
+        cb.onInjectFail(`特情重试仍重复:${quality.reason}`);
+        return;
+      }
+      cb.onInject({ ...retry, specialType: quality.canonicalType });
+    })();
   }
 
   /** 特情后 2.5s 生成动态调整。 */
   scheduleAdjustment(injectText: string, cb: { onAdjust(lines: string[]): void }): void {
     this.later(2500, () => {
-      void this.deps.adapter.generateAdjustment(this.ctx(this.deps.appIds.planner), injectText).then((out) => {
+      const round = this.state().events.filter((event) => event.kind === 'inject').length;
+      void this.deps.adapter.generateAdjustment(
+        this.ctx(this.deps.appIds.commander),
+        injectText,
+        this.roundContext(Math.max(1, round)),
+      ).then((out) => {
         if (out?.adjustments) cb.onAdjust(out.adjustments);
       });
     });
@@ -108,7 +176,8 @@ export class ConfrontDriver {
 
   /** 结束评估:调用评估 agent,降级时按事件流生成 deterministic review。 */
   async finishEvaluate(elapsedSec: number): Promise<ConfrontationReview> {
-    const events = this.deps.events ?? [];
+    const state = this.state();
+    const events = state.events;
     const adjusts = events.filter((e) => e.kind === 'adjust');
     const outcomes = adjusts.map((e): ConfrontationReview['outcomes'][number] => {
       if (e.respondedWithinSec === undefined) return 'ignored';
@@ -132,6 +201,27 @@ export class ConfrontDriver {
         injectCount: events.filter((e) => e.kind === 'inject').length,
         adjustCount: adjusts.length,
         outcomes,
+        initialPlan: state.deploy,
+        finalSituation: state.situation,
+        uniqueSpecialTypes: [...new Set(events
+          .filter((event) => event.kind === 'inject')
+          .map((event) => canonicalSpecialType({
+            specialType: event.specialType,
+            emergency: event.emergency,
+            location: event.location,
+          })))],
+        timeline: events.map((event) => ({
+          seq: event.seq,
+          kind: event.kind,
+          type: event.specialType,
+          description: event.emergency,
+          location: event.location,
+          delta: event.delta,
+          adjustments: event.adjustments,
+          adopted: event.adopted,
+          respondedWithinSec: event.respondedWithinSec,
+          tSec: event.tSec,
+        })),
       },
     });
 
@@ -168,11 +258,6 @@ export class ConfrontDriver {
       archived: pass,
       source: 'fallback',
     };
-  }
-
-  private statusLine(): string {
-    const s = this.deps.seed;
-    return s ? `火势=1级;${s.floor} ${s.material}起火;被困${s.trapped}人` : '态势未知';
   }
 
   private rand(min: number, max: number): number {

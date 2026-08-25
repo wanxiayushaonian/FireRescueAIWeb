@@ -8,7 +8,12 @@ import {
   type ToolCallEvent,
 } from '@/lib/agent-chat-client';
 import { evaluateViaAgent } from '@/lib/agent-evaluate';
-import type { ConfrontationSeed } from './confront-store';
+import type {
+  ConfrontationDelta,
+  ConfrontationEvent,
+  ConfrontationSeed,
+  ConfrontationSituation,
+} from './confront-store';
 
 export interface AdapterDeps {
   readonly postChat?: (p: PostAgentChatParams) => Promise<ReadableStream<Uint8Array>>;
@@ -21,6 +26,22 @@ export interface AdapterCtx {
   readonly sceneId: string;
   readonly drillId: string;
   readonly seed: ConfrontationSeed;
+}
+
+export interface ConfrontRoundContext {
+  readonly round: number;
+  readonly situation: ConfrontationSituation;
+  readonly recentEvents: readonly ConfrontationEvent[];
+  readonly usedTypes: readonly string[];
+  /** 第一次候选被程序规则拒绝后，二次请求明确告知原因。 */
+  readonly rejectionReason?: string;
+}
+
+export interface SpecialEventOutput {
+  readonly specialType: string;
+  readonly emergency: string;
+  readonly location?: string;
+  readonly delta?: ConfrontationDelta;
 }
 
 function narrowObject(v: unknown): Record<string, unknown> | undefined {
@@ -86,7 +107,11 @@ export class ConfrontAdapter {
     this.logger = deps.logger ?? { warn: console.warn.bind(console), debug: console.debug.bind(console) };
   }
 
-  private async run(content: string, ctx: AdapterCtx): Promise<ReadableStream<Uint8Array>> {
+  private async run(
+    content: string,
+    ctx: AdapterCtx,
+    roundContext?: ConfrontRoundContext,
+  ): Promise<ReadableStream<Uint8Array>> {
     this.logger.debug('[confront-adapter] run', { appId: ctx.appId, buildingId: ctx.buildingId, sceneId: ctx.sceneId, drillId: ctx.drillId, contentLength: content.length });
     return this.postChat({
       content,
@@ -95,7 +120,21 @@ export class ConfrontAdapter {
         scene_id: ctx.sceneId,
         building_id: ctx.buildingId,
         drill_id: ctx.drillId,
-        status: { fireFloor: ctx.seed.floor, trappedCount: ctx.seed.trapped },
+        status: roundContext ? {
+          ...roundContext.situation,
+          fireFloor: ctx.seed.floor,
+          round: roundContext.round,
+          usedSpecialTypes: roundContext.usedTypes,
+          recentEvents: roundContext.recentEvents.slice(-6).map((event) => ({
+            seq: event.seq,
+            kind: event.kind,
+            type: event.specialType,
+            description: event.emergency,
+            location: event.location,
+            adjustments: event.adjustments,
+            adopted: event.adopted,
+          })),
+        } : { fireFloor: ctx.seed.floor, trappedCount: ctx.seed.trapped },
       },
     });
   }
@@ -134,13 +173,31 @@ export class ConfrontAdapter {
   /** 对抗 agent:注入特情(解析 inject_event)。 */
   async injectSpecial(
     ctx: AdapterCtx,
-    statusLine: string,
-  ): Promise<{ emergency: string; location?: string; delta?: { fireLevelDelta?: number; trappedDelta?: number; damageDelta?: number } } | null> {
+    round: ConfrontRoundContext,
+  ): Promise<SpecialEventOutput | null> {
     try {
+      const history = round.recentEvents.slice(-6).map((event) => ({
+        seq: event.seq,
+        kind: event.kind,
+        type: event.specialType,
+        description: event.emergency,
+        location: event.location,
+        adjustments: event.adjustments,
+        adopted: event.adopted,
+      }));
       const stream = await this.run(
-        `[导调触发] drill_id=${ctx.drillId}\n当前态势:${statusLine}\n` +
-          '请调用 inject_event 注入一个突发特情(event.type/description/payload.location/payload.fireLevelDelta 等)。',
+        `[导调触发] drill_id=${ctx.drillId};round=${round.round}\n` +
+          `当前态势:${JSON.stringify(round.situation)}\n` +
+          `已用特情类型:${JSON.stringify(round.usedTypes)}\n` +
+          `最近事件与决策:${JSON.stringify(history)}\n` +
+          (round.rejectionReason ? `上一候选已被拒绝:${round.rejectionReason}\n` : '') +
+          '请调用且只调用一次 inject_event。event 必须同时包含 type/description/payload;' +
+          'description 要写清具体位置、事故机理和直接影响，不得只写类型名。' +
+          '新特情必须与已用类型和最近事件显著不同，' +
+          '并通过 payload 给出 location 以及至少一个合理状态增量' +
+          '(fireLevelDelta/trappedDelta/damageDelta/wind)。',
         ctx,
+        round,
       );
       const tc = await firstToolCall(stream, 'inject_event');
       const args = narrowObject(tc?.args);
@@ -156,11 +213,12 @@ export class ConfrontAdapter {
       const fireLevelDelta = pickFinite(args, payload, 'fireLevelDelta');
       const trappedDelta = pickFinite(args, payload, 'trappedDelta');
       const damageDelta = pickFinite(args, payload, 'damageDelta');
+      const wind = pickStr(args, payload, 'wind') ?? pickStr(args, payload, 'to');
       const delta =
-        fireLevelDelta !== undefined || trappedDelta !== undefined || damageDelta !== undefined
-          ? { fireLevelDelta, trappedDelta, damageDelta }
+        fireLevelDelta !== undefined || trappedDelta !== undefined || damageDelta !== undefined || wind !== undefined
+          ? { fireLevelDelta, trappedDelta, damageDelta, wind }
           : undefined;
-      return { emergency, location, delta };
+      return { specialType: type ?? 'unknown', emergency, location, delta };
     } catch (err) {
       this.logger.warn('[confront-adapter] injectSpecial 失败:', err);
       return null;
@@ -171,11 +229,18 @@ export class ConfrontAdapter {
   async generateAdjustment(
     ctx: AdapterCtx,
     injectText: string,
+    round?: ConfrontRoundContext,
   ): Promise<{ adjustments: string[] } | null> {
     try {
       const stream = await this.run(
-        `[特情响应] 突发特情:${injectText}\n请调用 report_decision 给出部署/战法动态调整(action=调整动作,rationale=依据)。`,
+        `[指挥调整] 突发特情:${injectText}\n` +
+          `当前态势:${JSON.stringify(round?.situation ?? {})}\n` +
+          `最近事件与已有决策:${JSON.stringify(round?.recentEvents.slice(-6) ?? [])}\n` +
+          '请作为演练指挥官调用且只调用一次 report_decision，给出针对该特情、' +
+          '与已有部署不冲突的动态调整(action/rationale/tactic)。' +
+          'action 必须写具体部署变化，不得只写“内攻推进/外围控制/增援”等泛化标题。',
         ctx,
+        round,
       );
       const tc = await firstToolCall(stream, 'report_decision');
       const args = narrowObject(tc?.args);

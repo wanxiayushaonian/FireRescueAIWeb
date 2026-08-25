@@ -32,6 +32,7 @@ import DemoTag from '@/components/DemoTag';
 import { BUILDINGS, FIRE_MATERIALS } from '@/mock/drill';
 import {
   ADVERSARY_APP_ID,
+  DRILL_COMMANDER_APP_ID,
   DRILL_PLANNER_APP_ID,
 } from '@/lib/agent-app-ids';
 import {
@@ -61,6 +62,7 @@ export default function ConfrontationPanel() {
     () => ({
       planner: DRILL_PLANNER_APP_ID,
       adversary: ADVERSARY_APP_ID || DRILL_PLANNER_APP_ID,
+      commander: DRILL_COMMANDER_APP_ID,
     }),
     [],
   );
@@ -84,7 +86,12 @@ export default function ConfrontationPanel() {
     slot.appendChild(el);
     setSceneMigrated(true);
     return () => {
-      if (originParent) originParent.insertBefore(el, nextSibling);
+      if (originParent) {
+        // React/HMR/连续开关舱可能已重建原兄弟节点;旧 nextSibling 不再属于
+        // originParent 时直接 insertBefore 会抛 NotFoundError。锚点失效则安全追加。
+        const anchor = nextSibling?.parentNode === originParent ? nextSibling : null;
+        originParent.insertBefore(el, anchor);
+      }
       setSceneMigrated(false);
     };
   }, [containerRef]);
@@ -207,6 +214,7 @@ export default function ConfrontationPanel() {
       drillId: BUILDING_21_DRILL_ID,
       seed: conf.seedScenario,
       events: conf.events,
+      getState: () => ({ events: conf.events, situation: conf.situation, deploy: conf.deploy }),
     });
 
     const review = await driver.finishEvaluate(elapsedSec);
@@ -357,7 +365,9 @@ export default function ConfrontationPanel() {
                   ['着火建筑', conf.seedScenario.building],
                   ['着火楼层', conf.seedScenario.floor],
                   ['着火物质', conf.seedScenario.material],
-                  ['被困人数', `${conf.seedScenario.trapped} 人`],
+                  ['当前被困', `${conf.situation.trappedCount} 人`],
+                  ['当前火势', `${conf.situation.fireLevel} 级`],
+                  ['设施损伤', `${conf.situation.damageLevel} 级`],
                 ].map(([k, v]) => (
                   <motion.div
                     key={k}
@@ -457,9 +467,12 @@ export default function ConfrontationPanel() {
                 <span className="rounded border border-orange/50 px-1.5 py-px text-[11px] text-orange">
                   {conf.seedScenario.floor} 着火
                 </span>
-                <span className="rounded border border-red/50 px-1.5 py-px text-[11px] text-red">火势趋势：发展期</span>
+                <span className="rounded border border-red/50 px-1.5 py-px text-[11px] text-red">
+                  火势 {conf.situation.fireLevel} 级
+                </span>
                 <span className="text-[12px] text-text-3">
-                  {conf.seedScenario.material} · 被困 {conf.seedScenario.trapped} 人
+                  {conf.seedScenario.material} · 被困 {conf.situation.trappedCount} 人
+                  {conf.situation.wind ? ` · 风向 ${conf.situation.wind}` : ''}
                 </span>
               </>
             ) : (
@@ -546,6 +559,11 @@ export default function ConfrontationPanel() {
                           <span className="text-[13px] font-bold text-orange">
                             ⚠ 突发特情 #{inject.seq}：
                           </span>
+                          {inject.specialType && (
+                            <span className="rounded border border-violet/60 px-1 py-px font-mono text-[10px] text-violet">
+                              {inject.specialType}
+                            </span>
+                          )}
                           {inject.location && (
                             <span className="rounded border border-orange/50 bg-orange/10 px-1 py-px font-mono text-[11px] text-orange">
                               {inject.location}
@@ -555,6 +573,14 @@ export default function ConfrontationPanel() {
                           <span className="rounded border border-orange/60 px-1 py-px text-[11px] text-orange">对抗智能体</span>
                         </div>
                         <div className="mt-1.5 text-[13px] leading-5 text-text-1">{inject.emergency}</div>
+                        {inject.delta && (
+                          <div className="mt-1.5 flex flex-wrap gap-1 text-[10px] text-amber">
+                            {inject.delta.fireLevelDelta != null && inject.delta.fireLevelDelta !== 0 && <span>火势 {inject.delta.fireLevelDelta >= 0 ? '+' : ''}{inject.delta.fireLevelDelta}</span>}
+                            {inject.delta.trappedDelta != null && inject.delta.trappedDelta !== 0 && <span>被困 {inject.delta.trappedDelta >= 0 ? '+' : ''}{inject.delta.trappedDelta}</span>}
+                            {inject.delta.damageDelta != null && inject.delta.damageDelta !== 0 && <span>损伤 {inject.delta.damageDelta >= 0 ? '+' : ''}{inject.delta.damageDelta}</span>}
+                            {inject.delta.wind && <span>风向→{inject.delta.wind}</span>}
+                          </div>
+                        )}
                       </motion.div>
 
                       {/* 动态调整卡 / 响应骨架 */}
@@ -611,7 +637,7 @@ export default function ConfrontationPanel() {
                             <div className="mb-1.5 h-3.5 w-36 animate-pulse rounded bg-cyan/15" />
                             <div className="h-3 animate-pulse rounded bg-bg-panel-2" />
                             <div className="mt-1.5 flex items-center text-[12px] text-cyan">
-                              预案输出智能体响应中<Dots />
+                              演练指挥官响应中<Dots />
                             </div>
                           </div>
                         )

@@ -1,6 +1,9 @@
 # 对抗 / 评估 / 全局助手:最后三个 app 的平台配置稿
 
 > 日期:2026-08-18 | 目标:补齐 8 个平台应用中最后 3 个的配置文档(提示词 + 工具白名单)。
+>
+> ⚠️ **已被取代**:对抗/Evaluator 的现行配置见 `2026-08-25-confrontation-agent-prompts.md`;
+> 本文仍保留旧 AgentRunner/tick 架构，不得再直接复制到平台。
 > 三者代码接线早已就绪(`lib/agent-app-ids.ts` + Dockerfile/compose/deploy-server.sh 构建参数),
 > 拿到 app_id 写入服务器 `deploy/.env` 重建 bff 即生效。
 > 与 5 个业务 agent 的区别:这三个**不是模块业务助手**,各有特殊触发方式,平台提示词写法也不同。

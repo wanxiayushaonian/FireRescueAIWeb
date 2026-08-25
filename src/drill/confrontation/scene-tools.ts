@@ -17,6 +17,7 @@ import {
   appendInject,
   getConfrontationState,
 } from './confront-store';
+import { evaluateSpecialQuality } from './special-event-quality';
 
 export interface ConfrontSceneToolOptions {
   /** 当前浏览器对抗局 ID;用于拒绝其他会话串入。 */
@@ -67,6 +68,7 @@ export function registerConfrontSceneTools(
       status: s.status,
       elapsedSec: elapsed,
       seed: s.seedScenario,
+      situation: s.situation,
       thinking: s.thinking,
       plannedTotal: s.plannedTotal,
       deploy: s.deploy?.slice(0, 8).map((line) => line.slice(0, 160)) ?? null,
@@ -75,8 +77,10 @@ export function registerConfrontSceneTools(
         id: event.id,
         seq: event.seq,
         kind: event.kind,
+        type: event.specialType,
         emergency: event.emergency.slice(0, 160),
         location: event.location?.slice(0, 80),
+        delta: event.delta,
         adjustments: event.adjustments?.slice(0, 3).map((line) => line.slice(0, 120)),
         adopted: event.adopted,
         respondedWithinSec: event.respondedWithinSec,
@@ -95,13 +99,33 @@ export function registerConfrontSceneTools(
     assertDrillId(args);
     assertRunning();
     const event = narrowObject(args.event) ?? {};
+    const specialType = String(event.type ?? '').trim() || 'unknown';
     const description =
       String(event.description ?? '').trim() ||
       String(event.type ?? '').trim() ||
       '外部注入特情';
     const payload = narrowObject(event.payload);
     const location = String(payload?.location ?? event.location ?? '').trim() || undefined;
-    appendInject({ emergency: description, location, tSec: elapsedSec() });
+    const finite = (value: unknown): number | undefined => {
+      const n = Number(value);
+      return value != null && Number.isFinite(n) ? n : undefined;
+    };
+    const fireLevelDelta = finite(payload?.fireLevelDelta);
+    const trappedDelta = finite(payload?.trappedDelta);
+    const damageDelta = finite(payload?.damageDelta);
+    const wind = String(payload?.wind ?? payload?.to ?? '').trim() || undefined;
+    const hasDelta = fireLevelDelta != null || trappedDelta != null || damageDelta != null || wind != null;
+    const delta = hasDelta ? { fireLevelDelta, trappedDelta, damageDelta, wind } : undefined;
+    const candidate = { specialType, emergency: description, location, delta };
+    const quality = evaluateSpecialQuality(candidate, getConfrontationState().events);
+    if (!quality.accepted) throw new Error(`无效特情已拒绝:${quality.reason}`);
+    appendInject({
+      specialType: quality.canonicalType,
+      emergency: description,
+      location,
+      delta,
+      tSec: elapsedSec(),
+    });
     // 场景动作日志留痕（中文 target 的 highlight 执行器空转,与 driver 行为一致,仅日志可见）
     addSceneAction?.({
       action: 'highlight',

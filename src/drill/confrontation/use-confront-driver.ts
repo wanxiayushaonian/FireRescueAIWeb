@@ -36,6 +36,12 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
   useEffect(() => {
     const unsub = subscribeConfrontation((s) => {
       confRef.current = s;
+      // 评估/退出一旦把状态切离 running，立即清理注入链定时器。
+      // 不依赖 React render 后的另一个 effect，避免“评估完成后又追加特情”。
+      if (s.status !== 'running' && driverRef.current) {
+        driverRef.current.clearAll();
+        driverRef.current = null;
+      }
     });
     return unsub;
   }, []);
@@ -52,6 +58,10 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
       drillId: opts.drillId,
       seed: s.seedScenario,
       events: s.events,
+      getState: () => {
+        const current = confRef.current;
+        return { events: current.events, situation: current.situation, deploy: current.deploy };
+      },
     });
     driverRef.current = driver;
 
@@ -84,7 +94,14 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
         driver.scheduleInject(round, {
           onThinking: (v) => setThinking(v),
           onInject: (evt) => {
-            appendInject({ emergency: evt.emergency, location: evt.location, tSec: elapsedNow() });
+            if (confRef.current.status !== 'running') return; // 过期 Agent 回包不得污染已结束演练
+            appendInject({
+              specialType: evt.specialType,
+              emergency: evt.emergency,
+              location: evt.location,
+              delta: evt.delta,
+              tSec: elapsedNow(),
+            });
             // 3D 联动:特情楼层聚焦 + 飞向(场景日志同步记录;此前中文 target 的
             // highlight 动作会被执行器按"非 id"跳过,属空转)
             addSceneAction({
@@ -95,6 +112,7 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
             opts.onInjectScene?.(evt);
             driver.scheduleAdjustment(evt.emergency, {
               onAdjust: (lines) => {
+                if (confRef.current.status !== 'running') return;
                 appendAdjust({
                   seq: confRef.current.events.filter((e) => e.kind === 'inject').length,
                   adjustments: lines,
@@ -104,8 +122,9 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
             });
             scheduleNext();
           },
-          onInjectFail: () => {
-            showToast('特情注入失败，继续对抗');
+          onInjectFail: (reason) => {
+            if (confRef.current.status !== 'running') return;
+            showToast(reason ? `特情已拒绝:${reason}` : '特情注入失败，继续对抗');
             scheduleNext();
           },
         });
@@ -121,11 +140,4 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
     };
   }, [opts.adapter, opts.appIds.adversary, opts.appIds.planner, opts.buildingId, opts.sceneId, opts.drillId, opts.onInjectScene]);
 
-  // status 从 running 转走时清理未完成的 timers
-  useEffect(() => {
-    if (confRef.current.status !== 'running' && driverRef.current) {
-      driverRef.current.clearAll();
-      driverRef.current = null;
-    }
-  }, [confRef.current.status]);
 }

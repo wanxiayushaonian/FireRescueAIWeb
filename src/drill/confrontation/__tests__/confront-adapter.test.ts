@@ -21,6 +21,12 @@ function fakePost(events: unknown[]) {
 
 const SEED = { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#ABCD' };
 const CTX = { appId: 'app-1', buildingId: 'b-1', sceneId: 's-1', drillId: 'd-1', seed: SEED };
+const ROUND = {
+  round: 1,
+  situation: { fireLevel: 1, trappedCount: 5, damageLevel: 0 },
+  recentEvents: [],
+  usedTypes: [],
+} as const;
 
 describe('confront-adapter', () => {
   it('generateInitialPlan 从 text/report_decision 提取部署行', async () => {
@@ -42,7 +48,8 @@ describe('confront-adapter', () => {
         },
       ]),
     });
-    const out = await adapter.injectSpecial(CTX, '5F 被困 5 人,火势初起');
+    const out = await adapter.injectSpecial(CTX, ROUND);
+    expect(out?.specialType).toBe('wind_shift');
     expect(out?.emergency).toBe('风向突变浓烟倒灌');
     expect(out?.location).toBe('5F');
     expect(out?.delta?.fireLevelDelta).toBe(1);
@@ -52,7 +59,7 @@ describe('confront-adapter', () => {
     const adapter = new ConfrontAdapter({
       postChat: fakePost([{ type: 'text', content: '未知' }]),
     });
-    const out = await adapter.injectSpecial(CTX, '5F 被困 5 人,火势初起');
+    const out = await adapter.injectSpecial(CTX, ROUND);
     expect(out).toBeNull();
   });
 
@@ -67,7 +74,7 @@ describe('confront-adapter', () => {
         },
       ]),
     });
-    const out = await adapter.injectSpecial(CTX, '5F 被困 5 人,火势初起');
+    const out = await adapter.injectSpecial(CTX, ROUND);
     expect(out?.emergency).toBe('结构异响建议撤离');
     expect(out?.location).toBe('6F');
     expect(out?.delta?.trappedDelta).toBe(2);
@@ -109,7 +116,30 @@ describe('confront-adapter', () => {
         throw new Error('network');
       },
     });
-    const out = await adapter.injectSpecial(CTX, '5F 被困 5 人,火势初起');
+    const out = await adapter.injectSpecial(CTX, ROUND);
     expect(out).toBeNull();
+  });
+
+  it('injectSpecial 显式传入轮次、当前态势、已用类型和重试原因', async () => {
+    let request: PostAgentChatParams | undefined;
+    const adapter = new ConfrontAdapter({
+      postChat: async (p) => {
+        request = p;
+        return fakeStream([JSON.stringify({
+          type: 'tool-call', toolName: 'inject_event',
+          args: { event: { type: 'equipment_failure', description: '供水干线中断', payload: { location: '1F', damageDelta: 1 } } },
+        })]);
+      },
+    });
+    await adapter.injectSpecial(CTX, {
+      ...ROUND,
+      round: 2,
+      usedTypes: ['explosion'],
+      rejectionReason: '类型 explosion 已使用',
+    });
+    expect(request?.content).toContain('round=2');
+    expect(request?.content).toContain('explosion');
+    expect(request?.content).toContain('已被拒绝');
+    expect(request?.forwardedProps?.status).toMatchObject({ round: 2, usedSpecialTypes: ['explosion'] });
   });
 });

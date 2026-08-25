@@ -144,7 +144,27 @@ export const TOOLS = [
         drill_id: { type: 'string', description: '演练会话 id' },
         event: {
           type: 'object',
-          description: '事件载荷(自由结构,常见字段:type=wind_shift/explosion/secondary_trapped, description=事件描述(展示用), payload={...})',
+          description: '结构化特情。type 必须与本局已用类型不同;payload 必须包含 location 和至少一个非零态势增量。',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['wind_shift', 'explosion', 'secondary_trapped', 'equipment_failure', 'collapse', 'smoke_spread', 'evacuation_blocked'],
+              description: '特情类型;同一演练不得重复。',
+            },
+            description: { type: 'string', description: '可观测、可处置的特情描述。' },
+            payload: {
+              type: 'object',
+              properties: {
+                location: { type: 'string', description: '楼层/具体部位,如 13F避难层或 1F东侧供水干线。' },
+                fireLevelDelta: { type: 'number', description: '火势等级变化,-5 至 5。' },
+                trappedDelta: { type: 'number', description: '被困人数变化。' },
+                damageDelta: { type: 'number', description: '设施/结构损伤等级变化。' },
+                wind: { type: 'string', description: '新风向,wind_shift 时使用。' },
+              },
+              required: ['location'],
+            },
+          },
+          required: ['type', 'description', 'payload'],
         },
       },
       required: ['drill_id', 'event'],
