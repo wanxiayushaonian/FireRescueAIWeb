@@ -1,87 +1,80 @@
-# 演练对抗 v2 四角色 Agent 配置与提示词
+# 演练对抗 v2 四角色 Agent 配置索引
 
-> 版本: `confront-v2-2026-08-25`
+> 版本: `confront-v2.1-2026-08-25`
 >
-> 状态: 当前权威配置。替代 2026-08-17/18/19 文档中关于旧 AgentRunner/tick 引擎的描述。
+> 适配平台真实约束:平台只能按 MCP 服务勾选，不能在 App 内逐个勾选工具。
 
-## 一、运行时角色映射
+## 1. 现有两台 MCP 服务
 
-| 角色 | 环境变量 | 当前调用时机 | 核心工具 |
-|---|---|---|---|
-| Planner | `NEXT_PUBLIC_DRILL_PLANNER_APP_ID` | 开局一次，生成初始部署 | `report_decision` |
-| Adversary | `NEXT_PUBLIC_ADVERSARY_APP_ID` | 每 15–25s 一轮，生成不重复特情 | `inject_event`、可选只读查询 |
-| Commander | `NEXT_PUBLIC_DRILL_COMMANDER_APP_ID` | 每条合法特情后，生成针对性调整 | `report_decision`、可选只读查询 |
-| Evaluator | `NEXT_PUBLIC_EVALUATE_APP_ID` | 结束时读取完整事件—决策轨迹 | 无工具，只输出 JSON |
+### Node MCP（场景、档案、演练）
 
-人员保留最终权:对 Commander 调整选择“采纳”或“人工改派”。
+逻辑名:`firerescue-scene-drill`，当前服务为 8787 `/mcp`。
 
-## 二、Planner 提示词
+服务内会同时暴露:
 
-```markdown
-# 角色
-你是灭火救援演练的预案规划员。你只在对抗开局时工作一次，根据建筑、楼层、着火物质和被困人数生成初始部署。
+- 场景查询:`list_fire_devices`、`list_floors`、`query_scene_facilities`。
+- 场景动作:`focus_objects`、`focus_floors`、`fly_to`、`gis_fly_to`、`show_route`。
+- 回执查询:`get_scene_command_status`。
+- 建筑/预案查询:`query_building_profile`、`query_facilities`、`query_key_parts`、`query_knowledge`。
+- 演练工具:`query_scene_state`、`inject_event`、`report_decision`。
 
-# 铁律
-1. 必须且只能调用一次 report_decision。
-2. decision.action 写力量编成+主要战法，30–60字。
-3. decision.rationale 引用本局关键数据，说明搜救、灭火、供水和安全管控顺序。
-4. 你不制造特情，不负责后续动态调整。
+### Python MCP（辖区业务、GIS派遣）
+
+逻辑名:`firerescue-business-mcp`，当前服务为 8788 `/mcp`。
+
+服务内会同时暴露:
+
+- `ping`
+- `query_units`
+- `query_stations`
+- `query_water_sources`
+- `geocode_address`
+- `query_incidents`
+- `plan_dispatch`
+- `analyze_response`
+
+## 2. 平台勾选方案
+
+| App | Node MCP | Python MCP | 原因 |
+|---|---:|---:|---|
+| Planner | ✓ | ✓ | 需建筑/预案与辖区力量/水源/派遣支撑初始部署 |
+| Adversary | ✓ | — | 需实时演练态势、建筑细节、知识库和 `inject_event`;不需派遣工具 |
+| Commander | ✓ | ✓ | 需演练态势/建筑数据与增援、供水、响应分析 |
+| Evaluator | — | — | 完整过程数据由调用方直接传入，评估阶段禁止外部工具引入不可控数据 |
+
+## 3. 按服务勾选的重要含义
+
+MCP 服务一旦勾选，App 就可能看到该服务内的所有工具。所以:
+
+1. Prompt 必须分别写出“本角色允许调用”和“虽可见但严禁调用”。
+2. 不得再在配置文档中写“只勾选某几个工具”。
+3. Prompt 约束只是行为防线，不是安全边界。真正的强权限隔离需要服务端按角色拆端点/密钥，不在本比赛版范围内。
+4. 程序化调用时，以用户消息中的结构化态势为本轮权威输入;平台系统 Prompt 提供稳定角色与方法论。
+
+## 4. 可直接复制到平台的完整提示词
+
+- [Planner——预案规划与初始部署](agents/confront-v2-planner.md)
+- [Adversary——导调对抗与特情生成](agents/confront-v2-adversary.md)
+- [Commander——现场指挥与动态调整](agents/confront-v2-commander.md)
+- [Evaluator——过程评估与复盘](agents/confront-v2-evaluator.md)
+
+## 5. 现行运行时分工
+
+```text
+Planner 生成初始部署
+  ↓
+Adversary 读取当前态势+历史，生成新特情
+  ↓
+程序去重/增量校验，特情落库并演化态势
+  ↓
+Commander 读取特情+演化态势+历史决策，上报调整
+  ↓
+人员采纳/人工改派
+  ↓
+Evaluator 读取完整 timeline 评分复盘
 ```
 
-## 三、Adversary 提示词
+## 6. 平台同步状态
 
-```markdown
-# 角色
-你是高层建筑火灾演练的导调对抗员。每次请求会明确给出:round、当前态势、已用特情类型、最近特情和已有决策。
-
-# 铁律
-1. 必须且只能调用一次 inject_event。
-2. type 从以下选择，且不得出现在已用类型中:
-   wind_shift / explosion / secondary_trapped / equipment_failure / collapse / smoke_spread / evacuation_blocked。
-3. description 必须与最近特情显著不同，不得只换地点或近义词。
-4. payload.location 必须是可定位楼层/部位。
-5. payload 必须含至少一个有效增量:
-   fireLevelDelta / trappedDelta / damageDelta / wind。全部为0或缺失将被拒绝。
-6. 特情必须与当前态势有因果关系，且能迫使 Commander 改变战术、力量或安全管控。
-7. 如收到“上一候选已被拒绝”，必须换一个未用类型和不同事故机理。
-
-# 输出示例
-{"drill_id":"...","event":{"type":"equipment_failure","description":"1F东侧主供水干线水带爆裂，5F内攻供水中断","payload":{"location":"1F东侧供水干线","damageDelta":1}}}
-```
-
-## 四、Commander 提示词
-
-```markdown
-# 角色
-你是演练对抗中的现场总指挥。每次收到一条新特情，以及当前演化态势、初始部署和历史决策。
-
-# 铁律
-1. 必须且只能调用一次 report_decision。
-2. action 必须直接针对当前特情，说明撤离/增援/改道/备用供水/排烟/搜救等可执行动作。
-3. rationale 必须引用当前火势、被困、损伤、风向或历史部署，不得给通用口号。
-4. 不得与已有决策冲突;需要撤销旧部署时，在 action 中明确写“撤销/替换”。
-5. 你不制造特情。最终是否采纳由人员决定。
-```
-
-## 五、Evaluator 提示词
-
-```markdown
-# 角色
-你是消防救援演练评估专家。输入包含初始部署、最终态势、特情类型集合和完整 timeline。
-
-# 铁律
-1. 只输出一个 JSON 对象，严格遵守调用方给出的 schema。
-2. 分别评估:特情多样性、决策针对性、前后部署一致性、响应时效、人工干预质量、最终态势。
-3. 若特情类型重复或描述高度相似，必须在“对抗质量”维度扣分并指出。
-4. 不能只根据总耗时推断成败，必须引用 timeline 中的具体特情和决策。
-5. 数据不足时明确写数据不足，不编造战果。
-```
-
-## 六、工具白名单
-
-- Planner: `report_decision`，可选 `query_building_profile/query_key_parts`。
-- Adversary: `inject_event`，可选 `query_scene_state/query_building_profile/query_key_parts/query_knowledge`。
-- Commander: `report_decision`，可选 `query_scene_state/query_building_profile/query_key_parts`。
-- Evaluator: 不挂 MCP。
-
-严禁交叉授权:Planner/Commander 不得拿 `inject_event`;Adversary 不得拿 `report_decision`。
+2026-08-25 只读检查确认:四个 App 的 `config.instructions` 与 `pub_config.instructions`
+仍是 2026-08-17–19 旧版。本文及四份分角色 Prompt 是新权威源，平台尚未同步。
