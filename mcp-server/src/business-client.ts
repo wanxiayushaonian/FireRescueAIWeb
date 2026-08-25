@@ -202,6 +202,14 @@ export async function getFacilities(
   buildingId: string,
   opts: { floor?: string; type?: string } = {},
 ): Promise<FacilitySummary[]> {
+  return (await getFacilitiesWithMeta(buildingId, opts)).items;
+}
+
+/** 设施台账 + 总数/截断元数据，供跨源对账判断结果是否完整。 */
+export async function getFacilitiesWithMeta(
+  buildingId: string,
+  opts: { floor?: string; type?: string } = {},
+): Promise<{ items: FacilitySummary[]; total: number; truncated: boolean }> {
   // znya cap: page_size ≤ 100(bbox 视口查询除外);用 100 拿全量单页。
   const page = await businessFetch<ZnyaFacilityPage>(
     `/api/business/fire-facilities?ref_type=key_building&ref_id=${encodeURIComponent(buildingId)}&page=1&page_size=100`,
@@ -209,7 +217,7 @@ export async function getFacilities(
   const items = page.items ?? [];
   const typeFilter = opts.type?.trim().toLowerCase();
   const floorFilter = opts.floor?.trim();
-  return items
+  const mapped = items
     .filter((f) => !typeFilter || s(f.facility_type).toLowerCase().includes(typeFilter))
     .filter((f) => !floorFilter || s(f.location_path).includes(floorFilter))
     .map((f) => ({
@@ -223,6 +231,7 @@ export async function getFacilities(
       aiDescription: s(f.ai_description),
       extraAttrs: f.extra_attrs ?? null,
     }));
+  return { items: mapped, total: page.total ?? mapped.length, truncated: (page.total ?? 0) > items.length };
 }
 
 /**

@@ -37,6 +37,7 @@
 - `query_building_profile`:确认建筑结构与周边风险。
 - `query_key_parts`:查重点部位、避难层、消控室、防火分区。
 - `query_facilities` / `query_scene_facilities`:设计与固定消防设施有关的故障。
+- `reconcile_building_facilities`:仅当要设计设施故障且台账/场景可能不一致时使用；不得把 `ledger_only` 设施写成场景内已发生故障。
 - `query_knowledge`:必要时参考真实预案中的典型风险，不照抄原文。
 - `inject_event`:本轮必须且只能调用一次，作为最终特情。
 

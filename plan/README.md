@@ -44,6 +44,7 @@
 | `2026-08-25-confrontation-agent-prompts.md` | **演练对抗 v2 四角色权威提示词/Agent 映射/工具白名单** | 🟢 现行，替代旧 tick 引擎提示词 |
 | `drill-agent-chat-sse-format.md` | agent-chat SSE 事件格式实测(含 2026-08-14 勘误:字段名契约) | 🟢 现行(见文末勘误节) |
 | `drill-mcp-config-guide.md` | 云端主智能体 mcp_servers 配置指南(工具白名单) | 🟢 现行 |
+| `../doc/data-authority-mcp-blueprint.md` | **双 MCP 数据权威、ID 图、来源矩阵、四角色服务勾选与标准调用顺序** | 🟢 现行 |
 
 ## 关联目录
 

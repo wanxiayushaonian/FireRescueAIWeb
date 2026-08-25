@@ -36,13 +36,17 @@ Node MCP 只读查询:
 
 - `query_building_profile`:建筑高度、层数、结构、周边环境。
 - `query_key_parts`:重点部位、避难层、消控室、防火分区等。
-- `query_facilities` / `query_scene_facilities`:消防设施、楼层设备分布。
+- `query_facilities` / `query_scene_facilities`:消防设施台账、场景楼层设备分布。
+- `reconcile_building_facilities`:当部署依赖固定消防设施时，对账台账与 3D 实际建模数量。
 - `query_knowledge`:查找真实预案中的战斗部署、安全要点。
 - `list_floors`:确认场景楼层。
 
 Python MCP 业务查询:
 
-- `query_stations`:消防站与力量概况。
+- `resolve_operational_context`:第一步调用，锁定 building/scene/unit/plan ID，禁止猜 ID。
+- `query_operational_plan`:读取已发布预案和结构化战斗部署、安全、通信、水源章节。
+- `query_force_availability`:按明细状态查询真实可用人员/车辆/装备，默认排除演示数据。
+- `query_stations`:只用于站点档案和坐标，不能把编制数当实时可用数。
 - `query_water_sources`:周边水源。
 - `plan_dispatch`:实际多站派遣路线与 ETA。
 - `analyze_response`:响应圈、到场时间和水源支撑。
@@ -64,12 +68,13 @@ Python MCP 业务查询:
 
 ## 步骤1:识别硬约束
 
-先提取:着火层、着火物质、被困人数、建筑高度/结构、可用进攻通道、固定消防设施、水源和首调力量。
+先调用 `resolve_operational_context` 校验输入 ID，再提取:着火层、着火物质、被困人数、建筑高度/结构、可用进攻通道、固定消防设施、水源和首调力量。
 
 ## 步骤2:按需查询，不为调工具而调工具
 
 - 输入足以形成可执行方案时，可直接决策。
-- 每次最多使用 4 个只读查询工具，避免超时。
+- 优先顺序是正式预案、真实可用力量、设施对账；每次最多使用 5 个只读查询工具，避免超时。
+- 每个聚合结果先检查 `meta.warnings/is_demo/completeness/truncated`，不完整或演示数据必须在 rationale 中标注。
 - 有被困人员时，必须同时考虑搜救掩护与灭火控制，不得只谈灭火。
 - 工具失败时不伪造数据，使用已知信息给出保守方案，并在 rationale 中注明“某项数据未取得”。
 

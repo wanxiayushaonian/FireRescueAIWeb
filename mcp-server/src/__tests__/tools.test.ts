@@ -35,6 +35,14 @@ vi.mock('../business-client.js', () => ({
   getFacilities: vi.fn().mockResolvedValue([
     { id: 'f1', facilityType: '消火栓', name: '一层消火栓', status: '正常' },
   ]),
+  getFacilitiesWithMeta: vi.fn().mockResolvedValue({
+    items: [
+      { id: 'f1', facilityType: '消火栓', name: '一层消火栓', status: '正常' },
+      { id: 'f2', facilityType: '感烟探测器', name: '二层感烟', status: '离线' },
+    ],
+    total: 2,
+    truncated: false,
+  }),
   getKeyParts: vi.fn().mockResolvedValue([
     { id: 'kf1', name: '避难层', floor: '15', func: '避难' },
   ]),
@@ -201,6 +209,33 @@ describe('tools', () => {
     expect(cmd.args).toEqual({});
   });
 
+  it('reconcile_building_facilities 同时对账 znya 台账与在线场景统计', async () => {
+    publishCommandMock.mockImplementationOnce((cmd) => {
+      recordCommandStatus(cmd.id, cmd.tool, 'ok', undefined, {
+        total: 10,
+        fireByTypeLabel: { '室内消火栓': 1, '感烟探测器': 3 },
+        fireByFloor: { '2F': 4 },
+        floors: ['2F'],
+      });
+    });
+    const res = await handleToolCall('reconcile_building_facilities', { building_id: 'b1' });
+    const parsed = JSON.parse(res.content[0].text) as {
+      data: { differences: Array<{ type: string; status: string }> };
+      meta: { completeness: number };
+    };
+    expect(publishCommandMock).toHaveBeenCalledWith(expect.objectContaining({ tool: 'query_scene_facilities' }));
+    expect(parsed.data.differences).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: '室内消火栓', status: 'matched' }),
+      expect.objectContaining({ type: '感烟探测器', status: 'count_mismatch' }),
+    ]));
+    expect(parsed.meta.completeness).toBe(1);
+  });
+
+  it('reconcile_building_facilities 缺 building_id → 错误', async () => {
+    const res = await handleToolCall('reconcile_building_facilities', {});
+    expect(res.isError).toBe(true);
+  });
+
   it('get_scene_command_status 返回 handler 结果(result 字段)', async () => {
     const cmdId = `cmd_${Date.now()}_res`;
     recordCommandStatus(cmdId, 'query_scene_facilities', 'ok', undefined, {
@@ -260,9 +295,9 @@ describe('tools', () => {
   });
 
   it('query_facilities 透传 floor/type 过滤参数', async () => {
-    const { getFacilities } = await import('../business-client.js');
+    const { getFacilitiesWithMeta } = await import('../business-client.js');
     await handleToolCall('query_facilities', { building_id: 'b1', floor: '三层', type: '消火栓' });
-    expect(getFacilities).toHaveBeenCalledWith('b1', { floor: '三层', type: '消火栓' });
+    expect(getFacilitiesWithMeta).toHaveBeenCalledWith('b1', { floor: '三层', type: '消火栓' });
   });
 
   it('query_facilities 缺 building_id → 错误', async () => {

@@ -1,9 +1,10 @@
 import { getSceneOverview, getFireDeviceList, getFloorList } from './bff-client.js';
-import { getBuildingProfile, getFacilities, getKeyParts, getKnowledge } from './business-client.js';
+import { getBuildingProfile, getFacilitiesWithMeta, getKeyParts, getKnowledge } from './business-client.js';
 import { querySceneState, injectEvent, reportDecision } from './drill-control.js';
 import { publishCommand } from './command-bus.js';
-import { getCommandStatus } from './command-status.js';
+import { getCommandStatus, waitForCommandStatus } from './command-status.js';
 import type { SceneCommand } from './types.js';
+import { reconcileFacilityCounts } from './facility-reconcile.js';
 
 export const TOOLS = [
   {
@@ -126,7 +127,7 @@ export const TOOLS = [
   // ─── 推演控制(云端 → 浏览器对抗舱;执行结果用 get_scene_command_status 查 ack)───
   {
     name: 'query_scene_state',
-    description: '查询在线浏览器对抗舱的实时演练快照(状态/灾情种子/运行时间/特情/动态调整/评估)。经 /scene-events 下发查询并等待 ack/result;浏览器离线或超时时 online=false,仅返回 MCP 转发计数,不伪造实时态势。',
+    description: '查询对抗舱演练快照(状态/灾情种子/特情/动态调整/评估)。在线浏览器回执时 online=true；离线或超时时若有 DrillSession 则 persisted=true 并返回最近快照（明确非实时），否则只返回转发计数。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -191,6 +192,17 @@ export const TOOLS = [
         floor: { type: 'string', description: '楼层过滤(楼层标签子串,如 "5F"/"B1";可选)' },
         type: { type: 'string', description: '类型过滤(类型名或中文标签子串,如 "IndoorFireHydrant"/"消火栓";可选)' },
       },
+    },
+  },
+  {
+    name: 'reconcile_building_facilities',
+    description: '对账 znya 消防设施台账与当前 uStudio 3D 场景树实际建模设施。返回按类型的 matched/ledger_only/scene_only/count_mismatch、台账状态和数据完整度。需要在线浏览器才能取得场景侧数据。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        building_id: { type: 'string', description: 'znya key_buildings.id，应先经 Python MCP resolve_operational_context 解析' },
+      },
+      required: ['building_id'],
     },
   },
   {
@@ -404,6 +416,43 @@ export async function handleToolCall(
     };
   }
 
+  if (name === 'reconcile_building_facilities') {
+    const buildingId = String(args.building_id ?? '').trim();
+    if (!buildingId) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'reconcile_building_facilities 缺少 building_id:请先调用 Python MCP resolve_operational_context' }],
+      };
+    }
+    const cmd: SceneCommand = {
+      id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      tool: 'query_scene_facilities',
+      args: {},
+      ts: Date.now(),
+    };
+    const ledgerPromise = getFacilitiesWithMeta(buildingId);
+    publishCommand(cmd);
+    const [ledger, status] = await Promise.all([
+      ledgerPromise,
+      waitForCommandStatus(cmd.id, 2500),
+    ]);
+    const result = status?.status === 'ok' && status.result && typeof status.result === 'object'
+      ? status.result as Parameters<typeof reconcileFacilityCounts>[1]
+      : null;
+    const reconciled = reconcileFacilityCounts(ledger.items, result, {
+      ledgerTruncated: ledger.truncated,
+      sceneOnline: Boolean(result),
+    });
+    reconciled.meta.warnings.push(...(
+      status?.status === 'error'
+        ? [status.message || '场景设施统计 handler 执行失败']
+        : !status
+          ? ['场景设施统计超时，浏览器可能离线']
+          : []
+    ));
+    return { content: [{ type: 'text', text: JSON.stringify(reconciled, null, 2) }] };
+  }
+
   if (name === 'query_building_profile') {
     const buildingId = String(args.building_id ?? '').trim();
     if (!buildingId) {
@@ -426,11 +475,16 @@ export async function handleToolCall(
     }
     const floor = args.floor != null ? String(args.floor) : undefined;
     const type = args.type != null ? String(args.type) : undefined;
-    const facilities = await getFacilities(buildingId, { floor, type });
+    const facilities = await getFacilitiesWithMeta(buildingId, { floor, type });
     return {
       content: [{
         type: 'text',
-        text: JSON.stringify({ total: facilities.length, facilities, truncated: facilities.length >= 100 }, null, 2),
+        text: JSON.stringify({
+          returned: facilities.items.length,
+          sourceTotal: facilities.total,
+          facilities: facilities.items,
+          truncated: facilities.truncated,
+        }, null, 2),
       }],
     };
   }

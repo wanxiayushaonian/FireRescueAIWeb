@@ -78,6 +78,38 @@ describe('http 鉴权与路由', () => {
     expect(await statusOf(`http://localhost:${port}/nope`)).toBe(404);
   });
 
+  it('DrillSession 需要鉴权并可 PUT/GET', async () => {
+    const { port } = await start();
+    const base = `http://localhost:${port}/drill-sessions/drill-http-test`;
+    expect(await statusOf(base)).toBe(401);
+
+    const put = await fetch(base, {
+      method: 'PUT',
+      headers: { 'x-app-key': APP_KEY, 'content-type': 'application/json' },
+      body: JSON.stringify({ snapshot: { status: 'running', events: [{ seq: 1 }] } }),
+    });
+    expect(put.status).toBe(200);
+    const saved = await put.json() as { revision: number; source: string };
+    expect(saved).toMatchObject({ revision: 1, source: 'browser' });
+
+    const get = await fetch(base, { headers: { 'x-app-key': APP_KEY } });
+    expect(get.status).toBe(200);
+    expect(await get.json()).toMatchObject({
+      drillId: 'drill-http-test',
+      snapshot: { status: 'running', events: [{ seq: 1 }] },
+    });
+  });
+
+  it('DrillSession 拒绝缺少 snapshot 的载荷', async () => {
+    const { port } = await start();
+    const res = await fetch(`http://localhost:${port}/drill-sessions/drill-http-invalid`, {
+      method: 'PUT',
+      headers: { 'x-app-key': APP_KEY, 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(res.status).toBe(400);
+  });
+
   it('/scene-events 空闲时按 heartbeatMs 发送心跳(防代理空闲断开)', async () => {
     const { port } = await start('', 30);
     const ac = new AbortController();

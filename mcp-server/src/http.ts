@@ -6,6 +6,10 @@ import { createMcpServer } from './server.js';
 import { subscribeCommands } from './command-bus.js';
 import { recordCommandStatus } from './command-status.js';
 import { checkAppKey } from './auth.js';
+import { drillSessionStore } from './drill-session-store.js';
+
+const DRILL_SESSION_BODY_LIMIT = 64 * 1024;
+const DRILL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 export function startHttp(opts: {
   port: number;
@@ -40,7 +44,7 @@ export function startHttp(opts: {
     res.setHeader('Access-Control-Allow-Origin', acaFor(req));
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-App-Key');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
   }
 
   // appKey 鉴权:优先 URL query 的 appKey,其次 x-app-key header;常量时间比较。
@@ -140,6 +144,59 @@ export function startHttp(opts: {
         res.writeHead(401); res.end('unauthorized'); return;
       }
       await transport.handlePostMessage(req, res);
+      return;
+    }
+
+    const drillSessionMatch = url.pathname.match(/^\/drill-sessions\/([^/]+)$/);
+    if (drillSessionMatch) {
+      // 浏览器经 BFF 主动同步对抗状态。该接口仅接收服务端 appKey，浏览器不持密钥。
+      if (!appKeyAuthorized(req, url)) {
+        res.writeHead(401); res.end('unauthorized'); return;
+      }
+      let drillId = '';
+      try {
+        drillId = decodeURIComponent(drillSessionMatch[1]);
+      } catch {
+        res.writeHead(400); res.end('invalid drill id'); return;
+      }
+      if (!DRILL_ID_PATTERN.test(drillId)) {
+        res.writeHead(400); res.end('invalid drill id'); return;
+      }
+      if (req.method === 'GET') {
+        const record = drillSessionStore.get(drillId);
+        res.writeHead(record ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify(record ?? { message: 'drill session not found' }));
+        return;
+      }
+      if (req.method === 'PUT') {
+        let body = '';
+        let oversized = false;
+        req.on('data', (chunk) => {
+          if (oversized) return;
+          body += chunk;
+          if (Buffer.byteLength(body, 'utf8') > DRILL_SESSION_BODY_LIMIT) oversized = true;
+        });
+        req.on('end', () => {
+          if (oversized) {
+            res.writeHead(413); res.end('payload too large'); return;
+          }
+          try {
+            const parsed = JSON.parse(body || '{}') as { snapshot?: unknown; source?: unknown };
+            if (!Object.prototype.hasOwnProperty.call(parsed, 'snapshot')) {
+              res.writeHead(400); res.end('snapshot required'); return;
+            }
+            const source = parsed.source === 'command-ack' ? 'command-ack' : 'browser';
+            const record = drillSessionStore.upsert(drillId, parsed.snapshot, source);
+            res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+            res.end(JSON.stringify(record));
+          } catch (err) {
+            console.error('[mcp] /drill-sessions parse failed:', err);
+            res.writeHead(400); res.end('bad json');
+          }
+        });
+        return;
+      }
+      res.writeHead(405); res.end('method not allowed');
       return;
     }
 

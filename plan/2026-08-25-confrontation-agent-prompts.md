@@ -1,6 +1,6 @@
 # 演练对抗 v2 四角色 Agent 配置索引
 
-> 版本: `confront-v2.1-2026-08-25`
+> 版本: `confront-v2.2-2026-08-25`
 >
 > 适配平台真实约束:平台只能按 MCP 服务勾选，不能在 App 内逐个勾选工具。
 
@@ -15,7 +15,7 @@
 - 场景查询:`list_fire_devices`、`list_floors`、`query_scene_facilities`。
 - 场景动作:`focus_objects`、`focus_floors`、`fly_to`、`gis_fly_to`、`show_route`。
 - 回执查询:`get_scene_command_status`。
-- 建筑/预案查询:`query_building_profile`、`query_facilities`、`query_key_parts`、`query_knowledge`。
+- 建筑/预案查询:`query_building_profile`、`query_facilities`、`query_key_parts`、`query_knowledge`、`reconcile_building_facilities`。
 - 演练工具:`query_scene_state`、`inject_event`、`report_decision`。
 
 ### Python MCP（辖区业务、GIS派遣）
@@ -30,6 +30,9 @@
 - `query_water_sources`
 - `geocode_address`
 - `query_incidents`
+- `resolve_operational_context`
+- `query_force_availability`
+- `query_operational_plan`
 - `plan_dispatch`
 - `analyze_response`
 

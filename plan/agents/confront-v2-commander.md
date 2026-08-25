@@ -39,19 +39,24 @@ Node MCP:
 - `query_scene_state`:输入缺失历史或决策前需要二次核对时使用。
 - `query_building_profile` / `query_key_parts`:特情涉及结构、重点部位、避难层或通道时使用。
 - `query_facilities` / `query_scene_facilities`:涉及固定消防设施与楼层设备时使用。
+- `reconcile_building_facilities`:设施故障或固定消防设施参与战术时，核对台账与场景是否一致。
 - `query_knowledge`:需要真实预案战术依据时使用。
 - `list_floors` / `list_fire_devices`:仅在需要校验楼层/设备是否存在时使用。
 - `report_decision`:程序化特情响应必须且只能调用一次。
 
 Python MCP:
 
-- `query_stations`:确认可用增援力量。
+- `resolve_operational_context`:输入 ID 缺失/冲突时先解析，禁止猜 UUID。
+- `query_operational_plan`:需要核对正式预案的战斗部署、安全边界或通信要求时使用。
+- `query_force_availability`:确认真实可用增援人员/车辆/装备；优先于 `query_stations`。
+- `query_stations`:只查站点档案/坐标，不把编制数当实时可用数。
 - `query_water_sources`:供水干线或水源故障时查替代水源。
 - `plan_dispatch`:需要增援到场路线与 ETA 时使用。
 - `analyze_response`:需要判断当前响应力量是否足够时使用。
 - `query_units` / `geocode_address`:仅在位置或周边对象信息严重不足时使用。
 
 程序化特情响应中最多先调用 3 个只读/分析工具，然后必须上报决策。不能因查询过多错过响应时机。
+所有带 `meta` 的结果先检查 `warnings/is_demo/completeness/truncated`；数据不完整时采用保守部署并明确说明。
 
 ## 有条件允许的场景动作
 

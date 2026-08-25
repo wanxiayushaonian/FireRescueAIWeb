@@ -8,6 +8,7 @@ import {
 } from '../drill-control.js';
 import { publishCommand } from '../command-bus.js';
 import { recordCommandStatus, __resetStatusesForTest } from '../command-status.js';
+import { drillSessionStore } from '../drill-session-store.js';
 
 vi.mock('../command-bus.js', () => ({
   publishCommand: vi.fn(),
@@ -68,6 +69,15 @@ describe('querySceneState(链路状态)', () => {
     expect(s.online).toBe(false);
     expect(s.queryCommandId).toMatch(/^cmd_/);
     expect(s.message).toMatch(/超时/);
+  });
+
+  it('浏览器离线时返回最近持久化快照并明确非实时', async () => {
+    drillSessionStore.upsert('d-persisted', { status: 'finished', events: [{ seq: 4 }] });
+    const s = await querySceneState('d-persisted');
+    expect(s.online).toBe(false);
+    expect(s.persisted).toBe(true);
+    expect(s.snapshot).toMatchObject({ status: 'finished', events: [{ seq: 4 }] });
+    expect(s.message).toMatch(/非实时/);
   });
 });
 

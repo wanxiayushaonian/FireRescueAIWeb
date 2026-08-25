@@ -18,6 +18,7 @@
 
 import type { SceneCommand } from './types.js';
 import { waitForCommandStatus } from './command-status.js';
+import { drillSessionStore } from './drill-session-store.js';
 
 /** 透传到 /scene-events 的命令 tool 名(web 端 scene-command-bus 按此名路由 handler)。 */
 const SCENE_TOOL_INJECT = 'drill_inject_event';
@@ -60,6 +61,10 @@ export interface DrillLinkState {
   message: string;
   queryCommandId?: string;
   snapshot?: unknown;
+  /** true 表示 snapshot 来自服务端最近一次持久化，而非当前在线浏览器。 */
+  persisted?: boolean;
+  sessionRevision?: number;
+  sessionUpdatedAt?: number;
   /** 本进程已转发的 inject_event 条数(观测用,不代表真实态势)。 */
   loggedEvents: number;
   /** 本进程已转发的 report_decision 条数(观测用)。 */
@@ -97,16 +102,27 @@ export async function querySceneState(
   const events = entries.filter((e) => e.kind === 'event').length;
   const decisions = entries.filter((e) => e.kind === 'decision').length;
   const lastTs = entries.length > 0 ? entries[entries.length - 1].ts : null;
-  const fallback = (message: string, queryCommandId?: string): DrillLinkState => ({
-    wired: true,
-    drillId,
-    online: false,
-    message,
-    ...(queryCommandId ? { queryCommandId } : {}),
-    loggedEvents: events,
-    loggedDecisions: decisions,
-    lastEntryTs: lastTs,
-  });
+  const fallback = (message: string, queryCommandId?: string): DrillLinkState => {
+    const persisted = drillSessionStore.get(drillId);
+    return {
+      wired: true,
+      drillId,
+      online: false,
+      message: persisted
+        ? `${message} 已返回服务端保存的最近快照（非实时）。`
+        : message,
+      ...(queryCommandId ? { queryCommandId } : {}),
+      ...(persisted ? {
+        snapshot: persisted.snapshot,
+        persisted: true,
+        sessionRevision: persisted.revision,
+        sessionUpdatedAt: persisted.updatedAt,
+      } : {}),
+      loggedEvents: events,
+      loggedDecisions: decisions,
+      lastEntryTs: lastTs,
+    };
+  };
 
   if (!sceneCommandSink) {
     return fallback('未提供场景命令通道;返回的仅是 MCP 本进程转发计数,不是浏览器实时态势。');
@@ -126,6 +142,7 @@ export async function querySceneState(
   if (status.status === 'error') {
     return fallback(status.message || '浏览器执行演练快照查询失败。', cmd.id);
   }
+  const session = drillSessionStore.upsert(drillId, status.result, 'command-ack');
   return {
     wired: true,
     drillId,
@@ -133,6 +150,9 @@ export async function querySceneState(
     message: '快照来自在线浏览器对抗舱当前状态。',
     queryCommandId: cmd.id,
     snapshot: status.result,
+    persisted: false,
+    sessionRevision: session.revision,
+    sessionUpdatedAt: session.updatedAt,
     loggedEvents: events,
     loggedDecisions: decisions,
     lastEntryTs: lastTs,

@@ -50,6 +50,9 @@ services:
     env_file: .env
     environment:
       WEB_BFF_URL: http://bff:3000
+      DRILL_SESSION_FILE: /data/drill-sessions.json
+    volumes:
+      - drill_sessions:/data
     ports:
       - "8787:8787"
     depends_on:
@@ -67,3 +70,6 @@ services:
 networks:
   fr-net:
     driver: bridge
+
+volumes:
+  drill_sessions:
