@@ -986,6 +986,7 @@ export default function ConfrontationPanel() {
             review={conf.review}
             events={conf.events}
             building={conf.seedScenario?.building ?? '未指定建筑'}
+            state={conf}
             onClose={() => setReviewOpen(false)}
           />
         )}

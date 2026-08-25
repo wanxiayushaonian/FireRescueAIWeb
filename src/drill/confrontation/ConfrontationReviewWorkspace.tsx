@@ -2,24 +2,49 @@
 
 import { motion } from 'framer-motion';
 import {
-  Bot, Check, ClipboardCheck, Clock, Stamp, TriangleAlert, Wrench, X,
+  Bot, Check, ClipboardCheck, Clock, Download, Stamp, TriangleAlert, Wrench, X,
 } from 'lucide-react';
-import type { ConfrontationEvent, ConfrontationReview } from './confront-store';
+import type { ConfrontationEvent, ConfrontationReview, ConfrontationState } from './confront-store';
 import { fmtT } from './confront-helpers';
 import { ScoreRing } from './confrontation-uis';
+import { buildDrillReport } from './drill-report';
+
+function downloadBlob(content: string, filename: string, mime: string): void {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export function ConfrontationReviewWorkspace({
   review,
   events,
   building,
+  state,
   onClose,
 }: {
   review: ConfrontationReview;
   events: readonly ConfrontationEvent[];
   building: string;
+  /** 完整对抗舱状态(P2 报告导出用:seed/态势/部署/事件)。 */
+  state: ConfrontationState;
   onClose: () => void;
 }) {
   const evidence = events.filter((event) => event.kind === 'inject' || event.kind === 'adjust' || event.kind === 'manual');
+  const elapsedSec = state.startedAt
+    ? Math.max(0, Math.round((Date.now() - state.startedAt) / 1000))
+    : (events.at(-1)?.tSec ?? 0);
+  const exportReport = () => {
+    const report = buildDrillReport(state, elapsedSec);
+    downloadBlob(report.markdown, `${report.title}.md`, 'text/markdown;charset=utf-8');
+  };
+  const exportJson = () => {
+    const report = buildDrillReport(state, elapsedSec);
+    downloadBlob(report.json, `${report.title}.json`, 'application/json;charset=utf-8');
+  };
   return (
     <motion.div
       className="fixed inset-0 z-[110] flex items-center justify-center bg-bg-deep/85 p-8 backdrop-blur-sm"
@@ -47,6 +72,20 @@ export function ConfrontationReviewWorkspace({
           <span className="ml-auto rounded border border-green/50 bg-green/10 px-2 py-0.5 text-[10px] font-bold text-green">
             {review.source === 'agent' ? 'REAL EVALUATOR' : 'FALLBACK RULES'}
           </span>
+          <button
+            onClick={exportReport}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-[12px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+            title="下载复盘报告(Markdown,含特情/决策/人工对比/评估)"
+          >
+            <Download className="h-3.5 w-3.5" />导出报告
+          </button>
+          <button
+            onClick={exportJson}
+            className="flex h-8 items-center gap-1.5 rounded-md border border-line px-3 text-[12px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+            title="下载完整演练数据(JSON)"
+          >
+            <Download className="h-3.5 w-3.5" />导出数据
+          </button>
           <button
             onClick={onClose}
             className="flex h-8 w-8 items-center justify-center rounded-md border border-line text-text-3 transition hover:border-line-glow hover:text-cyan"
