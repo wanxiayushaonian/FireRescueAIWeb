@@ -4,7 +4,7 @@ Read `NEXT_PUBLIC_LOCALE` before creating or changing user-facing UI. When it is
 
 # 工作区说明
 
-这是一个基于 Next.js App Router 的 UStudio / SoonSpace 数字孪生场景模板。模板通过 npm 依赖 `ustudio-sdk@2.0.1`，不要添加或引用模板 `vendor` 下的 SDK tgz。页面入口由 `components/SoonspaceSceneViewer.tsx` 和 `lib/soonspace-runtime.ts` 负责 SDK 生命周期、场景加载、WebSocket、插件面板和视频弹窗。
+这是一个基于 Next.js App Router 的 UStudio / SoonSpace 数字孪生场景模板。模板通过 npm 依赖 `ustudio-sdk@2.0.4`，不要添加或引用模板 `vendor` 下的 SDK tgz。页面入口由 `components/SoonspaceSceneViewer.tsx` 和 `lib/soonspace-runtime.ts` 负责 SDK 生命周期、场景加载、WebSocket、插件面板和视频弹窗。
 
 ## 生命周期与初始化
 
