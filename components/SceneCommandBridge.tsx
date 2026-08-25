@@ -5,6 +5,7 @@ import { manageSceneBridge } from '@/lib/scene-command-bus';
 import { addSceneAction } from '@/mock/sceneLog';
 import { registerConfrontSceneTools } from '@/drill/confrontation/scene-tools';
 import { useScene } from '@/components/SceneProvider';
+import { BUILDING_21_DRILL_ID } from '@/drill/building-21';
 
 /**
  * 桥接 MCP 命令流到 3D 场景。
@@ -19,7 +20,7 @@ import { useScene } from '@/components/SceneProvider';
 export function SceneCommandBridge() {
   const { recipeStore } = useScene();
   useEffect(() => {
-    registerConfrontSceneTools(addSceneAction);
+    registerConfrontSceneTools(addSceneAction, { drillId: BUILDING_21_DRILL_ID });
     // 默认订阅同源 BFF /api/scene-events(BFF 再带 appKey 连 mcp),浏览器无需持 appKey。
     const eventsUrl = process.env.NEXT_PUBLIC_SCENE_EVENTS_URL || '/api/scene-events';
     return manageSceneBridge(eventsUrl, { addSceneAction, store: recipeStore });

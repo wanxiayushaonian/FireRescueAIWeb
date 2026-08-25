@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
-  recordCommandStatus, getCommandStatus, pruneExpired, __resetStatusesForTest,
+  recordCommandStatus, getCommandStatus, waitForCommandStatus, pruneExpired, __resetStatusesForTest,
 } from '../command-status.js';
 
 beforeEach(() => {
@@ -40,5 +40,21 @@ describe('command-status', () => {
     recordCommandStatus('cmd_3', 'fly_to', 'error', 'first');
     recordCommandStatus('cmd_3', 'fly_to', 'ok');
     expect(getCommandStatus('cmd_3')!.status).toBe('ok');
+  });
+
+  it('waitForCommandStatus 等待后续 ack 并返回 result', async () => {
+    const waiting = waitForCommandStatus('cmd_wait', 1000);
+    recordCommandStatus('cmd_wait', 'drill_query_state', 'ok', undefined, { status: 'running' });
+    await expect(waiting).resolves.toMatchObject({
+      status: 'ok',
+      result: { status: 'running' },
+    });
+  });
+
+  it('waitForCommandStatus 超时 → null', async () => {
+    vi.useFakeTimers();
+    const waiting = waitForCommandStatus('cmd_timeout', 50);
+    await vi.advanceTimersByTimeAsync(51);
+    await expect(waiting).resolves.toBeNull();
   });
 });

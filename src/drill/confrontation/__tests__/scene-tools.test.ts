@@ -27,7 +27,37 @@ function cmd(tool: string, args: Record<string, unknown>) {
 beforeEach(() => {
   __resetForTest();
   resetConfrontation();
-  registerConfrontSceneTools();
+  registerConfrontSceneTools(undefined, { drillId: 'd1' });
+});
+
+describe('drill_query_state handler', () => {
+  it('未开始时也返回当前 idle 快照', async () => {
+    const r = await dispatch(cmd('drill_query_state', { drill_id: 'd1' }), SDK);
+    expect(r.status).toBe('ok');
+    expect(r.result).toMatchObject({ active: false, status: 'idle', elapsedSec: 0, events: [] });
+  });
+
+  it('运行时返回灾情种子与对抗事件', async () => {
+    beginConfrontation({
+      plannedTotal: 3,
+      seedScenario: { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#TEST' },
+    });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { description: '风向突变', payload: { location: '5F' } },
+    }), SDK);
+    const r = await dispatch(cmd('drill_query_state', { drill_id: 'd1' }), SDK);
+    expect(r.result).toMatchObject({
+      active: true,
+      status: 'running',
+      seed: { floor: '5F', trapped: 5 },
+      events: [{ kind: 'inject', emergency: '风向突变', location: '5F' }],
+    });
+  });
+
+  it('drill_id 不匹配 → error，避免串局', async () => {
+    const r = await dispatch(cmd('drill_query_state', { drill_id: 'other' }), SDK);
+    expect(r).toEqual({ status: 'error' });
+  });
 });
 
 describe('drill_inject_event handler', () => {

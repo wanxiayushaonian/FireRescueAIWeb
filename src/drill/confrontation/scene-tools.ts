@@ -18,6 +18,11 @@ import {
   getConfrontationState,
 } from './confront-store';
 
+export interface ConfrontSceneToolOptions {
+  /** 当前浏览器对抗局 ID;用于拒绝其他会话串入。 */
+  readonly drillId?: string;
+}
+
 /** 距对抗开局的秒数（confront-store 的 tSec 语义；未开局归 0）。 */
 function elapsedSec(): number {
   const { startedAt } = getConfrontationState();
@@ -37,11 +42,57 @@ function narrowObject(v: unknown): Record<string, unknown> | null {
 }
 
 /**
- * 注册对抗舱推演工具（drill_inject_event / drill_report_decision）。
+ * 注册对抗舱查询/推演工具。
  * @param addSceneAction 可选：写场景动作日志（与对抗舱 driver 的联动日志一致）。
  */
-export function registerConfrontSceneTools(addSceneAction?: AddSceneActionFn): void {
+export function registerConfrontSceneTools(
+  addSceneAction?: AddSceneActionFn,
+  options: ConfrontSceneToolOptions = {},
+): void {
+  const assertDrillId = (args: Record<string, unknown>): void => {
+    if (!options.drillId) return;
+    const incoming = String(args.drill_id ?? '').trim();
+    if (incoming !== options.drillId) {
+      throw new Error(`演练会话不匹配:期望 ${options.drillId}`);
+    }
+  };
+
+  registerSceneTool('drill_query_state', async (args) => {
+    assertDrillId(args);
+    const s = getConfrontationState();
+    const elapsed = s.startedAt ? Math.max(0, Math.round((Date.now() - s.startedAt) / 1000)) : 0;
+    return {
+      capturedAt: Date.now(),
+      active: s.active,
+      status: s.status,
+      elapsedSec: elapsed,
+      seed: s.seedScenario,
+      thinking: s.thinking,
+      plannedTotal: s.plannedTotal,
+      deploy: s.deploy?.slice(0, 8).map((line) => line.slice(0, 160)) ?? null,
+      // ack result 上限 4KB:只返回最近 6 条,并限制长文本/调整行数。
+      events: s.events.slice(-6).map((event) => ({
+        id: event.id,
+        seq: event.seq,
+        kind: event.kind,
+        emergency: event.emergency.slice(0, 160),
+        location: event.location?.slice(0, 80),
+        adjustments: event.adjustments?.slice(0, 3).map((line) => line.slice(0, 120)),
+        adopted: event.adopted,
+        respondedWithinSec: event.respondedWithinSec,
+        tSec: event.tSec,
+      })),
+      review: s.review ? {
+        score: s.review.score,
+        conclusion: s.review.conclusion.slice(0, 240),
+        archived: s.review.archived,
+        source: s.review.source,
+      } : null,
+    };
+  });
+
   registerSceneTool('drill_inject_event', async (args) => {
+    assertDrillId(args);
     assertRunning();
     const event = narrowObject(args.event) ?? {};
     const description =
@@ -60,6 +111,7 @@ export function registerConfrontSceneTools(addSceneAction?: AddSceneActionFn): v
   });
 
   registerSceneTool('drill_report_decision', async (args) => {
+    assertDrillId(args);
     assertRunning();
     const decision = narrowObject(args.decision) ?? {};
     const action = String(decision.action ?? '').trim() || '决策';

@@ -126,7 +126,7 @@ export const TOOLS = [
   // ─── 推演控制(云端 → 浏览器对抗舱;执行结果用 get_scene_command_status 查 ack)───
   {
     name: 'query_scene_state',
-    description: '查询演练链路状态。云端→浏览器对抗舱链路已接线,但 mcp 进程读不到浏览器实时态势(进程隔离)——返回已转发条数(观测用);实时态势请依赖剧本 seed 与 inject_event 输入,执行结果用 get_scene_command_status 查 ack。',
+    description: '查询在线浏览器对抗舱的实时演练快照(状态/灾情种子/运行时间/特情/动态调整/评估)。经 /scene-events 下发查询并等待 ack/result;浏览器离线或超时时 online=false,仅返回 MCP 转发计数,不伪造实时态势。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -438,7 +438,7 @@ export async function handleToolCall(
         content: [{ type: 'text', text: 'query_scene_state 缺少 drill_id:需提供演练会话 id' }],
       };
     }
-    const state = querySceneState(drillId);
+    const state = await querySceneState(drillId, publishCommand);
     return { content: [{ type: 'text', text: JSON.stringify(state, null, 2) }] };
   }
 

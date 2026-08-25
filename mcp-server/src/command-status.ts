@@ -14,6 +14,7 @@ export interface CommandStatus {
 const TTL_MS = 10 * 60 * 1000; // 10 分钟过期(演示期足够;防表无限增长)
 
 const statuses = new Map<string, CommandStatus>();
+const waiters = new Map<string, Set<(status: CommandStatus) => void>>();
 
 export function recordCommandStatus(
   cmdId: string,
@@ -22,7 +23,13 @@ export function recordCommandStatus(
   message?: string,
   result?: unknown,
 ): void {
-  statuses.set(cmdId, { cmdId, tool, status, message, result, ts: Date.now() });
+  const next = { cmdId, tool, status, message, result, ts: Date.now() } satisfies CommandStatus;
+  statuses.set(cmdId, next);
+  const listeners = waiters.get(cmdId);
+  if (listeners) {
+    waiters.delete(cmdId);
+    for (const resolve of listeners) resolve(next);
+  }
 }
 
 /** 查询命令执行状态;不存在/过期返回 null(调用方按"未执行或已过期"处理)。 */
@@ -49,7 +56,39 @@ export function pruneExpired(): number {
   return n;
 }
 
+/**
+ * 等待某条场景命令的浏览器回执。已有结果立即返回;超时返回 null。
+ * 查询类工具借此在一次 MCP tool call 中拿到 handler result,无需 Agent 二次轮询。
+ */
+export function waitForCommandStatus(cmdId: string, timeoutMs = 2000): Promise<CommandStatus | null> {
+  const existing = getCommandStatus(cmdId);
+  if (existing) return Promise.resolve(existing);
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const listeners = waiters.get(cmdId) ?? new Set<(status: CommandStatus) => void>();
+    const finish = (status: CommandStatus): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(status);
+    };
+    listeners.add(finish);
+    waiters.set(cmdId, listeners);
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const current = waiters.get(cmdId);
+      current?.delete(finish);
+      if (current?.size === 0) waiters.delete(cmdId);
+      resolve(null);
+    }, Math.max(0, timeoutMs));
+  });
+}
+
 /** 仅供测试复位。 */
 export function __resetStatusesForTest(): void {
   statuses.clear();
+  waiters.clear();
 }

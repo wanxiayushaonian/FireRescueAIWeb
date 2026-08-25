@@ -7,6 +7,7 @@ import {
   __resetDrillLogForTest,
 } from '../drill-control.js';
 import { publishCommand } from '../command-bus.js';
+import { recordCommandStatus, __resetStatusesForTest } from '../command-status.js';
 
 vi.mock('../command-bus.js', () => ({
   publishCommand: vi.fn(),
@@ -15,32 +16,58 @@ vi.mock('../command-bus.js', () => ({
 beforeEach(() => {
   vi.clearAllMocks();
   __resetDrillLogForTest();
+  __resetStatusesForTest();
 });
 
 describe('querySceneState(链路状态)', () => {
-  it('返回 wired=true + 计数 0', () => {
-    const s = querySceneState('d1');
+  it('无浏览器通道时明确降级 online=false', async () => {
+    const s = await querySceneState('d1');
     expect(s.wired).toBe(true);
     expect(s.drillId).toBe('d1');
+    expect(s.online).toBe(false);
     expect(s.loggedEvents).toBe(0);
     expect(s.loggedDecisions).toBe(0);
     expect(s.lastEntryTs).toBeNull();
-    expect(s.message).toMatch(/对抗舱/);
+    expect(s.message).toMatch(/不是浏览器实时态势/);
   });
 
-  it('inject + report 后计数 + lastEntryTs 更新', () => {
+  it('inject + report 后降级计数 + lastEntryTs 更新', async () => {
     injectEvent('d1', { type: 'wind_shift' });
     reportDecision('d1', { action: 'dispatch' });
-    const s = querySceneState('d1');
+    const s = await querySceneState('d1');
     expect(s.loggedEvents).toBe(1);
     expect(s.loggedDecisions).toBe(1);
     expect(s.lastEntryTs).toBeTypeOf('number');
   });
 
-  it('不同 drill_id 互不影响', () => {
+  it('不同 drill_id 互不影响', async () => {
     injectEvent('d1', { type: 'wind_shift' });
-    const s2 = querySceneState('d2');
+    const s2 = await querySceneState('d2');
     expect(s2.loggedEvents).toBe(0);
+  });
+
+  it('在线浏览器 ack/result → 返回真实快照', async () => {
+    const sink = (cmd: Parameters<typeof publishCommand>[0]) => {
+      expect(cmd.tool).toBe('drill_query_state');
+      expect(cmd.args).toEqual({ drill_id: 'd-live' });
+      recordCommandStatus(cmd.id, cmd.tool, 'ok', undefined, {
+        active: true,
+        status: 'running',
+        seed: { floor: '5F', trapped: 5 },
+        events: [{ kind: 'inject', emergency: '风向突变' }],
+      });
+    };
+    const s = await querySceneState('d-live', sink, 100);
+    expect(s.online).toBe(true);
+    expect(s.queryCommandId).toMatch(/^cmd_/);
+    expect(s.snapshot).toMatchObject({ status: 'running', seed: { floor: '5F' } });
+  });
+
+  it('浏览器无 ack → 超时降级且保留 queryCommandId', async () => {
+    const s = await querySceneState('d-timeout', vi.fn(), 0);
+    expect(s.online).toBe(false);
+    expect(s.queryCommandId).toMatch(/^cmd_/);
+    expect(s.message).toMatch(/超时/);
   });
 });
 

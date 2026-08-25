@@ -277,11 +277,19 @@ describe('tools', () => {
     expect(text).toContain('避难层');
   });
 
-  it('query_scene_state 返回 wired=true(链路已接对抗舱)', async () => {
+  it('query_scene_state 返回在线浏览器实时快照', async () => {
+    publishCommandMock.mockImplementationOnce((cmd) => {
+      recordCommandStatus(cmd.id, cmd.tool, 'ok', undefined, {
+        active: true,
+        status: 'running',
+        seed: { floor: '5F', trapped: 5 },
+      });
+    });
     const res = await handleToolCall('query_scene_state', { drill_id: 'd1' });
     const text = res.content[0].text;
     expect(text).toContain('"wired": true');
-    expect(text).toContain('对抗舱');
+    expect(text).toContain('"online": true');
+    expect(text).toContain('"status": "running"');
     expect(text).toContain('"drillId": "d1"');
   });
 

@@ -73,6 +73,29 @@ describe('connectSceneEvents', () => {
     expect(errSpy).not.toHaveBeenCalled();
   });
 
+  it('查询类 handler 返回值经 ack result 上报', async () => {
+    const instances = stubEventSource();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal('window', {});
+    vi.stubGlobal('fetch', fetchMock);
+    __resetForTest();
+    registerSceneTool('drill_query_state', async () => ({ status: 'running', events: [] }));
+
+    const disconnect = connectSceneEvents('/api/scene-events', () => ({}) as SceneSdkLike);
+    instances[0].onmessage?.({
+      data: JSON.stringify({ id: 'cmd-query-1', tool: 'drill_query_state', args: {}, ts: 0 }),
+    });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({
+      cmd_id: 'cmd-query-1',
+      tool: 'drill_query_state',
+      status: 'ok',
+      result: { status: 'running', events: [] },
+    });
+    disconnect();
+  });
+
   it('坏 JSON → console.error,不抛出、不断流', () => {
     const instances = stubEventSource();
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});

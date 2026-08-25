@@ -13,14 +13,16 @@
 //   - 前置条件:浏览器端对抗舱处于 running(未开启时 handler 抛错 → ack error)。
 //
 // 本模块职责:校验入参(tools.ts)+ 记日志(观测)+ 经 sink 转发场景命令。
-// query_scene_state 无法读取浏览器实时态势(进程隔离),返回链路状态 +
-// 本进程已转发条数(观测用),实时态势应由 agent 依赖剧本 seed 与 inject 输入。
+// query_scene_state 经同一命令通道请求浏览器快照,再等待 ack/result;
+// 浏览器离线/超时时明确降级为本进程转发计数,不伪造实时态势。
 
 import type { SceneCommand } from './types.js';
+import { waitForCommandStatus } from './command-status.js';
 
 /** 透传到 /scene-events 的命令 tool 名(web 端 scene-command-bus 按此名路由 handler)。 */
 const SCENE_TOOL_INJECT = 'drill_inject_event';
 const SCENE_TOOL_DECISION = 'drill_report_decision';
+const SCENE_TOOL_QUERY = 'drill_query_state';
 
 type LoggedEntry = {
   drillId: string;
@@ -50,11 +52,14 @@ export function __resetDrillLogForTest(): void {
   drillLog.clear();
 }
 
-/** 链路状态:云端→浏览器对抗舱链路已接线(wired=true),但读不到浏览器实时态势。 */
+/** 演练态势查询结果:在线时 snapshot 来自浏览器对抗舱真相源。 */
 export interface DrillLinkState {
   wired: true;
   drillId: string;
+  online: boolean;
   message: string;
+  queryCommandId?: string;
+  snapshot?: unknown;
   /** 本进程已转发的 inject_event 条数(观测用,不代表真实态势)。 */
   loggedEvents: number;
   /** 本进程已转发的 report_decision 条数(观测用)。 */
@@ -79,22 +84,55 @@ export interface DecisionAck {
 }
 
 /**
- * 查询演练态势:云端→浏览器链路已接线,但 mcp 进程读不到浏览器内对抗舱的
- * 实时态势(进程隔离)。返回链路状态 + 本进程已转发条数(观测用)。
- * 调用方(agent)应依赖剧本 seed 与 inject_event 输入做决策,
- * 执行结果用 get_scene_command_status 查 ack 确认。
+ * 查询演练态势:下发 drill_query_state 至在线浏览器,等待 handler 将
+ * confront-store 快照经 ack/result 回传。无 sink 或超时时降级返回转发日志,
+ * online=false 明确表示该结果不是实时态势。
  */
-export function querySceneState(drillId: string): DrillLinkState {
+export async function querySceneState(
+  drillId: string,
+  sceneCommandSink?: (cmd: SceneCommand) => void,
+  timeoutMs = 2000,
+): Promise<DrillLinkState> {
   const entries = drillLog.get(drillId) ?? [];
   const events = entries.filter((e) => e.kind === 'event').length;
   const decisions = entries.filter((e) => e.kind === 'decision').length;
   const lastTs = entries.length > 0 ? entries[entries.length - 1].ts : null;
+  const fallback = (message: string, queryCommandId?: string): DrillLinkState => ({
+    wired: true,
+    drillId,
+    online: false,
+    message,
+    ...(queryCommandId ? { queryCommandId } : {}),
+    loggedEvents: events,
+    loggedDecisions: decisions,
+    lastEntryTs: lastTs,
+  });
+
+  if (!sceneCommandSink) {
+    return fallback('未提供场景命令通道;返回的仅是 MCP 本进程转发计数,不是浏览器实时态势。');
+  }
+
+  const cmd: SceneCommand = {
+    id: `cmd_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    tool: SCENE_TOOL_QUERY,
+    args: { drill_id: drillId },
+    ts: Date.now(),
+  };
+  sceneCommandSink(cmd);
+  const status = await waitForCommandStatus(cmd.id, timeoutMs);
+  if (!status) {
+    return fallback('浏览器未在超时内返回演练快照;可能离线、命令流断开或页面未加载。', cmd.id);
+  }
+  if (status.status === 'error') {
+    return fallback(status.message || '浏览器执行演练快照查询失败。', cmd.id);
+  }
   return {
     wired: true,
     drillId,
-    message:
-      '云端→浏览器对抗舱链路已接线(inject/decision 经 /scene-events 转发执行),' +
-      '但 mcp 进程读不到浏览器实时态势;执行结果请用 get_scene_command_status 查 ack。',
+    online: true,
+    message: '快照来自在线浏览器对抗舱当前状态。',
+    queryCommandId: cmd.id,
+    snapshot: status.result,
     loggedEvents: events,
     loggedDecisions: decisions,
     lastEntryTs: lastTs,
