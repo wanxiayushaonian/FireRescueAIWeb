@@ -41,7 +41,7 @@ export function AgentActivityStrip({ activity }: { activity: ConfrontAgentActivi
       initial={{ height: 0, opacity: 0 }}
       animate={{ height: 'auto', opacity: 1 }}
       exit={{ height: 0, opacity: 0 }}
-      className="shrink-0 overflow-hidden border-b border-line bg-bg-panel/95"
+      className="shrink-0 overflow-hidden rounded-lg border border-line bg-bg-panel/90 shadow-[0_8px_24px_rgba(0,0,0,.32)] backdrop-blur-md"
     >
       <div className="flex min-h-[72px] items-center gap-3 px-4 py-2.5">
         <motion.span

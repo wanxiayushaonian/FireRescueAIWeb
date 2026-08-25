@@ -5,7 +5,7 @@ import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Bot, Swords, TriangleAlert, Shuffle, ChevronDown,
-  Check, PencilLine, Timer,
+  Check, Focus, Maximize2, Minimize2, PencilLine, RotateCcw, Timer,
 } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { useScene } from '@/components/SceneProvider';
@@ -59,6 +59,8 @@ export default function ConfrontationPanel() {
   const [nowSec, setNowSec] = useState(0);
   const [hlId, setHlId] = useState<string | null>(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  const [sceneStageMode, setSceneStageMode] = useState<'standard' | 'immersive'>('standard');
+  const [sceneFocusLabel, setSceneFocusLabel] = useState('全楼');
   const scrollRef = useRef<HTMLDivElement>(null);
   const toastedGen = useRef(0);
   const openedReviewGen = useRef(0);
@@ -75,7 +77,13 @@ export default function ConfrontationPanel() {
   );
 
   // ---- 3D 联动:特情注入 → 楼层聚焦 + 飞向(经 ref 取最新句柄,回调保持稳定引用) ----
-  const { tree: sceneTree, recipeStore, runtime: sceneRuntime, containerRef } = useScene();
+  const {
+    tree: sceneTree,
+    recipeStore,
+    runtime: sceneRuntime,
+    containerRef,
+    initialView,
+  } = useScene();
   const sceneRef = useRef({ tree: sceneTree, recipeStore, runtime: sceneRuntime });
   sceneRef.current = { tree: sceneTree, recipeStore, runtime: sceneRuntime };
 
@@ -119,6 +127,7 @@ export default function ConfrontationPanel() {
       yExtend: !single,
       hideDevices: !single,
     });
+    setSceneFocusLabel(evt.location);
     // 镜头飞向楼层段整体中心(多层段合并包围盒,一次看全)
     if (rt && typeof rt.flyToObjects === 'function') {
       void rt.flyToObjects(storyIds).catch(() => {});
@@ -126,6 +135,34 @@ export default function ConfrontationPanel() {
       void rt.flyToObject(storyIds[0]).catch(() => {});
     }
   }, []);
+
+  const focusLatestSpecial = useCallback(() => {
+    const latest = [...getConfrontationState().events].reverse().find((event) => event.kind === 'inject');
+    if (!latest?.location) {
+      showToast('当前还没有可聚焦的特情位置');
+      return;
+    }
+    onInjectScene({ emergency: latest.emergency, location: latest.location });
+  }, [onInjectScene]);
+
+  const restoreWholeBuilding = useCallback(() => {
+    const { recipeStore: store, runtime: rt } = sceneRef.current;
+    if (!store || !rt) {
+      showToast('3D 场景尚未就绪');
+      return;
+    }
+    store.patchStructural({
+      visibleStories: null,
+      visibleBuildings: null,
+      mode: '3D',
+      detailLevel: 'full',
+      yExtend: false,
+      hideDevices: true,
+    });
+    setSceneFocusLabel('全楼');
+    if (initialView) void rt.setCameraViewpoint(initialView, true).catch(() => {});
+    showToast('已恢复全楼视图');
+  }, [initialView]);
 
   useConfrontationDriver({
     adapter,
@@ -187,6 +224,7 @@ export default function ConfrontationPanel() {
 
   const handleEnter = (flow: FetchState) => {
     setDemoState(flow);
+    setSceneFocusLabel('全楼');
     if (flow === 'loading') {
       beginConfrontation({ seedLoading: true, plannedTotal: randInt(3, 5) });
       return;
@@ -511,14 +549,14 @@ export default function ConfrontationPanel() {
             </span>
           </div>
 
-          <AnimatePresence initial={false}>
-            {conf.agentActivity && <AgentActivityStrip activity={conf.agentActivity} />}
-          </AnimatePresence>
-
-          {/* 实时 3D 缩略区:主画布容器经 slot 迁入(useLayoutEffect);场景未就绪时回落 SVG 占位 */}
+          {/* 3D 动态主舞台:标准 40vh；沉浸模式占满中央剩余区。 */}
           <div
             ref={slotRef}
-            className="relative h-[180px] shrink-0 overflow-hidden border-b border-line"
+            className={`relative overflow-hidden border-b border-line bg-bg-grid transition-[height] duration-300 ${
+              sceneStageMode === 'immersive'
+                ? 'min-h-[360px] flex-1'
+                : 'h-[clamp(300px,40vh,440px)] shrink-0'
+            }`}
             style={{
               backgroundImage:
                 'linear-gradient(rgba(28,58,84,.25) 1px, transparent 1px), linear-gradient(90deg, rgba(28,58,84,.25) 1px, transparent 1px)',
@@ -555,14 +593,52 @@ export default function ConfrontationPanel() {
               </>
             )}
             {sceneMigrated && (
-              <span className="pointer-events-none absolute bottom-2 left-3 z-10 rounded bg-bg-deep/70 px-1.5 py-px text-[11px] text-text-3">
-                实时场景 · 承接本局场景动作（可拖拽旋转/缩放）
-              </span>
+              <div className="pointer-events-none absolute bottom-2 left-3 z-10 flex items-center gap-2">
+                <span className="rounded border border-green/40 bg-bg-deep/80 px-1.5 py-px text-[11px] text-green">场景在线</span>
+                <span className="rounded bg-bg-deep/75 px-1.5 py-px text-[11px] text-text-2">
+                  当前聚焦：{sceneFocusLabel}
+                </span>
+              </div>
             )}
+            <div className="pointer-events-none absolute left-3 right-3 top-3 z-20">
+              <AnimatePresence initial={false}>
+                {conf.agentActivity && <AgentActivityStrip activity={conf.agentActivity} />}
+              </AnimatePresence>
+            </div>
+            <div className="absolute bottom-2 right-3 z-30 flex items-center gap-1.5 rounded-lg border border-line bg-bg-deep/80 p-1 backdrop-blur-md">
+              <button
+                onClick={focusLatestSpecial}
+                className="flex h-7 items-center gap-1 rounded px-2 text-[11px] text-text-2 transition hover:bg-cyan/10 hover:text-cyan"
+                title="飞向最近一条特情所在楼层"
+              >
+                <Focus className="h-3 w-3" />聚焦当前特情
+              </button>
+              <button
+                onClick={restoreWholeBuilding}
+                className="flex h-7 items-center gap-1 rounded px-2 text-[11px] text-text-2 transition hover:bg-cyan/10 hover:text-cyan"
+                title="取消楼层隔离并恢复全楼视角"
+              >
+                <RotateCcw className="h-3 w-3" />恢复全楼
+              </button>
+              <button
+                onClick={() => setSceneStageMode((mode) => mode === 'standard' ? 'immersive' : 'standard')}
+                className="flex h-7 items-center gap-1 rounded border border-line px-2 text-[11px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+                title={sceneStageMode === 'standard' ? '扩大3D主舞台' : '恢复标准布局'}
+              >
+                {sceneStageMode === 'standard'
+                  ? <><Maximize2 className="h-3 w-3" />沉浸视图</>
+                  : <><Minimize2 className="h-3 w-3" />标准视图</>}
+              </button>
+            </div>
           </div>
 
           {/* 特情-调整卡对滚动区（新卡在上） */}
-          <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div
+            ref={scrollRef}
+            className={`overflow-y-auto p-3 transition-[height] duration-300 ${
+              sceneStageMode === 'immersive' ? 'h-[180px] shrink-0 border-t border-line' : 'min-h-0 flex-1'
+            }`}
+          >
             {!conf.seedScenario && !conf.seedError ? (
               <div className="flex h-full flex-col items-center justify-center gap-3">
                 <img src="/empty-box.svg" alt="" className="h-[90px] w-[120px] opacity-80" />
