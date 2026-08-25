@@ -158,10 +158,22 @@ Python MCP:
     "tactic": "water | foam | rescue | ventilation",
     "cancel": ["需暂停/撤销的旧部署"],
     "add": ["新增部署"],
-    "success_signals": ["可观测的成功信号"]
+    "success_signals": ["可观测的成功信号"],
+    "evidence": [
+      { "kind": "plan", "label": "21号楼预案·内攻路线选择", "detail": "章节/版本/审核状态" },
+      { "kind": "archive", "label": "13F/25F避难层" },
+      { "kind": "force", "label": "康泰路专职队·水罐车3/登高车2", "detail": "更新时间" },
+      { "kind": "water", "label": "楼体41m市政消火栓" },
+      { "kind": "knowledge", "label": "历史预案·电气火灾处置" },
+      { "kind": "warning", "label": "力量明细缺失,按预案基准配置" }
+    ]
   }
 }
 ```
+
+`evidence` 为可选字段:每条 1–3 条即可,`kind` 必须是
+`plan|archive|force|water|knowledge|warning` 之一,`label` 写明具体依据;
+数据不完整或来自降级来源时必须用 `warning` 类型显式标注,不得掩盖。
 
 # 八、质量禁区
 

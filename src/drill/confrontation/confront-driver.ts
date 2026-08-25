@@ -14,6 +14,7 @@ import type {
   ConfrontRoundContext,
   SpecialEventOutput,
 } from './confront-adapter';
+import type { DecisionEvidence } from './confront-store';
 import { canonicalSpecialType, evaluateSpecialQuality } from './special-event-quality';
 import { selectEffectiveDeploy } from './confront-store';
 
@@ -197,7 +198,7 @@ export class ConfrontDriver {
   scheduleAdjustment(injectText: string, cb: {
     onStart?(): void;
     onProgress?: ConfrontAgentProgress;
-    onAdjust(lines: string[]): void;
+    onAdjust(out: { adjustments: string[]; evidence?: readonly DecisionEvidence[] }): void;
     onAdjustFail?(): void;
   }): void {
     this.later(2500, () => {
@@ -209,7 +210,7 @@ export class ConfrontDriver {
         this.roundContext(Math.max(1, round)),
         cb.onProgress,
       ).then((out) => {
-        if (out?.adjustments) cb.onAdjust(out.adjustments);
+        if (out?.adjustments) cb.onAdjust({ adjustments: out.adjustments, evidence: out.evidence });
         else cb.onAdjustFail?.();
       });
     });
@@ -286,6 +287,7 @@ export class ConfrontDriver {
           location: event.location,
           delta: event.delta,
           adjustments: event.adjustments,
+          evidence: event.evidence,
           adopted: event.adopted,
           respondedWithinSec: event.respondedWithinSec,
           tSec: event.tSec,

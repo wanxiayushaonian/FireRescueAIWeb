@@ -22,6 +22,14 @@ export interface ConfrontationSituation {
   readonly wind?: string;
 }
 
+/** P1a 证据化决策:report_decision 携带的数据依据标签(kind 对应数据权威来源)。 */
+export interface DecisionEvidence {
+  /** plan=正式预案 / archive=建筑档案 / force=真实力量 / water=消防水源 / knowledge=历史知识 / warning=数据告警 */
+  readonly kind: 'plan' | 'archive' | 'force' | 'water' | 'knowledge' | 'warning';
+  readonly label: string;
+  readonly detail?: string;
+}
+
 export interface ConfrontationEvent {
   readonly id: string;
   readonly seq: number;
@@ -39,6 +47,8 @@ export interface ConfrontationEvent {
   readonly note?: string;
   /** manual 事件:被改派的 adjust 事件 id(评估对比"建议 vs 人工"用)。 */
   readonly supersedes?: string;
+  /** P1a:决策证据标签(仅 adjust/manual 事件有)。 */
+  readonly evidence?: readonly DecisionEvidence[];
   readonly tSec: number;
 }
 
@@ -185,7 +195,11 @@ function genId(prefix: string): string {
 function cloneState(s: ConfrontationState): ConfrontationState {
   return {
     ...s,
-    events: s.events.map((e) => ({ ...e, delta: e.delta ? { ...e.delta } : undefined })),
+    events: s.events.map((e) => ({
+      ...e,
+      delta: e.delta ? { ...e.delta } : undefined,
+      evidence: e.evidence ? e.evidence.map((ev) => ({ ...ev })) : undefined,
+    })),
     seedScenario: s.seedScenario ? { ...s.seedScenario } : null,
     situation: { ...s.situation },
     review: s.review ? { ...s.review } : null,
@@ -309,14 +323,14 @@ export function appendAdjust(
     readonly seq: number;
     readonly emergency?: string;
   },
-): void {
-  if (hitOrMarkDuplicate({ kind: 'adjust', adjustments: evt.adjustments })) return;
+): void {  if (hitOrMarkDuplicate({ kind: 'adjust', adjustments: evt.adjustments })) return;
   const node: ConfrontationEvent = {
     id: evt.id ?? genId('ca'),
     seq: evt.seq,
     kind: 'adjust',
     emergency: '',
     adjustments: evt.adjustments,
+    evidence: evt.evidence ? evt.evidence.map((ev) => ({ ...ev })) : undefined,
     tSec: evt.tSec,
   };
   conf = { ...conf, events: [...conf.events, node] };

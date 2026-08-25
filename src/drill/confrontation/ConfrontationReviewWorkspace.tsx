@@ -144,6 +144,19 @@ export function ConfrontationReviewWorkspace({
                     <div className="mt-1 text-[12px] leading-5 text-text-2">
                       {event.kind === 'inject' ? event.emergency : event.adjustments?.join('；')}
                     </div>
+                    {event.evidence?.length ? (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {event.evidence.map((ev) => (
+                          <span
+                            key={`${ev.kind}:${ev.label}`}
+                            title={ev.detail ?? ev.label}
+                            className="rounded border border-line px-1 py-px text-[10px] text-text-3"
+                          >
+                            {ev.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                     {event.kind === 'manual' && event.note && (
                       <div className="mt-1 text-[11px] leading-5 text-text-3">处置原因：{event.note}</div>
                     )}

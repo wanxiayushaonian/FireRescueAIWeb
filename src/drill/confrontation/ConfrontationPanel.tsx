@@ -55,6 +55,16 @@ const STATE_OPTIONS: Array<{ value: FetchState; label: string }> = [
   { value: 'error', label: '失败' },
 ];
 
+/** P1a 证据标签配色(按数据权威来源)。 */
+const EVIDENCE_STYLE: Record<string, string> = {
+  plan: 'border-blue/60 bg-blue/10 text-blue',
+  archive: 'border-violet/60 bg-violet/10 text-violet',
+  force: 'border-green/60 bg-green/10 text-green',
+  water: 'border-cyan/60 bg-cyan/10 text-cyan',
+  knowledge: 'border-pink/60 bg-pink/10 text-pink',
+  warning: 'border-red/60 bg-red/10 text-red',
+};
+
 export default function ConfrontationPanel() {
   const [conf, setConf] = useState<ConfrontationState>(getConfrontationState());
   const [demoState, setDemoState] = useState<FetchState>('ok');
@@ -746,6 +756,19 @@ export default function ConfrontationPanel() {
                               </li>
                             ))}
                           </ul>
+                          {adjust.evidence?.length ? (
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              {adjust.evidence.map((ev) => (
+                                <span
+                                  key={`${ev.kind}:${ev.label}`}
+                                  title={ev.detail ?? ev.label}
+                                  className={`rounded border px-1 py-px text-[10px] ${EVIDENCE_STYLE[ev.kind] ?? 'border-line text-text-3'}`}
+                                >
+                                  {ev.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
                           <div className="mt-2 flex items-center gap-2">
                             {adjust.adopted === undefined && conf.status === 'running' ? (
                               <>

@@ -200,4 +200,31 @@ describe('drill_report_decision handler', () => {
     );
     expect(getConfrontationState().events.filter((e) => e.kind === 'adjust')).toHaveLength(1);
   });
+
+  it('P1a:总线 report_decision 携带 evidence 写入事件', async () => {
+    beginConfrontation({ plannedTotal: 3 });
+    await dispatch(cmd('drill_inject_event', {
+      drill_id: 'd1', event: { type: 'explosion', description: '5层爆炸', payload: { fireLevelDelta: 1 } },
+    }), SDK);
+    await dispatch(
+      cmd('drill_report_decision', {
+        drill_id: 'd1',
+        decision: {
+          action: '启用备用供水',
+          rationale: '主供水中断',
+          evidence: [
+            { kind: 'force', label: '康泰路专职队', detail: '09:00' },
+            { kind: 'warning', label: '力量明细未取得' },
+            { kind: 'bad', label: '丢弃' },
+          ],
+        },
+      }),
+      SDK,
+    );
+    const adj = getConfrontationState().events.find((e) => e.kind === 'adjust');
+    expect(adj?.evidence).toEqual([
+      { kind: 'force', label: '康泰路专职队', detail: '09:00' },
+      { kind: 'warning', label: '力量明细未取得' },
+    ]);
+  });
 });

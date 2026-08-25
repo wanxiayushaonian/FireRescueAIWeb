@@ -150,12 +150,13 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
                 `现场总指挥正在响应第 ${round + 1} 轮特情`,
               ),
               onProgress: showProgress,
-              onAdjust: (lines) => {
+              onAdjust: (out) => {
                 if (confRef.current.status !== 'running') return;
                 finishAgentActivity('success', `第 ${round + 1} 轮动态调整已形成`);
                 appendAdjust({
                   seq: confRef.current.events.filter((e) => e.kind === 'inject').length,
-                  adjustments: lines,
+                  adjustments: out.adjustments,
+                  evidence: out.evidence,
                   tSec: elapsedNow(),
                 });
                 scheduleNext();

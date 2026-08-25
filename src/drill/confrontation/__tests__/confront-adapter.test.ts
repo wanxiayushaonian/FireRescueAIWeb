@@ -63,6 +63,53 @@ describe('confront-adapter', () => {
     expect(out).toBeNull();
   });
 
+  it('P1a:generateAdjustment 解析 decision.evidence 证据标签,非法项丢弃', async () => {
+    const adapter = new ConfrontAdapter({
+      postChat: fakePost([
+        {
+          type: 'tool-call',
+          toolCallId: 'tc1',
+          toolName: 'report_decision',
+          args: {
+            decision: {
+              action: '启用备用供水干线',
+              rationale: '主供水中断',
+              evidence: [
+                { kind: 'force', label: '康泰路专职队·水罐车3', detail: '2026-08-25 09:00' },
+                { kind: 'water', label: '楼体41m市政消火栓' },
+                { kind: 'bogus', label: '非法类型' },
+                { kind: 'warning', label: '力量明细未取得' },
+              ],
+            },
+          },
+        },
+      ]),
+    });
+    const out = await adapter.generateAdjustment(CTX, '特情');
+    expect(out?.adjustments).toEqual(['启用备用供水干线', '主供水中断']);
+    expect(out?.evidence).toEqual([
+      { kind: 'force', label: '康泰路专职队·水罐车3', detail: '2026-08-25 09:00' },
+      { kind: 'water', label: '楼体41m市政消火栓' },
+      { kind: 'warning', label: '力量明细未取得' },
+    ]);
+  });
+
+  it('P1a:无 evidence 字段时返回 undefined', async () => {
+    const adapter = new ConfrontAdapter({
+      postChat: fakePost([
+        {
+          type: 'tool-call',
+          toolCallId: 'tc1',
+          toolName: 'report_decision',
+          args: { decision: { action: '出水压制', rationale: '控制火势' } },
+        },
+      ]),
+    });
+    const out = await adapter.generateAdjustment(CTX, '特情');
+    expect(out?.adjustments).toEqual(['出水压制', '控制火势']);
+    expect(out?.evidence).toBeUndefined();
+  });
+
   it('injectSpecial 兼容顶层平铺结构(event 嵌套不存在时)', async () => {
     const adapter = new ConfrontAdapter({
       postChat: fakePost([

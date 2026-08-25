@@ -18,6 +18,7 @@ import {
   getConfrontationState,
   isDuplicateEvent,
 } from './confront-store';
+import type { DecisionEvidence } from './confront-store';
 import { evaluateSpecialQuality } from './special-event-quality';
 
 export interface ConfrontSceneToolOptions {
@@ -145,11 +146,24 @@ export function registerConfrontSceneTools(
     const action = String(decision.action ?? '').trim() || '决策';
     const rationale = String(decision.rationale ?? '').trim();
     const line = rationale ? `${action}：${rationale}` : action;
+    // P1a:证据标签(decision.evidence 数组,容错解析;非法项丢弃)
+    const rawEvidence = Array.isArray(decision.evidence) ? decision.evidence : [];
+    const evidence = rawEvidence
+      .map((ev): DecisionEvidence | null => {
+        const o = narrowObject(ev);
+        if (!o) return null;
+        const kind = String(o.kind ?? '').trim() as DecisionEvidence['kind'];
+        const label = String(o.label ?? '').trim();
+        if (!['plan', 'archive', 'force', 'water', 'knowledge', 'warning'].includes(kind)) return null;
+        if (!label) return null;
+        return { kind, label, detail: o.detail != null ? String(o.detail) : undefined };
+      })
+      .filter((ev): ev is DecisionEvidence => ev !== null);
     // seq 语义与 confront-driver 一致:当前已注入特情轮数。
     // seq=0 = 开局初始部署上报(Planner,先于任何特情);特情轮次的调整从 1 起,
     // 与 inject 的 seq 对齐(卡片按 seq 配对;调整入库本身由 store 做双通道去重)。
     const s = getConfrontationState();
     const seq = s.events.filter((e) => e.kind === 'inject').length;
-    appendAdjust({ seq, adjustments: [line], tSec: elapsedSec() });
+    appendAdjust({ seq, adjustments: [line], evidence: evidence.length ? evidence : undefined, tSec: elapsedSec() });
   });
 }

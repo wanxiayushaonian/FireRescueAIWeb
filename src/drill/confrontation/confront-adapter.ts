@@ -13,6 +13,7 @@ import type {
   ConfrontationEvent,
   ConfrontationSeed,
   ConfrontationSituation,
+  DecisionEvidence,
 } from './confront-store';
 
 export interface AdapterDeps {
@@ -258,13 +259,13 @@ export class ConfrontAdapter {
     }
   }
 
-  /** 预案输出 agent:对特情给动态调整(解析 report_decision action/rationale)。 */
+  /** 预案输出 agent:对特情给动态调整(解析 report_decision action/rationale,含 P1a 证据标签)。 */
   async generateAdjustment(
     ctx: AdapterCtx,
     injectText: string,
     round?: ConfrontRoundContext,
     onProgress?: ConfrontAgentProgress,
-  ): Promise<{ adjustments: string[] } | null> {
+  ): Promise<{ adjustments: string[]; evidence?: readonly DecisionEvidence[] } | null> {
     try {
       const stream = await this.run(
         `[指挥调整] 突发特情:${injectText}\n` +
@@ -292,7 +293,21 @@ export class ConfrontAdapter {
       if (action) adjustments.push(action);
       if (rationale) adjustments.push(rationale);
       if (adjustments.length === 0) return null;
-      return { adjustments };
+      // P1a:证据标签(decision.evidence 数组 [{kind,label,detail?}],容错解析)
+      const rawEvidence = Array.isArray(decision?.evidence) ? decision.evidence : Array.isArray(args.evidence) ? args.evidence : [];
+      const evidence = rawEvidence
+        .map((ev): DecisionEvidence | null => {
+          const o = narrowObject(ev);
+          if (!o) return null;
+          const kind = String(o.kind ?? '').trim() as DecisionEvidence['kind'];
+          const label = String(o.label ?? o.title ?? '').trim();
+          if (!['plan', 'archive', 'force', 'water', 'knowledge', 'warning'].includes(kind)) return null;
+          if (!label) return null;
+          const detail = toStr(o.detail);
+          return { kind, label, detail };
+        })
+        .filter((ev): ev is DecisionEvidence => ev !== null);
+      return { adjustments, evidence: evidence.length ? evidence : undefined };
     } catch (err) {
       this.logger.warn('[confront-adapter] generateAdjustment 失败:', err);
       return null;
