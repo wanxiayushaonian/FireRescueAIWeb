@@ -1,5 +1,7 @@
 # 云端主智能体 mcp_servers 配置指南(子项目5 Task 5C.3)
 
+> 🔴 **已取代(2026-08-25)**:本文写于 tick 引擎时代,含逐工具白名单设想与旧建筑口径("258 米/58 层"等过时数据)。平台实际只能**按 MCP 服务勾选**,现行配置见 `2026-08-25-confrontation-agent-prompts.md` 与 `../doc/data-authority-mcp-blueprint.md`。
+
 > 日期:2026-08-09 | 目标:ustudio 平台主智能体应用配置 mcp_servers,让 agent 经云端调用 mcp-server:8787 的业务查询工具
 
 ---
