@@ -29,12 +29,20 @@ function normalize(value: string): string {
   return value.toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, '');
 }
 
-/** 允许 Agent 返回中英文/自由 type，最终归一为稳定特情类型。 */
-export function canonicalSpecialType(candidate: SpecialCandidate): string {
-  const haystack = normalize(`${candidate.specialType ?? ''}${candidate.emergency}`);
+function canonicalFromText(text: string): string {
+  const haystack = normalize(text);
   for (const [type, aliases] of TYPE_ALIASES) {
     if (aliases.some((alias) => haystack.includes(normalize(alias)))) return type;
   }
+  return 'unknown';
+}
+
+/** 允许 Agent 返回中英文/自由 type，最终归一为稳定特情类型。 */
+export function canonicalSpecialType(candidate: SpecialCandidate): string {
+  const declared = canonicalFromText(candidate.specialType ?? '');
+  if (declared !== 'unknown') return declared;
+  const described = canonicalFromText(candidate.emergency);
+  if (described !== 'unknown') return described;
   return normalize(candidate.specialType ?? '') || 'unknown';
 }
 
@@ -61,6 +69,16 @@ export function evaluateSpecialQuality(
   history: readonly ConfrontationEvent[],
 ): SpecialQualityResult {
   const previous = history.filter((event) => event.kind === 'inject');
+  const declaredType = canonicalFromText(candidate.specialType ?? '');
+  const describedType = canonicalFromText(candidate.emergency);
+  if (declaredType !== 'unknown' && describedType !== 'unknown' && declaredType !== describedType) {
+    return {
+      accepted: false,
+      duplicate: false,
+      canonicalType: declaredType,
+      reason: `特情类型与描述不一致:声明为 ${declaredType},描述更像 ${describedType}`,
+    };
+  }
   const canonicalType = canonicalSpecialType(candidate);
   const usedTypes = new Set(previous.map((event) => canonicalSpecialType({
     specialType: event.specialType,

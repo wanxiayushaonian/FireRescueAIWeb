@@ -26,6 +26,9 @@ export interface LibraryItem {
 
 let seq = 0;
 
+const STORAGE_KEY = 'firerescue:plan-library:v1';
+let hydrated = false;
+
 let items: LibraryItem[] = [
   {
     id: 'lib-seed-1',
@@ -63,6 +66,38 @@ let items: LibraryItem[] = [
 type Listener = (items: LibraryItem[]) => void;
 const listeners = new Set<Listener>();
 
+function persistLibrary(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(items));
+  } catch {
+    // Storage may be unavailable in private mode; the in-memory library remains usable.
+  }
+}
+
+function hydrateLibrary(): void {
+  if (hydrated || typeof window === 'undefined') return;
+  hydrated = true;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return;
+    const restored = parsed.filter((item): item is LibraryItem => {
+      if (!item || typeof item !== 'object') return false;
+      const value = item as Partial<LibraryItem>;
+      return typeof value.id === 'string' && typeof value.kind === 'string' && typeof value.title === 'string'
+        && typeof value.archivedAt === 'string' && Array.isArray(value.summary);
+    });
+    if (restored.length) {
+      items = restored;
+      listeners.forEach((fn) => fn(items));
+    }
+  } catch {
+    // Ignore corrupt or unavailable local storage and keep seed data.
+  }
+}
+
 function now(): string {
   const d = new Date();
   const p = (n: number) => String(n).padStart(2, '0');
@@ -96,6 +131,7 @@ export function addLibraryItem(item: Omit<LibraryItem, 'id' | 'archivedAt'> & { 
     }
   }
   items = [entry, ...items];
+  persistLibrary();
   listeners.forEach((fn) => fn(items));
   return entry;
 }
@@ -125,6 +161,7 @@ export function confirmImprovement(id: string): LibraryItem | undefined {
       source: '预案引擎',
     });
   }
+  persistLibrary();
   listeners.forEach((fn) => fn(items));
   return items.find((it) => it.id === id);
 }
@@ -138,6 +175,7 @@ export function subscribeLibrary(fn: Listener): () => void {
 /** 局部更新已入库条目（如后端建档成功后回写 backendPlanId），通知订阅者。 */
 export function patchLibraryItem(id: string, patch: Partial<LibraryItem>): void {
   items = items.map((it) => (it.id === id ? { ...it, ...patch } : it));
+  persistLibrary();
   listeners.forEach((fn) => fn(items));
 }
 
@@ -150,6 +188,7 @@ const wait = (min = 300, max = 800) =>
 
 /** 拉取预案库列表（Promise + 300-800ms 模拟延迟，state 支持 loading/empty/error/ok 演示） */
 export async function fetchLibrary(state: FetchState = 'ok'): Promise<LibraryItem[]> {
+  hydrateLibrary();
   if (state === 'loading') return new Promise(() => undefined);
   await wait();
   if (state === 'error') throw new Error('预案库服务连接失败（模拟）');

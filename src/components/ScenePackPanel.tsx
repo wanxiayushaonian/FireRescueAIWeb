@@ -144,7 +144,7 @@ export default function ScenePackPanel({ onJumpVisibility }: { onJumpVisibility?
       </section>
 
       <p className="text-[9px] leading-relaxed text-text-3/70">
-        连通图覆盖 3F-38F(场内导航可达域);1F/2F/B1F 与出入口未入图,导航自动降级示意路线。
+        当前场景楼层空间连通，场内导航优先使用后端连通图；端点未落在图节点时会自动回退到对象坐标重试。
         数据源:场景树实时解析(analyzeScenePack)。
       </p>
     </div>

@@ -31,6 +31,16 @@ describe('special-event-quality', () => {
     expect(out).toMatchObject({ accepted: true, duplicate: false, canonicalType: 'equipment_failure' });
   });
 
+  it('声明类型与描述语义冲突时拒绝入列', () => {
+    const out = evaluateSpecialQuality(
+      { specialType: 'wind_shift', emergency: '主供水干线水带爆裂，内攻供水中断', location: '5F', delta: { damageDelta: 1 } },
+      [],
+    );
+    expect(out.accepted).toBe(false);
+    expect(out.duplicate).toBe(false);
+    expect(out.reason).toContain('类型与描述不一致');
+  });
+
   it('没有态势增量的“只有文案”特情被拒绝', () => {
     const out = evaluateSpecialQuality(
       { specialType: 'wind_shift', emergency: '风向突变', location: '5F' },

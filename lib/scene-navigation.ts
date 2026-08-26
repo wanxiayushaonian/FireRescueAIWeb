@@ -262,9 +262,8 @@ type NavSource = NavEnd | { kind: 'external'; lonLat: { lon: number; lat: number
 let lastNavFailMessage: string | null = null;
 
 /** 两点导航:起点/终点打点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。
- * 端点优先用被点对象世界坐标(贴合点击位置),无坐标时回退 Space/Story 图节点。
- * 坐标连图不可达(设备包围盒中心可能落在连通图外的墙/空间边缘)时,自动回退
- * node_id 锚点重试一次——锚点是 kgraph 图内节点,可达性最稳。 */
+ * 首选 Space/Story 的图节点锚点，点击对象坐标只在锚点调用失败时重试。
+ * 设备包围盒中心可能落在墙体或连通图外，用它作为首选会降低成功率。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
   start: NavPoint,
@@ -275,18 +274,18 @@ export async function navigateBetween(
     start: start.outId ? runtime.getObjectWorldPosition(start.outId) : null,
     end: end.outId ? runtime.getObjectWorldPosition(end.outId) : null,
   };
-  const r = await navigateAndDraw(
+  const r = await navigateAndDraw(runtime, { nodeId: start.nodeId }, { nodeId: end.nodeId }, label, poi);
+  if (r) return r;
+  // 兼容图节点覆盖不完整的旧包：失败后再尝试点击位置。
+  const r2 = await navigateAndDraw(
     runtime,
     { nodeId: start.nodeId, position: start.position ?? null },
     { nodeId: end.nodeId, position: end.position ?? null },
     label,
     poi,
   );
-  if (r) return r;
-  // 坐标端点不可达 → 双端都退回图节点锚点重试(端点贴合点击位置是优化,不是硬需求)
-  const r2 = await navigateAndDraw(runtime, { nodeId: start.nodeId }, { nodeId: end.nodeId }, label, poi);
   if (r2) return r2;
-  const why = lastNavFailMessage ? `:${lastNavFailMessage}` : '(连通图目前覆盖 3F-38F 的室内点)';
+  const why = lastNavFailMessage ? `:${lastNavFailMessage}` : '';
   return { error: `两点间不可达${why}` };
 }
 
@@ -395,11 +394,18 @@ async function navigateAndDraw(
  * 至少 2 个有效点才算路径。
  */
 export function extractPathPoints(value: unknown): Array<{ x: number; y: number; z: number }> | null {
-  if (Array.isArray(value) && value.length >= 6 && value.every((item) => typeof item === 'number')) {
+  if (
+    Array.isArray(value) &&
+    value.length >= 6 &&
+    value.every((item) => typeof item === 'number' || (typeof item === 'string' && item.trim() !== '' && Number.isFinite(Number(item))))
+  ) {
     const flat: Array<{ x: number; y: number; z: number }> = [];
     for (let i = 0; i + 2 < value.length; i += 3) {
-      if ([value[i], value[i + 1], value[i + 2]].every(Number.isFinite)) {
-        flat.push({ x: value[i], y: value[i + 1], z: value[i + 2] });
+      const x = Number(value[i]);
+      const y = Number(value[i + 1]);
+      const z = Number(value[i + 2]);
+      if ([x, y, z].every(Number.isFinite)) {
+        flat.push({ x, y, z });
       }
     }
     return flat.length >= 2 ? flat : null;
@@ -441,7 +447,7 @@ export interface DrawRouteResult {
   error?: string;
   /** real=连通图真实路径(全场外/全路径或同层);false=启发式示意折线 */
   real?: boolean;
-  /** external=场外到场内;full=大门→目标全程;floor=目标层内(低区未建图);heuristic=示意 */
+  /** external=场外到场内;full=大门→目标全程;floor=目标层内;heuristic=示意 */
   mode?: 'external' | 'full' | 'floor' | 'heuristic';
   /** 真实路径总距离(米) */
   distanceM?: number;
@@ -499,14 +505,16 @@ export async function drawSceneRoute(
     const points = extractPathPoints(detail.path);
     if (!points) return '路线无有效路径点';
     clearSceneRoutes(runtime);
+    const startCoordinate = extractCoordinate(detail.start_coordinate);
+    const endCoordinate = extractCoordinate(detail.end_coordinate);
     await runtime.drawVirtualRoute(
       {
         route_id: routeId,
         route_name: routeName || String(detail.route_name ?? routeId),
         route_color: typeof detail.route_color === 'string' && detail.route_color ? detail.route_color : '#22d3ee',
         path: points.map((p) => ({ position: p })),
-        start_coordinate: detail.start_coordinate ?? null,
-        end_coordinate: detail.end_coordinate ?? null,
+        start_coordinate: startCoordinate,
+        end_coordinate: endCoordinate,
       } as Parameters<SoonspaceRuntime['drawVirtualRoute']>[0],
       { id: routeId },
     );
@@ -517,6 +525,22 @@ export async function drawSceneRoute(
   } catch {
     return '路线绘制失败';
   }
+}
+
+/** 场景路线端点兼容平台返回的 "x&y&z" 字符串。 */
+function extractCoordinate(value: unknown): { x: number; y: number; z: number } | null {
+  if (typeof value === 'string') {
+    const parts = value.split('&').map(Number);
+    return parts.length >= 3 && parts.slice(0, 3).every(Number.isFinite)
+      ? { x: parts[0], y: parts[1], z: parts[2] }
+      : null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const point = value as Record<string, unknown>;
+  const x = Number(point.x);
+  const y = Number(point.y);
+  const z = Number(point.z);
+  return [x, y, z].every(Number.isFinite) ? { x, y, z } : null;
 }
 
 /**
@@ -557,7 +581,7 @@ function resolveGatePosition(runtime: SoonspaceRuntime, plan: AttackRoutePlan): 
  * 绘制进攻路线(三层策略,自动升级):
  * 1. SDK 场内导航 大门层 Story→目标 Space/Story(kgraph 连通图;图覆盖后即为
  *    大门→目标全程真实路径,SDK 自动绘制步行路线);
- * 2. 目标层 Story→目标 Space(同层真实路径——演示包图目前覆盖 3F-38F,1F/2F/B1F 未建);
+ * 2. 目标层 Story→目标 Space(同层真实路径，作为全程图路径异常时的兜底);
  * 3. 启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用)。
  * 端点 node_id 一律用 Story/Space 的 twins id(门只能作图中间点,实测 101024)。
  * 真实路径(策略 1/2)走 SDK navigateWithinScene + POI 叠加;启发式(策略 3)自绘整线。
@@ -570,7 +594,7 @@ export async function drawAttackRoute(
     id ? runtime.getObjectWorldPosition(id) : null;
   const targetPos0 = targetPos(plan.targetOutId);
 
-  // 策略 1:大门层 → 目标(全程真实路径;依赖低区建图,建好自动生效)
+  // 策略 1:大门层 → 目标(整体楼层空间连通后的首选全程真实路径)
   if (plan.gateStoryNodeId) {
     const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
     if (endNode) {
@@ -581,7 +605,7 @@ export async function drawAttackRoute(
       if (r) return r;
     }
   }
-  // 策略 2:目标层 → 目标(同层真实路径,当前图覆盖 3F-38F 内即刻可用)
+  // 策略 2:目标层 → 目标(同层真实路径兜底)
   if (plan.targetStoryNodeId && plan.targetSpaceNodeId) {
     const r = await navigateAndDraw(runtime, { nodeId: plan.targetStoryNodeId }, { nodeId: plan.targetSpaceNodeId }, `进攻路线(层内) → ${plan.targetName}`, {
       end: targetPos0,

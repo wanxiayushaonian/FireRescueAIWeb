@@ -78,6 +78,7 @@ export default function ConfrontationPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const toastedGen = useRef(0);
   const openedReviewGen = useRef(0);
+  const restoredSceneGen = useRef(0);
   const hlTimer = useRef<number | null>(null);
 
   const adapter = useMemo(() => new ConfrontAdapter(), []);
@@ -212,6 +213,14 @@ export default function ConfrontationPanel() {
       setReviewOpen(true);
     }
   }, [conf.review, conf.status, conf.generation]);
+
+  // 结束评估后即刻恢复全楼视角，避免最后一条特情的楼层炸开状态泄漏到一级页面。
+  useEffect(() => {
+    if (conf.status === 'finished' && restoredSceneGen.current !== conf.generation) {
+      restoredSceneGen.current = conf.generation;
+      restoreWholeBuilding();
+    }
+  }, [conf.status, conf.generation, restoreWholeBuilding]);
 
   const injects = useMemo(() => conf.events.filter((e) => e.kind === 'inject'), [conf.events]);
   const adjusts = useMemo(() => conf.events.filter((e) => e.kind === 'adjust'), [conf.events]);
@@ -353,6 +362,7 @@ export default function ConfrontationPanel() {
     }
 
     driver.clearAll();
+    restoreWholeBuilding();
 
     showToast(review.archived ? '对抗演练已归档' : '评估完成');
   };
@@ -419,7 +429,10 @@ export default function ConfrontationPanel() {
       {/* 返回条 */}
       <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-bg-panel px-4">
         <button
-          onClick={exitConfrontation}
+          onClick={() => {
+            restoreWholeBuilding();
+            exitConfrontation();
+          }}
           className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-[12px] text-text-2 transition hover:border-line-glow hover:text-cyan"
         >
           <ArrowLeft className="h-3.5 w-3.5" />返回演练设置
@@ -976,7 +989,10 @@ export default function ConfrontationPanel() {
             )}
             {conf.status === 'finished' && (
               <button
-                onClick={exitConfrontation}
+                onClick={() => {
+                  restoreWholeBuilding();
+                  exitConfrontation();
+                }}
                 className="mt-2 h-9 w-full rounded-md border border-line text-[13px] text-text-2 transition hover:border-line-glow hover:text-cyan"
               >
                 返回演练设置

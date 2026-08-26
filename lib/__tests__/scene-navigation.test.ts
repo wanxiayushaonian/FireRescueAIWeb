@@ -124,6 +124,13 @@ describe('extractPathPoints(kgraph 返回容错解析)', () => {
     expect(extractPathPoints([1, 2])).toBeNull();
   });
 
+  it('扁平数字字符串数组按三元组解析——线上路线 detail.path 形态', () => {
+    expect(extractPathPoints(['30.48', '16.513107', '-63.63', '29.1', '15.2', '-62.4'])).toEqual([
+      { x: 30.48, y: 16.513107, z: -63.63 },
+      { x: 29.1, y: 15.2, z: -62.4 },
+    ]);
+  });
+
   it('kgraph path_nodes 形态:{coordinate:{x,y,z}} 对象与 "x&y&z" 串', () => {
     expect(extractPathPoints([{ coordinate: { x: 1, y: 2, z: 3 }, node_name: 'a' }, { coordinate: '4&5&6' }])).toEqual([
       { x: 1, y: 2, z: 3 },
@@ -201,7 +208,7 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     expect(calls.some((c) => c.op === 'navigateWithinScene')).toBe(true);
   });
 
-  it('打点带世界坐标 → 端点用 {x,y,z}(贴合点击位置),不再落空间中心', async () => {
+  it('打点带世界坐标时仍优先 node_id，避免对象包围盒中心落到图外', async () => {
     const { runtime, calls } = makeRuntime();
     const r = await navigateBetween(
       runtime,
@@ -210,8 +217,8 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     );
     expect(r?.real).toBe(true);
     expect(calls.find((c) => c.op === 'navigateWithinScene')?.args).toEqual({
-      source: { x: 10, y: 0.5, z: 20 },
-      target: { x: 30, y: 1.2, z: 40 },
+      source: { node_id: 'tw-space-a' },
+      target: { node_id: 'tw-space-b' },
     });
     // POI 依旧在点击对象位置
     const poiCall = calls.find((c) => c.op === 'drawVirtualRoute')?.args as Record<string, unknown>;
@@ -242,10 +249,10 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
   });
 
-  it('坐标端点不可达 → 自动回退双端 node_id 重试(设备包围盒中心可能落在连通图外)', async () => {
+  it('图节点不可达 → 自动回退点击坐标重试', async () => {
     const { runtime, calls } = makeRuntime({
       navigateResults: [
-        { reachable: false, path_id: null, message: 'source 不在连通图' },
+        { reachable: false, path_id: null, message: '图节点不可达' },
         { reachable: true, path_id: 'path-10', message: 'ok', total_distance: 88 },
       ],
     });
@@ -256,9 +263,9 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     );
     expect(r).toEqual({ real: true, mode: 'full', distanceM: 88 });
     const navCalls = calls.filter((c) => c.op === 'navigateWithinScene');
-    expect(navCalls).toHaveLength(2); // 第一次坐标端点,第二次回退 node_id
-    expect(navCalls[0]?.args).toEqual({ source: { x: 9, y: 1, z: 9 }, target: { x: 5, y: 1, z: 5 } });
-    expect(navCalls[1]?.args).toEqual({ source: { node_id: 'tw-space-a' }, target: { node_id: 'tw-space-b' } });
+    expect(navCalls).toHaveLength(2); // 第一次图节点,第二次回退点击坐标
+    expect(navCalls[0]?.args).toEqual({ source: { node_id: 'tw-space-a' }, target: { node_id: 'tw-space-b' } });
+    expect(navCalls[1]?.args).toEqual({ source: { x: 9, y: 1, z: 9 }, target: { x: 5, y: 1, z: 5 } });
   });
 
   it('双次均不可达 → 错误信息透传 SDK message(不再只有写死的覆盖范围文案)', async () => {
