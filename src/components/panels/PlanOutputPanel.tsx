@@ -287,6 +287,39 @@ export default function PlanOutputPanel() {
   const renderBody = () => {
     if (demoState === 'loading') return <PanelStateView state="loading" skeletonRows={8} />;
     if (demoState === 'error') return <PanelStateView state="error" onRetry={handleRetry} skeletonRows={8} />;
+    // 生成中优先于空态:plan 未返回前(60-120s)也要有实时反馈(plannerPhase 工具进度),
+    // 否则一直显示"尚未生成预案"空态,用户以为点击无效。
+    if (phase === 'generating' && demoState === 'ok') {
+      return (
+        <div className="flex h-full min-h-0 flex-col">
+          <div className="shrink-0 border-b border-line px-3 py-2">
+            <div className="mb-1 flex items-center gap-1 text-[12px] text-cyan">
+              {plannerPhase ?? '作战规划智能体推演中'}
+              {[0, 1, 2].map((i) => (
+                <motion.span
+                  key={i}
+                  animate={{ opacity: [0.2, 1, 0.2] }}
+                  transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
+                >.</motion.span>
+              ))}
+            </div>
+            <div className="h-1 overflow-hidden rounded-full bg-cyan-dim/30">
+              <motion.div
+                className="h-full w-1/3 rounded-full bg-cyan"
+                animate={reduced ? undefined : { x: ['-100%', '300%'] }}
+                transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+              />
+            </div>
+            <div className="mt-1.5 text-[11px] leading-4 text-text-3">
+              真实智能体正在核对档案、预案、力量与水源，通常需要 1–2 分钟；完成后自动展示结构化方案。
+            </div>
+          </div>
+          <div className="min-h-0 flex-1">
+            <PanelStateView state="loading" skeletonRows={6} />
+          </div>
+        </div>
+      );
+    }
     if (demoState === 'empty' || phase === 'idle' || !plan || !scenario) {
       return (
         <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
