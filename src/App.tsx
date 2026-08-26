@@ -5,6 +5,7 @@ import { Database, Building2 } from 'lucide-react';
 import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
 import SceneSwitcher from '@/components/SceneSwitcher';
+import ErrorBoundary from '@/components/ErrorBoundary';
 import type { ModuleKey } from '@/components/SideNav';
 import { SceneProvider, useScene } from '@/components/SceneProvider';
 import { SceneCommandBridge } from '@/components/SceneCommandBridge';
@@ -93,6 +94,14 @@ function SceneContainer({ module }: { module: ModuleKey }) {
     </div>
   );
 }
+
+const MODULE_LABELS: Record<ModuleKey, string> = {
+  overview: '态势总览',
+  objects: '对象总览',
+  training: '熟悉考核',
+  drill: '演练对抗',
+  command: '实战指挥',
+};
 
 function AppContent() {
   const [module, setModule] = useState<ModuleKey>('overview');
@@ -306,40 +315,42 @@ function AppContent() {
                 transition={{ duration: 0.25 }}
                 className="h-full w-full"
               >
-                {module === 'training' ? (
-                  <TrainingView
-                    onRequestAgentHint={(topic) =>
-                      setHintPrefill({
-                        text: `[六熟悉引导] 我正在学习「${topic}」这一步,请结合当前场景讲解重点,并带我到现场熟悉。`,
-                        ts: Date.now(),
-                      })
-                    }
-                  />
-                ) : module === 'command' ? (
-                  <CommandView
-                    onIncidentSelect={(inc) => setCommandSelectedIncident(inc)}
-                    onOpenDrillSession={() => {
-                      setModule('drill');
-                      if (!enabled) setEnabled(true);
-                    }}
-                  />
-                ) : module === 'drill' ? (
-                  <DrillView
-                    onOpenCommandSession={() => setModule('command')}
-                  />
-                ) : module === 'overview' ? (
-                  <RealGisMap
-                    onEnterScene={(id, buildingId) => {
-                      handleSelectScene(id);
-                      // 携带建筑 id 进入:自动选中右侧单建筑档案面板(与「查看档案」路径一致)
-                      if (buildingId) setObjectsBuildingId(buildingId);
-                      setModule('objects');
-                      // 与 handleSelect 一致:绕过侧边栏进入 3D 模块时也要解除懒加载守卫,
-                      // 否则 SceneProvider 因 enabled=false 永不加载场景
-                      if (!enabled) setEnabled(true);
-                    }}
-                  />
-                ) : null}
+                <ErrorBoundary key={module} moduleName={MODULE_LABELS[module]}>
+                  {module === 'training' ? (
+                    <TrainingView
+                      onRequestAgentHint={(topic) =>
+                        setHintPrefill({
+                          text: `[六熟悉引导] 我正在学习「${topic}」这一步,请结合当前场景讲解重点,并带我到现场熟悉。`,
+                          ts: Date.now(),
+                        })
+                      }
+                    />
+                  ) : module === 'command' ? (
+                    <CommandView
+                      onIncidentSelect={(inc) => setCommandSelectedIncident(inc)}
+                      onOpenDrillSession={() => {
+                        setModule('drill');
+                        if (!enabled) setEnabled(true);
+                      }}
+                    />
+                  ) : module === 'drill' ? (
+                    <DrillView
+                      onOpenCommandSession={() => setModule('command')}
+                    />
+                  ) : module === 'overview' ? (
+                    <RealGisMap
+                      onEnterScene={(id, buildingId) => {
+                        handleSelectScene(id);
+                        // 携带建筑 id 进入:自动选中右侧单建筑档案面板(与「查看档案」路径一致)
+                        if (buildingId) setObjectsBuildingId(buildingId);
+                        setModule('objects');
+                        // 与 handleSelect 一致:绕过侧边栏进入 3D 模块时也要解除懒加载守卫,
+                        // 否则 SceneProvider 因 enabled=false 永不加载场景
+                        if (!enabled) setEnabled(true);
+                      }}
+                    />
+                  ) : null}
+                </ErrorBoundary>
               </motion.div>
             </AnimatePresence>
           </div>

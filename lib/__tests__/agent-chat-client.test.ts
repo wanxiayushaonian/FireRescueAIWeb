@@ -2,7 +2,13 @@
 // 验证 agent-chat-client:postAgentChat(请求契约)+ parseAgentChatSSE(流式解析 + args 二次 parse)。
 // vitest node 环境;固定 SSE 字节流仿 SSE 格式文档 §3/§6 实例。
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { postAgentChat, parseAgentChatSSE, stopAgentChat } from '../agent-chat-client';
+import {
+  postAgentChat,
+  parseAgentChatSSE,
+  stopAgentChat,
+  withStreamWatchdog,
+  AgentStreamStalledError,
+} from '../agent-chat-client';
 import type { AgentChatEvent, ToolCallEvent, ToolApprovalRequestEvent } from '../agent-chat-client';
 
 // ----- 工具:构造 SSE 流 -----
@@ -339,14 +345,18 @@ describe('postAgentChat', () => {
     expect(body.stream).toBe(true);
   });
 
-  it('signal 透传给 fetch', async () => {
+  it('signal 与看门狗超时信号合成;调用方 abort 后组合信号同步中止', async () => {
     const f = vi.fn().mockResolvedValue(okResponse(emptyStream()));
     vi.stubGlobal('fetch', f);
     const ac = new AbortController();
 
     await postAgentChat({ content: 'x', app_id: 'a', signal: ac.signal });
 
-    expect((f.mock.calls[0][1] as RequestInit).signal).toBe(ac.signal);
+    const passed = (f.mock.calls[0][1] as RequestInit).signal as AbortSignal;
+    expect(passed).toBeInstanceOf(AbortSignal);
+    expect(passed.aborted).toBe(false);
+    ac.abort();
+    expect(passed.aborted).toBe(true);
   });
 
   it('X-App-Key 缺失(空 env)时发空串', async () => {
@@ -369,11 +379,16 @@ describe('postAgentChat', () => {
     await expect(postAgentChat({ content: 'x', app_id: 'a' })).rejects.toThrow(/agent-chat/);
   });
 
-  it('成功时返回 res.body 流', async () => {
+  it('成功时返回包裹看门狗的 ReadableStream(不再透传原始 body 实例)', async () => {
     const stream = emptyStream();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(stream)));
     const result = await postAgentChat({ content: 'x', app_id: 'a' });
-    expect(result).toBe(stream);
+    expect(result).toBeInstanceOf(ReadableStream);
+    expect(result).not.toBe(stream);
+    // 包装流可正常消费到 close
+    const reader = result.getReader();
+    const chunk = await reader.read();
+    expect(chunk.done).toBe(true);
   });
 });
 
@@ -451,4 +466,46 @@ describe('端到端(postAgentChat 返回流 → parseAgentChatSSE 解析)', () =
       twins_instance_ids: ['465718888976764928'],
     });
   });
+});
+
+// ==================== 流看门狗(withStreamWatchdog / postAgentChat 集成) ====================
+
+describe('流看门狗', () => {
+  const IDLE = 30; // 测试用小窗口(ms)
+
+  it('正常流(有间隔但小于 idle)全部透传并正常 close', async () => {
+    const encoder = new TextEncoder();
+    // 模拟慢速到达:每 chunk 由定时器推入,间隔 < IDLE
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(encoder.encode(makeSSE({ type: 'conversation_id', conversation_id: 'w1' })));
+        setTimeout(() => c.enqueue(encoder.encode(makeSSE({ type: 'text', content: 'ok' }))), 5);
+        setTimeout(() => c.close(), 12);
+      },
+    });
+
+    const events = await collect(parseAgentChatSSE(withStreamWatchdog(stream, IDLE)));
+    expect(events.map((e) => e.type)).toEqual(['conversation_id', 'text']);
+  });
+
+  it('发完一个 chunk 后长时间静默 → 消费端收到 AgentStreamStalledError(经 parseAgentChatSSE 冒泡)', async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(c) {
+        c.enqueue(encoder.encode(makeSSE({ type: 'conversation_id', conversation_id: 'w2' })));
+        // 不 close、不再推送 —— 挂起
+      },
+    });
+
+    await expect(collect(parseAgentChatSSE(withStreamWatchdog(stream, IDLE))))
+      .rejects.toThrow(/agent-chat 流超时中断/);
+  }, 2000);
+
+  it('postAgentChat 返回的默认流同样受看门狗保护(opts 注入小窗口)', async () => {
+    const hung = new ReadableStream<Uint8Array>({ /* 不 enqueue 不 close */ });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(okResponse(hung)));
+
+    const body = await postAgentChat({ content: 'x', app_id: 'a' }, { streamIdleTimeoutMs: IDLE });
+    await expect(collect(parseAgentChatSSE(body))).rejects.toThrow(AgentStreamStalledError);
+  }, 2000);
 });

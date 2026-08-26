@@ -13,6 +13,8 @@
 // 1. postAgentChat 读 NEXT_PUBLIC_X_APP_KEY 在调用时(非模块加载),便于测试注入 env
 // 2. parseAgentChatSSE 是 async generator,逐事件 yield,按 \n 分行 + 跨块缓冲拼接
 // 3. args/result 用 safeJsonParse 二次 parse,失败保留原字符串(契约稳健)
+// 4. 流看门狗:响应头超时 + 流空闲(chunk 到达即续期)双层兜底,挂起以 AgentStreamStalledError
+//    暴露给消费端降级;长任务(2-3min)不受影响,不设总时长上限
 
 // ===== 事件类型 =====
 
@@ -93,6 +95,59 @@ export type AgentChatEvent =
   | FinishEvent
   | TimingEvent;
 
+// ===== 流看门狗 =====
+
+/**
+ * 智能体流看门狗窗口:响应头等待与流空闲共用。
+ * 正常链路上 reasoning/工具事件持续到达(实测数秒一条),90s 零数据几乎必然是网关/网络挂起;
+ * 不设总时长上限——预案推演等长任务 2-3 分钟也靠 chunk 续期放行。
+ */
+export const AGENT_STREAM_WATCHDOG_MS = 90_000;
+
+/** 流空闲看门狗触发;消费端 catch 后走各自降级路径(adapter 返回 null → 规则打分/onFail)。 */
+export class AgentStreamStalledError extends Error {
+  constructor(idleMs: number) {
+    super(`agent-chat 流超时中断:${idleMs}ms 内无任何数据(网关或网络挂起)`);
+    this.name = 'AgentStreamStalledError';
+  }
+}
+
+/**
+ * 包装 SSE 流:每个 chunk 到达即重置计时,连续 idleMs 无数据判为挂起,
+ * cancel 上游并以 AgentStreamStalledError error 掉消费端。
+ * 只断本地流;服务端 run 的终止仍依赖平台侧超时(stopAgentChat 场景由调用方自行决定)。
+ */
+export function withStreamWatchdog(
+  stream: ReadableStream<Uint8Array>,
+  idleMs: number,
+): ReadableStream<Uint8Array> {
+  const reader = stream.getReader();
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const result = await Promise.race([
+          reader.read(),
+          new Promise<'stalled'>((resolve) => {
+            timer = setTimeout(() => resolve('stalled'), idleMs);
+          }),
+        ]);
+        clearTimeout(timer);
+        if (result === 'stalled') {
+          await reader.cancel(new AgentStreamStalledError(idleMs)).catch(() => {});
+          controller.error(new AgentStreamStalledError(idleMs));
+          return;
+        }
+        if (result.done) { controller.close(); return; }
+        controller.enqueue(result.value);
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel(reason) { void reader.cancel(reason).catch(() => {}); },
+  });
+}
+
 // ===== postAgentChat =====
 
 export interface PostAgentChatParams {
@@ -121,7 +176,10 @@ const AGENT_CHAT_PATH = '/uagent-service/api/agent/v1/apps/agent-chat';
  * body:{ content, app_id, forwardedProps(默认 {}), stream:true,
  *        ...(passthroughProps ? { passthrough_props } : {}) }
  */
-export async function postAgentChat(params: PostAgentChatParams): Promise<ReadableStream<Uint8Array>> {
+export async function postAgentChat(
+  params: PostAgentChatParams,
+  opts?: { readonly streamIdleTimeoutMs?: number },
+): Promise<ReadableStream<Uint8Array>> {
   const { content, app_id, forwardedProps, passthroughProps, conversationId, images, signal } = params;
   const appKey = process.env.NEXT_PUBLIC_X_APP_KEY || '';
 
@@ -143,6 +201,9 @@ export async function postAgentChat(params: PostAgentChatParams): Promise<Readab
     body.passthrough_props = passthroughProps;
   }
 
+  // 看门狗①响应头超时:BFF/网关接受请求但不回 200 时 fetch 默认可无限等待;
+  // 与调用方 signal 合并(调用方 abort 或超时先到都会中止)。
+  const watchdogSignal = AbortSignal.timeout(opts?.streamIdleTimeoutMs ?? AGENT_STREAM_WATCHDOG_MS);
   const res = await fetch(AGENT_CHAT_PATH, {
     method: 'POST',
     headers: {
@@ -151,7 +212,7 @@ export async function postAgentChat(params: PostAgentChatParams): Promise<Readab
       'X-App-Key': appKey,
     },
     body: JSON.stringify(body),
-    signal,
+    signal: signal ? AbortSignal.any([signal, watchdogSignal]) : watchdogSignal,
   });
 
   if (!res.ok || !res.body) {
@@ -159,7 +220,8 @@ export async function postAgentChat(params: PostAgentChatParams): Promise<Readab
     throw new Error(`agent-chat 请求失败 ${res.status}: ${errText}`);
   }
 
-  return res.body as ReadableStream<Uint8Array>;
+  // 看门狗②流空闲:chunk 到达即续期,连续无数据判为挂起;消费端收到 AgentStreamStalledError
+  return withStreamWatchdog(res.body as ReadableStream<Uint8Array>, opts?.streamIdleTimeoutMs ?? AGENT_STREAM_WATCHDOG_MS);
 }
 
 /**

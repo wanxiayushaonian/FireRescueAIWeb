@@ -174,7 +174,6 @@ export class ConfrontAdapter {
     ctx: AdapterCtx,
     roundContext?: ConfrontRoundContext,
   ): Promise<ReadableStream<Uint8Array>> {
-    this.logger.debug('[confront-adapter] run', { appId: ctx.appId, buildingId: ctx.buildingId, sceneId: ctx.sceneId, drillId: ctx.drillId, contentLength: content.length });
     return this.postChat({
       content,
       app_id: ctx.appId,
