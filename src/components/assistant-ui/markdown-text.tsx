@@ -14,6 +14,7 @@ import { CheckIcon, CopyIcon } from "lucide-react";
 
 import { TooltipIconButton } from "@/components/assistant-ui/tooltip-icon-button";
 import { SceneLink } from "@/components/assistant-ui/scene-link";
+import { RichInline } from "@/components/RichLocationText";
 import { cn } from "@/lib/utils";
 
 const MarkdownTextImpl = () => {
@@ -78,68 +79,77 @@ const useCopyToClipboard = ({
 };
 
 const defaultComponents = memoizeMarkdownComponents({
-  h1: ({ className, ...props }) => (
+  h1: ({ className, children, ...props }) => (
     <h1
       className={cn(
         "aui-md-h1 mt-5 mb-2 scroll-m-20 text-xl font-semibold first:mt-0 last:mb-0",
         className,
       )}
       {...props}
-    />
+    >
+      <RichInline>{children}</RichInline>
+    </h1>
   ),
-  h2: ({ className, ...props }) => (
+  h2: ({ className, children, ...props }) => (
     <h2
       className={cn(
         "aui-md-h2 mt-5 mb-2 scroll-m-20 text-lg font-semibold first:mt-0 last:mb-0",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </h2>
   ),
-  h3: ({ className, ...props }) => (
+  h3: ({ className, children, ...props }) => (
     <h3
       className={cn(
         "aui-md-h3 mt-4 mb-1.5 scroll-m-20 text-base font-semibold first:mt-0 last:mb-0",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </h3>
   ),
-  h4: ({ className, ...props }) => (
+  h4: ({ className, children, ...props }) => (
     <h4
       className={cn(
         "aui-md-h4 mt-3.5 mb-1 scroll-m-20 text-base font-medium first:mt-0 last:mb-0",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </h4>
   ),
-  h5: ({ className, ...props }) => (
+  h5: ({ className, children, ...props }) => (
     <h5
       className={cn(
         "aui-md-h5 mt-3 mb-1 text-sm font-semibold first:mt-0 last:mb-0",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </h5>
   ),
-  h6: ({ className, ...props }) => (
+  h6: ({ className, children, ...props }) => (
     <h6
       className={cn(
         "aui-md-h6 mt-3 mb-1 text-sm font-medium first:mt-0 last:mb-0",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </h6>
   ),
-  p: ({ className, ...props }) => (
+  p: ({ className, children, ...props }) => (
     <p
       className={cn(
         "aui-md-p my-3 leading-relaxed first:mt-0 last:mb-0",
         className,
       )}
       {...props}
-    />
+    >
+      <RichInline>{children}</RichInline>
+    </p>
   ),
   a: ({ className, href, children, ...props }) => {
     // 场景锚点(scene://):渲染为可点击 chip,点击联动 3D(楼层聚焦/设备飞向/类型高亮)
@@ -161,14 +171,15 @@ const defaultComponents = memoizeMarkdownComponents({
       </a>
     );
   },
-  blockquote: ({ className, ...props }) => (
+  blockquote: ({ className, children, ...props }) => (
     <blockquote
       className={cn(
         "aui-md-blockquote border-muted-foreground/30 text-muted-foreground my-3 border-s-2 ps-4",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </blockquote>
   ),
   ul: ({ className, ...props }) => (
     <ul
@@ -203,23 +214,25 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  th: ({ className, ...props }) => (
+  th: ({ className, children, ...props }) => (
     <th
       className={cn(
         "aui-md-th bg-muted px-3 py-1.5 text-start font-medium first:rounded-ss-lg last:rounded-se-lg [[align=center]]:text-center [[align=right]]:text-right",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </th>
   ),
-  td: ({ className, ...props }) => (
+  td: ({ className, children, ...props }) => (
     <td
       className={cn(
         "aui-md-td border-muted-foreground/20 border-s border-b px-3 py-1.5 text-start last:border-e [[align=center]]:text-center [[align=right]]:text-right",
         className,
       )}
-      {...props}
-    />
+      {...props}>
+      <RichInline>{children}</RichInline>
+    </td>
   ),
   tr: ({ className, ...props }) => (
     <tr
@@ -230,14 +243,18 @@ const defaultComponents = memoizeMarkdownComponents({
       {...props}
     />
   ),
-  li: ({ className, ...props }) => (
-    <li className={cn("aui-md-li leading-relaxed", className)} {...props} />
+  li: ({ className, children, ...props }) => (
+    <li className={cn("aui-md-li leading-relaxed", className)} {...props}>
+      <RichInline>{children}</RichInline>
+    </li>
   ),
-  strong: ({ className, ...props }) => (
+  strong: ({ className, children, ...props }) => (
     <strong
       className={cn("aui-md-strong font-semibold", className)}
       {...props}
-    />
+    >
+      <RichInline>{children}</RichInline>
+    </strong>
   ),
   sup: ({ className, ...props }) => (
     <sup

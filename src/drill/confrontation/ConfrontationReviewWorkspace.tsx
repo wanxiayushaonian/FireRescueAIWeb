@@ -8,6 +8,7 @@ import type { ConfrontationEvent, ConfrontationReview, ConfrontationState } from
 import { fmtT } from './confront-helpers';
 import { ScoreRing } from './confrontation-uis';
 import { buildDrillReport } from './drill-report';
+import { RichLocationText } from '@/components/RichLocationText';
 
 function downloadBlob(content: string, filename: string, mime: string): void {
   const blob = new Blob([content], { type: mime });
@@ -107,7 +108,7 @@ export function ConfrontationReviewWorkspace({
               </div>
             </div>
             <div className="mt-4 rounded-lg border border-violet/40 bg-violet/5 p-3 text-[13px] leading-5 text-text-1">
-              {review.conclusion}
+              <RichLocationText text={review.conclusion} />
             </div>
             <div className="mt-4 text-[11px] text-text-3">各特情应对结果</div>
             <div className="mt-2 flex flex-col gap-2">
@@ -134,7 +135,8 @@ export function ConfrontationReviewWorkspace({
               <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
                 {review.comments.map((comment, index) => (
                   <div key={comment} className="rounded-lg border border-line bg-bg-panel-2/45 p-3 text-[12px] leading-5 text-text-2">
-                    <span className="mr-1 font-mono text-violet">{String(index + 1).padStart(2, '0')}</span>{comment}
+                    <span className="mr-1 font-mono text-violet">{String(index + 1).padStart(2, '0')}</span>
+                    <RichLocationText text={comment} />
                   </div>
                 ))}
               </div>
@@ -181,7 +183,7 @@ export function ConfrontationReviewWorkspace({
                       {event.respondedWithinSec != null && <span className="ml-auto text-text-3">响应 {event.respondedWithinSec}s</span>}
                     </div>
                     <div className="mt-1 text-[12px] leading-5 text-text-2">
-                      {event.kind === 'inject' ? event.emergency : event.adjustments?.join('；')}
+                      <RichLocationText text={event.kind === 'inject' ? event.emergency : event.adjustments?.join('；') ?? ''} />
                     </div>
                     {event.evidence?.length ? (
                       <div className="mt-1 flex flex-wrap gap-1">
@@ -197,7 +199,7 @@ export function ConfrontationReviewWorkspace({
                       </div>
                     ) : null}
                     {event.kind === 'manual' && event.note && (
-                      <div className="mt-1 text-[11px] leading-5 text-text-3">处置原因：{event.note}</div>
+                      <div className="mt-1 text-[11px] leading-5 text-text-3">处置原因：<RichLocationText text={event.note ?? ''} /></div>
                     )}
                   </div>
                 ))}
@@ -212,7 +214,7 @@ export function ConfrontationReviewWorkspace({
                 <div className="grid grid-cols-1 gap-2 xl:grid-cols-2">
                   {review.improvements.map((improvement) => (
                     <div key={improvement.content} className="rounded-lg border border-amber/35 bg-amber/5 p-3">
-                      <div className="text-[12px] leading-5 text-text-2">{improvement.content}</div>
+                      <div className="text-[12px] leading-5 text-text-2"><RichLocationText text={improvement.content} /></div>
                       <div className="mt-2 inline-flex rounded border border-violet/45 bg-violet/10 px-1.5 py-0.5 text-[10px] text-violet">
                         → {improvement.target}
                       </div>

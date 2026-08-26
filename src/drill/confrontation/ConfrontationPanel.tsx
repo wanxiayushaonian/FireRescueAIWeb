@@ -34,6 +34,7 @@ import { fmtT, randInt, deployLines } from './confront-helpers';
 import { addSceneAction } from '@/mock/sceneLog';
 import { addLibraryItem } from '@/mock/planLibrary';
 import { showToast } from '@/components/Toast';
+import { RichLocationText } from '@/components/RichLocationText';
 import { getOperationSession, setOperationEffectivePlan, setOperationStatus } from '@/operations/operation-session';
 import DemoTag from '@/components/DemoTag';
 import { BUILDINGS, FIRE_MATERIALS } from '@/mock/drill';
@@ -747,7 +748,7 @@ export default function ConfrontationPanel() {
                           <span className="ml-auto font-mono text-[11px] text-text-3">{fmtT(inject.tSec)}</span>
                           <span className="rounded border border-orange/60 px-1 py-px text-[11px] text-orange">对抗智能体</span>
                         </div>
-                        <div className="mt-1.5 text-[13px] leading-5 text-text-1">{inject.emergency}</div>
+                        <div className="mt-1.5 text-[13px] leading-5 text-text-1"><RichLocationText text={inject.emergency} /></div>
                         {inject.delta && (
                           <div className="mt-1.5 flex flex-wrap gap-1 text-[10px] text-amber">
                             {inject.delta.fireLevelDelta != null && inject.delta.fireLevelDelta !== 0 && <span>火势 {inject.delta.fireLevelDelta >= 0 ? '+' : ''}{inject.delta.fireLevelDelta}</span>}
@@ -770,7 +771,8 @@ export default function ConfrontationPanel() {
                           <ul className="mt-1 flex flex-col gap-1">
                             {adjust.adjustments?.map((a) => (
                               <li key={a} className="flex gap-1.5 text-[13px] leading-5 text-text-2">
-                                <span className="text-cyan">·</span>{a}
+                                <span className="text-cyan">·</span>
+                                <RichLocationText text={a} />
                               </li>
                             ))}
                           </ul>
@@ -838,13 +840,14 @@ export default function ConfrontationPanel() {
                           <ul className="mt-1 flex flex-col gap-1">
                             {manual.adjustments?.map((a) => (
                               <li key={a} className="flex gap-1.5 text-[13px] leading-5 text-text-2">
-                                <span className="text-amber">·</span>{a}
+                                <span className="text-amber">·</span>
+                                <RichLocationText text={a} />
                               </li>
                             ))}
                           </ul>
                           {manual.note && (
                             <div className="mt-1.5 border-t border-amber/20 pt-1.5 text-[12px] leading-5 text-text-3">
-                              处置原因：{manual.note}
+                              处置原因：<RichLocationText text={manual.note ?? ''} />
                             </div>
                           )}
                         </div>

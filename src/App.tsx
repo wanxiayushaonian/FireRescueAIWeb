@@ -6,6 +6,7 @@ import TopBar from '@/components/TopBar';
 import SideNav from '@/components/SideNav';
 import SceneSwitcher from '@/components/SceneSwitcher';
 import ErrorBoundary from '@/components/ErrorBoundary';
+import { LocationVocabProvider } from '@/components/RichLocationText';
 import type { ModuleKey } from '@/components/SideNav';
 import { SceneProvider, useScene } from '@/components/SceneProvider';
 import { SceneCommandBridge } from '@/components/SceneCommandBridge';
@@ -38,9 +39,11 @@ import { loadSceneSkyPref } from '@/lib/scene-sky-prefs';
 
 export default function App() {
   return (
-    <SceneProvider>
-      <AppContent />
-    </SceneProvider>
+    <LocationVocabProvider>
+      <SceneProvider>
+        <AppContent />
+      </SceneProvider>
+    </LocationVocabProvider>
   );
 }
 

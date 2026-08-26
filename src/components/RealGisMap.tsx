@@ -99,6 +99,22 @@ export default function RealGisMap({ onEnterScene, onMapReady, initialLayers, pr
     window.addEventListener('gis:set-layer', onSetLayer);
     return () => window.removeEventListener('gis:set-layer', onSetLayer);
   }, []);
+  // 智能体输出中的 GIS 地名锚点(gis:// chip):飞行定位 + 短暂落点标记(8s 自动清除)
+  useEffect(() => {
+    const onFlyTo = (e: Event) => {
+      const d = (e as CustomEvent<{ lng?: number; lat?: number; label?: string }>).detail;
+      const map = mapRef.current;
+      if (!d || !Number.isFinite(d.lng) || !Number.isFinite(d.lat) || !map || d.lng == null || d.lat == null) return;
+      map.flyTo([d.lat, d.lng], Math.max(map.getZoom(), 15), { duration: 1.2 });
+      const marker = L.circleMarker([d.lat, d.lng], { radius: 10, color: '#22d3ee', weight: 2, fillOpacity: 0.15 }).addTo(map);
+      if (d.label) marker.bindTooltip(d.label, { direction: 'top', offset: [0, -8] }).openTooltip();
+      window.setTimeout(() => {
+        if (mapRef.current?.hasLayer(marker)) map.removeLayer(marker);
+      }, 8000);
+    };
+    window.addEventListener('gis:fly-to', onFlyTo);
+    return () => window.removeEventListener('gis:fly-to', onFlyTo);
+  }, []);
   const [showIncidentResponse, setShowIncidentResponse] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [queryMarker, setQueryMarker] = useState<{ lng: number; lat: number; address: string } | null>(null);

@@ -24,6 +24,7 @@ import type { ConfrontationState } from '@/drill/confrontation/confront-store';
 import type { DrillState } from '@/mock/drillStore';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
+import { RichLocationText } from '@/components/RichLocationText';
 import PanelStateView from '@/components/PanelStateView';
 import DemoTag from '@/components/DemoTag';
 
@@ -89,7 +90,7 @@ function TypewriterText({ text, enabled, className = '' }: { text: string; enabl
       transition={{ duration: 0.2 }}
       className={className}
     >
-      {text.slice(0, n)}
+      <RichLocationText text={text.slice(0, n)} />
       {typing && <span className="ml-px inline-block h-[1em] w-px translate-y-[2px] animate-pulse bg-cyan" />}
     </motion.span>
   );
