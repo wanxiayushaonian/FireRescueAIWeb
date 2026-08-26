@@ -39,6 +39,12 @@ export const DRILL_COMMANDER_APP_ID = (process.env.NEXT_PUBLIC_DRILL_COMMANDER_A
 export const DRILL_PLANNER_APP_ID = (process.env.NEXT_PUBLIC_DRILL_PLANNER_APP_ID ?? '').trim() || DRILL_COMMANDER_APP_ID;
 
 /**
+ * 演练模块右侧「预案推演智能体」对话 app(综合信息生成结构化预案;
+ * 2026-08-26 用户平台新建)。可经 NEXT_PUBLIC_DRILL_PLAN_APP_ID 覆盖。
+ */
+export const DRILL_PLAN_APP_ID = (process.env.NEXT_PUBLIC_DRILL_PLAN_APP_ID ?? '').trim() || '2092049331623940097';
+
+/**
  * 实战指挥业务助手(辅助决策:力量调度/战术战法/处置要点 + GIS 派遣联动)。
  * 平台建「实战指挥·辅助决策」应用后以 NEXT_PUBLIC_COMMAND_APP_ID 注入,未配回退通用。
  */
@@ -69,7 +75,7 @@ function globalEntry(): { global?: string } {
 export const AGENT_APP_IDS: Record<ModuleKey, ModuleAgentIds> = {
   overview: { business: OVERVIEW_APP_ID, ...globalEntry() },
   objects: { business: OBJECTS_APP_ID, ...globalEntry() },
-  drill: { business: DRILL_COMMANDER_APP_ID, ...globalEntry() },
+  drill: { business: DRILL_PLAN_APP_ID, ...globalEntry() },
   training: { business: TRAINING_APP_ID, ...globalEntry() },
   command: { business: COMMAND_APP_ID, ...globalEntry() },
 };
