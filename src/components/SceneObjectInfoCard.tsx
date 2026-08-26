@@ -14,7 +14,7 @@ import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scen
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight, getCustomNavStart, setCustomNavStart, subscribeNavPick } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight, getCustomNavStart, setCustomNavStart, subscribeNavPick, collectGraphNodes, pickNearestGraphNode } from '@/lib/scene-navigation';
 import { gcj02ToWgs84 } from '@/lib/coord-transform';
 import { fetchKeyBuildings } from '@/api/key-buildings';
 import { showToast } from '@/components/Toast';
@@ -156,7 +156,13 @@ export default function SceneObjectInfoCard() {
       // 端点世界坐标:空间/楼层本体可直接反查(贴合点击位置,而非空间中心);查不到回退图节点
       if (!scene.runtime) return;
       const position = outId ? scene.runtime.getObjectWorldPosition(outId) : null;
-      navConsumeRef.current({ name, nodeId, outId: outId || undefined, position }, info.out_instance_id || undefined);
+      // kgraph 仅含 Door/Stairs:Space/Story 端点吸附到最近图节点(解析失败明确提示)
+      const snapped = position ? pickNearestGraphNode(collectGraphNodes(scene.tree), position, (id) => scene.runtime?.getObjectWorldPosition(id) ?? null) : null;
+      if (!snapped) {
+        showToast('该处附近没有门/楼梯连通节点,请在门/楼梯附近打点');
+        return;
+      }
+      navConsumeRef.current({ name, nodeId: snapped.entry.nodeId, outId: outId || undefined, position }, info.out_instance_id || undefined);
     });
   }, [runtime, view]);
   const lastPickRef = useRef<{ sids: string[]; hitChains?: string[][]; clientX: number; clientY: number } | null>(null);
@@ -228,9 +234,9 @@ export default function SceneObjectInfoCard() {
           showToast('该处无可导航对象,请点击设备/空间');
           return;
         }
-        const pt = navNodeForOutId(scene.tree, node.outId);
+        const pt = navNodeForOutId(scene.tree, node.outId, (id) => scene.runtime?.getObjectWorldPosition(id) ?? null);
         if (!pt) {
-          showToast('该对象未挂空间/楼层节点,换个点位试试');
+          showToast('该处附近没有门/楼梯连通节点,换个点位试试');
           return;
         }
         navConsumeRef.current(
@@ -302,9 +308,9 @@ export default function SceneObjectInfoCard() {
       showToast(`已取消起点(${card.node.name}),导航恢复从大门出发`);
       return;
     }
-    const pt = navNodeForOutId(tree, card.node.outId);
+    const pt = navNodeForOutId(tree, card.node.outId, (id) => runtime.getObjectWorldPosition(id));
     if (!pt) {
-      showToast('该对象未挂空间/楼层节点,无法作为起点');
+      showToast('该对象附近没有门/楼梯连通节点,无法作为起点');
       return;
     }
     const start = { ...pt, outId: card.node.outId, position: runtime.getObjectWorldPosition(card.node.outId) };
@@ -316,18 +322,18 @@ export default function SceneObjectInfoCard() {
     if (!runtime || !tree) return;
     const customStart = getCustomNavStart();
     if (customStart) {
-      // 自定义起点 → 目标(与两点导航同链路:SDK kgraph 真实路径 + POI)
-      const plan = planAttackRoute(tree, card.node.outId);
-      const endNode = plan?.targetSpaceNodeId ?? plan?.targetStoryNodeId;
-      if (!endNode) {
-        showToast('该对象未挂空间/楼层节点,无法作为终点');
+      // 自定义起点 → 目标(两端均吸附最近门/楼梯图节点;kgraph 真实路径 + POI)
+      const endPos = runtime.getObjectWorldPosition(card.node.outId);
+      const endSnap = endPos ? pickNearestGraphNode(collectGraphNodes(tree), endPos, (id) => runtime.getObjectWorldPosition(id)) : null;
+      if (!endSnap) {
+        showToast('该对象附近没有门/楼梯连通节点,无法作为终点');
         return;
       }
       void navigateBetween(runtime, customStart, {
         name: card.node.name,
-        nodeId: endNode,
+        nodeId: endSnap.entry.nodeId,
         outId: card.node.outId,
-        position: runtime.getObjectWorldPosition(card.node.outId),
+        position: endPos,
       }).then((r) => {
         showToast(
           r.error
@@ -341,14 +347,13 @@ export default function SceneObjectInfoCard() {
       showToast('无法规划路线(场景中未找到该对象)');
       return;
     }
-    void drawAttackRoute(runtime, plan).then((r) => {
+    void drawAttackRoute(runtime, plan, { graphEntries: collectGraphNodes(tree) }).then((r) => {
       if (r.error) {
         showToast(r.error);
         return;
       }
       const dist = typeof r.distanceM === 'number' ? ` · ${Math.round(r.distanceM)}m` : '';
       if (r.mode === 'full') showToast(`真实路径已绘制(大门 → ${card.node.name})${dist}`);
-      else if (r.mode === 'floor') showToast(`真实路径已绘制(${plan.targetFloor ?? ''}层内 → ${card.node.name})${dist}`);
       else showToast(`示意路线已绘制:大门 → 楼梯 → ${card.node.name}`);
     });
   };
@@ -360,11 +365,13 @@ export default function SceneObjectInfoCard() {
       showToast('无法规划路线(场景中未找到该对象)');
       return;
     }
-    const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
-    if (!endNode) {
-      showToast('该对象未挂空间/楼层节点,无法作为进场终点');
+    const endPos = runtime.getObjectWorldPosition(card.node.outId);
+    const endSnap = endPos ? pickNearestGraphNode(collectGraphNodes(tree), endPos, (id) => runtime.getObjectWorldPosition(id)) : null;
+    if (!endSnap) {
+      showToast('该对象附近没有门/楼梯连通节点,无法作为进场终点');
       return;
     }
+    const endNode = endSnap.entry.nodeId;
     void resolveBuildingWgs84(runtime.getSceneId()).then((src) => {
       if (!src) {
         showToast('未找到该场景的建筑坐标(请在 GIS 中录入该建筑经纬度)');
@@ -373,7 +380,8 @@ export default function SceneObjectInfoCard() {
       void navigateFromOutside(
         runtime,
         src,
-        { nodeId: endNode, position: runtime.getObjectWorldPosition(card.node.outId) },
+        // 端点必须是吸附后的图节点(kgraph 不吸附自由坐标,position 会让 payload 退化为裸坐标)
+        { nodeId: endNode },
         `场外进场(${src.name}) → ${card.node.name}`,
         { end: runtime.getObjectWorldPosition(card.node.outId) },
       ).then((r) => {

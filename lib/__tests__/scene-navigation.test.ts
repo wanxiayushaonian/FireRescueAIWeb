@@ -249,33 +249,39 @@ describe('navigateBetween / clearSceneRoutes(SDK 导航通道)', () => {
     expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
   });
 
-  it('图节点不可达 → 自动回退点击坐标重试', async () => {
+  it('图节点不可达 → 直接报错,不再坐标重试(kgraph 不吸附自由坐标,2026-08-27 实测)', async () => {
     const { runtime, calls } = makeRuntime({
-      navigateResults: [
-        { reachable: false, path_id: null, message: '图节点不可达' },
-        { reachable: true, path_id: 'path-10', message: 'ok', total_distance: 88 },
-      ],
+      navigateResult: { reachable: false, path_id: null, message: '图节点不可达' },
     });
     const r = await navigateBetween(
       runtime,
       { name: 'A', nodeId: 'tw-space-a', position: { x: 9, y: 1, z: 9 } },
       { name: 'B', nodeId: 'tw-space-b', position: { x: 5, y: 1, z: 5 } },
     );
-    expect(r).toEqual({ real: true, mode: 'full', distanceM: 88 });
+    expect(r.error).toContain('两点间不可达');
     const navCalls = calls.filter((c) => c.op === 'navigateWithinScene');
-    expect(navCalls).toHaveLength(2); // 第一次图节点,第二次回退点击坐标
+    expect(navCalls).toHaveLength(1); // 仅一次图节点尝试
     expect(navCalls[0]?.args).toEqual({ source: { node_id: 'tw-space-a' }, target: { node_id: 'tw-space-b' } });
-    expect(navCalls[1]?.args).toEqual({ source: { x: 9, y: 1, z: 9 }, target: { x: 5, y: 1, z: 5 } });
   });
 
-  it('双次均不可达 → 错误信息透传 SDK message(不再只有写死的覆盖范围文案)', async () => {
+  it('reachable 但距离为 0(SDK 退化假成功) → 按失败处理', async () => {
+    const { runtime, calls } = makeRuntime({
+      navigateResult: { reachable: true, path_id: 'path-0', message: 'ok', total_distance: 0 },
+    });
+    const r = await navigateBetween(runtime, start, end);
+    expect(r.error).toContain('两点间不可达');
+    expect(r.error).toContain('零距离');
+    expect(calls.some((c) => c.op === 'drawVirtualRoute')).toBe(false);
+  });
+
+  it('不可达 → 错误信息透传 SDK message(不再只有写死的覆盖范围文案)', async () => {
     const { runtime, calls } = makeRuntime({
       navigateResult: { reachable: false, path_id: null, message: '目标楼层未建图' },
     });
     const r = await navigateBetween(runtime, start, end);
     expect(r.error).toContain('两点间不可达');
     expect(r.error).toContain('目标楼层未建图');
-    expect(calls.filter((c) => c.op === 'navigateWithinScene')).toHaveLength(2);
+    expect(calls.filter((c) => c.op === 'navigateWithinScene')).toHaveLength(1);
   });
 
   it('customNavStart 自定义起点:设置/读取/取消(独立于两点导航拾取的 navStart)', () => {

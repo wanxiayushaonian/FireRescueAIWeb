@@ -11,7 +11,7 @@ import {
 import { useScene } from '@/components/SceneProvider';
 import { storyIdsForFloorSpec, parseFloorSpec, parseFloorToken } from '@/lib/floor-focus';
 import { buildDeviceSearchIndex } from '@/lib/scene-pick';
-import { planAttackRoute, drawAttackRoute, clearSceneRoutes } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, clearSceneRoutes, collectGraphNodes } from '@/lib/scene-navigation';
 import { presets } from '@/lib/scene-recipe/presets';
 import { effectiveDisplayPrefs } from '@/lib/scene-display-prefs';
 import { fetchWaterSourcesInBbox } from '@/api/water';
@@ -192,7 +192,7 @@ export default function SixFamiliarGuide({
       );
       const plan = target ? planAttackRoute(tree, target.outId) : null;
       if (plan) {
-        void drawAttackRoute(runtime, plan).then((r) => {
+        void drawAttackRoute(runtime, plan, { graphEntries: collectGraphNodes(tree) }).then((r) => {
           if (!r) showToast('进攻路线绘制失败:无可用路径');
         });
       } else {

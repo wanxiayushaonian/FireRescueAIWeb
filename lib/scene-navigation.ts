@@ -111,6 +111,63 @@ export function planAttackRoute(tree: SceneTreeNode | null, targetOutId: string)
   };
 }
 
+// ---- kgraph 图节点吸附 ----
+// 2026-08-27 实测(21D 包):kgraph 可达图仅含 Door/Stairs 两类节点(Space/Story 不在图中),
+// 且 shortest-path 不吸附自由坐标——因此导航端点必须"吸附到最近 Door/Stairs 图节点",
+// 传 Space/Story id 或裸坐标必然 reachable:false。图内节点间垂直连通完好(1F 门→13F 梯 90m 实证)。
+
+export interface GraphNodeEntry {
+  /** twins_instance_id(kgraph node_id) */
+  readonly nodeId: string;
+  /** out_instance_id(场景对象定位) */
+  readonly outId: string;
+  readonly type: 'Door' | 'Stairs';
+}
+
+type PositionOf = (outId: string) => { x: number; y: number; z: number } | null;
+
+const graphEntryCache = new WeakMap<SceneTreeNode, GraphNodeEntry[]>();
+
+/** 收集树上的 Door/Stairs(kgraph 节点类型;按树缓存,骨架对象不常变)。 */
+export function collectGraphNodes(tree: SceneTreeNode | null): GraphNodeEntry[] {
+  if (!tree) return [];
+  const hit = graphEntryCache.get(tree);
+  if (hit) return hit;
+  const out: GraphNodeEntry[] = [];
+  const walk = (n: SceneTreeNode): void => {
+    const type = String(n.type ?? '');
+    if (type === 'Door' || type === 'Stairs') {
+      const nodeId = String(n.twins_instance_id ?? '');
+      const outId = nodeOutId(n);
+      if (nodeId && outId) out.push({ nodeId, outId, type: type as 'Door' | 'Stairs' });
+    }
+    for (const c of n.children ?? []) walk(c);
+  };
+  walk(tree);
+  graphEntryCache.set(tree, out);
+  return out;
+}
+
+/** 纯函数:世界坐标 → 最近图节点(3D 距离;定位不到坐标的节点跳过)。 */
+export function pickNearestGraphNode(
+  entries: readonly GraphNodeEntry[],
+  position: { x: number; y: number; z: number },
+  getPosition: PositionOf,
+): { entry: GraphNodeEntry; position: { x: number; y: number; z: number } } | null {
+  let best: { entry: GraphNodeEntry; position: { x: number; y: number; z: number } } | null = null;
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const entry of entries) {
+    const p = getPosition(entry.outId);
+    if (!p) continue;
+    const d = (p.x - position.x) ** 2 + (p.y - position.y) ** 2 + (p.z - position.z) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = { entry, position: p };
+    }
+  }
+  return best;
+}
+
 /** 已绘制导航路线 id 集(模块态;SceneViewBar「清除路线」用) */
 const drawnRoutes = new Set<string>();
 
@@ -215,12 +272,22 @@ export function findFireTruckOutId(tree: SceneTreeNode | null): string | null {
   return found;
 }
 
-/** 拾取对象 → kgraph 图节点端点(Space 优先、Story 兜底;解析不到返回 null) */
-export function navNodeForOutId(tree: SceneTreeNode, outId: string): { name: string; nodeId: string } | null {
+/**
+ * 拾取对象 → kgraph 图端点:吸附到该对象世界坐标最近的 Door/Stairs 图节点
+ * (Space/Story 不在图中,实测直接传必不可达)。解析失败返回 null。
+ */
+export function navNodeForOutId(
+  tree: SceneTreeNode,
+  outId: string,
+  getPosition: PositionOf,
+): { name: string; nodeId: string } | null {
+  const position = getPosition(outId);
+  const entries = collectGraphNodes(tree);
+  if (!position || entries.length === 0) return null;
+  const snap = pickNearestGraphNode(entries, position, getPosition);
+  if (!snap) return null;
   const plan = planAttackRoute(tree, outId);
-  if (!plan) return null;
-  const nodeId = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
-  return nodeId ? { name: plan.targetName, nodeId } : null;
+  return { name: plan?.targetName ?? '', nodeId: snap.entry.nodeId };
 }
 
 /** 按 out 实例 id 找树节点(twins id + 名字;2D 语义点击的楼层回退用) */
@@ -262,8 +329,8 @@ type NavSource = NavEnd | { kind: 'external'; lonLat: { lon: number; lat: number
 let lastNavFailMessage: string | null = null;
 
 /** 两点导航:起点/终点打点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。
- * 首选 Space/Story 的图节点锚点，点击对象坐标只在锚点调用失败时重试。
- * 设备包围盒中心可能落在墙体或连通图外，用它作为首选会降低成功率。 */
+ * 端点一律为吸附后的 Door/Stairs 图节点(node_id):Space/Story 不在图中、
+ * 裸坐标不被 kgraph 吸附,两者实测均必可达失败(2026-08-27),不再尝试。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
   start: NavPoint,
@@ -276,15 +343,6 @@ export async function navigateBetween(
   };
   const r = await navigateAndDraw(runtime, { nodeId: start.nodeId }, { nodeId: end.nodeId }, label, poi);
   if (r) return r;
-  // 兼容图节点覆盖不完整的旧包：失败后再尝试点击位置。
-  const r2 = await navigateAndDraw(
-    runtime,
-    { nodeId: start.nodeId, position: start.position ?? null },
-    { nodeId: end.nodeId, position: end.position ?? null },
-    label,
-    poi,
-  );
-  if (r2) return r2;
   const why = lastNavFailMessage ? `:${lastNavFailMessage}` : '';
   return { error: `两点间不可达${why}` };
 }
@@ -338,7 +396,6 @@ async function navigateAndDraw(
   label: string,
   poi?: NavPoi,
 ): Promise<DrawRouteResult | null> {
-  clearSceneRoutes(runtime); // 先清旧:SDK 导航绘制立即发生,须在调用前清
   try {
     const external = isExternalSource(source);
     const result = external
@@ -350,10 +407,19 @@ async function navigateAndDraw(
           source: navEndPayload(source),
           target: navEndPayload(target),
         });
-    if (!result || result.reachable !== true) {
-      lastNavFailMessage = result?.message ? String(result.message) : null;
+    // reachable 但距离为 0 = SDK 退化假成功(实测会"成功"且不画线,比报错更误导),按失败处理
+    const dist = Number(result?.total_distance);
+    const degenerate = result?.total_distance != null && !(dist > 0);
+    if (!result || result.reachable !== true || degenerate) {
+      lastNavFailMessage = degenerate
+        ? '路径退化为零距离(端点吸附到同一图节点)'
+        : result?.message
+          ? String(result.message)
+          : null;
       return null;
     }
+    // 成功后才清旧线:失败的尝试不动已有路线(此前先清后试,一次不可达就把旧路线抹掉)
+    clearSceneRoutes(runtime);
     lastNavFailMessage = null;
     if (result.path_id) navPathIds.add(result.path_id);
     const start = poi?.start ?? null;
@@ -578,45 +644,43 @@ function resolveGatePosition(runtime: SoonspaceRuntime, plan: AttackRoutePlan): 
 }
 
 /**
- * 绘制进攻路线(三层策略,自动升级):
- * 1. SDK 场内导航 大门层 Story→目标 Space/Story(kgraph 连通图;图覆盖后即为
- *    大门→目标全程真实路径,SDK 自动绘制步行路线);
- * 2. 目标层 Story→目标 Space(同层真实路径，作为全程图路径异常时的兜底);
- * 3. 启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用)。
- * 端点 node_id 一律用 Story/Space 的 twins id(门只能作图中间点,实测 101024)。
- * 真实路径(策略 1/2)走 SDK navigateWithinScene + POI 叠加;启发式(策略 3)自绘整线。
+ * 绘制进攻路线(两层策略,自动降级):
+ * 1. SDK 场内导航:大门位置 → 目标位置各自**吸附最近 Door/Stairs 图节点**后走 kgraph
+ *    真实路径(图仅含门/楼梯,Space/Story 端点实测必不可达;垂直连通完好);
+ * 2. 启发式折线:大门→逐层最近楼梯→目标(段间直线,示意用;toast 明示"示意")。
+ * POI 标识仍用大门/设备本体的世界坐标(贴合视觉,不随吸附偏移)。
  */
 export async function drawAttackRoute(
   runtime: SoonspaceRuntime,
   plan: AttackRoutePlan,
+  opts?: { readonly graphEntries?: readonly GraphNodeEntry[] },
 ): Promise<DrawRouteResult> {
   const targetPos = (id: string | null): { x: number; y: number; z: number } | null =>
     id ? runtime.getObjectWorldPosition(id) : null;
   const targetPos0 = targetPos(plan.targetOutId);
+  const pos = (outId: string): { x: number; y: number; z: number } | null => runtime.getObjectWorldPosition(outId);
 
-  // 策略 1:大门层 → 目标(整体楼层空间连通后的首选全程真实路径)
-  if (plan.gateStoryNodeId) {
-    const endNode = plan.targetSpaceNodeId ?? plan.targetStoryNodeId;
-    if (endNode) {
-      const r = await navigateAndDraw(runtime, { nodeId: plan.gateStoryNodeId }, { nodeId: endNode }, `进攻路线 → ${plan.targetName}`, {
-        start: resolveGatePosition(runtime, plan),
-        end: targetPos0,
-      });
-      if (r) return r;
+  // 策略 1:吸附真实路径(大门 ↔ 目标各自最近图节点;端点重合/不可达自动降级)
+  const graphEntries = opts?.graphEntries ?? [];
+  if (graphEntries.length > 0 && targetPos0) {
+    const gatePos = resolveGatePosition(runtime, plan);
+    if (gatePos) {
+      const s = pickNearestGraphNode(graphEntries, gatePos, pos);
+      const e = pickNearestGraphNode(graphEntries, targetPos0, pos);
+      if (s && e && s.entry.nodeId !== e.entry.nodeId) {
+        const r = await navigateAndDraw(
+          runtime,
+          { nodeId: s.entry.nodeId },
+          { nodeId: e.entry.nodeId },
+          `进攻路线 → ${plan.targetName}`,
+          { start: gatePos, end: targetPos0 },
+        );
+        if (r) return r;
+      }
     }
   }
-  // 策略 2:目标层 → 目标(同层真实路径兜底)
-  if (plan.targetStoryNodeId && plan.targetSpaceNodeId) {
-    const r = await navigateAndDraw(runtime, { nodeId: plan.targetStoryNodeId }, { nodeId: plan.targetSpaceNodeId }, `进攻路线(层内) → ${plan.targetName}`, {
-      end: targetPos0,
-    });
-    if (r) return { ...r, mode: 'floor' };
-  }
 
-  // 策略 3:启发式折线
-  const pos = (outId: string | null): { x: number; y: number; z: number } | null =>
-    outId ? runtime.getObjectWorldPosition(outId) : null;
-
+  // 策略 2:启发式折线
   const path: Array<{ position: { x: number; y: number; z: number } }> = [];
   // 近重去重(0.4m):同点重复会让拓扑线在原点打结
   const pushPoint = (p: { x: number; y: number; z: number }): void => {
