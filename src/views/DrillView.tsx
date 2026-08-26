@@ -115,7 +115,7 @@ export default function DrillView({ onOpenCommandSession }: { onOpenCommandSessi
         {!libraryOpen && (
           <button
             onClick={() => setLibraryOpen(true)}
-            className="absolute bottom-4 left-4 z-[60] flex items-center gap-1.5 rounded-lg border border-line bg-bg-panel/95 px-3 py-2 text-[13px] text-text-2 shadow-lg backdrop-blur transition hover:border-line-glow hover:text-cyan sm:bottom-6"
+            className="pointer-events-auto absolute bottom-4 left-4 z-[60] flex items-center gap-1.5 rounded-lg border border-line bg-bg-panel/95 px-3 py-2 text-[13px] text-text-2 shadow-lg backdrop-blur transition hover:border-line-glow hover:text-cyan sm:bottom-6"
             title="打开预案库（归档预案/对抗评估/改进措施）"
           >
             <Archive className="h-4 w-4 text-cyan" />
