@@ -15,7 +15,8 @@
 - 场景查询:`list_fire_devices`、`list_floors`、`query_scene_facilities`。
 - 场景动作:`focus_objects`、`focus_floors`、`fly_to`、`gis_fly_to`、`show_route`。
 - 回执查询:`get_scene_command_status`。
-- 建筑/预案查询:`query_building_profile`、`query_facilities`、`query_key_parts`、`query_knowledge`、`reconcile_building_facilities`。
+- 建筑/预案查询:`query_building_profile`、`query_facilities`、`query_key_parts`、`reconcile_building_facilities`、`propose_initial_plan`。
+- `query_knowledge` 保留为兼容工具，但历史知识检索已裁定迁移至平台原生知识库；四角色提示词不再依赖它。
 - 演练工具:`query_scene_state`、`inject_event`、`report_decision`。
 
 ### Python MCP（辖区业务、GIS派遣）
@@ -40,8 +41,8 @@
 
 | App | Node MCP | Python MCP | 原因 |
 |---|---:|---:|---|
-| Planner | ✓ | ✓ | 需建筑/预案与辖区力量/水源/派遣支撑初始部署 |
-| Adversary | ✓ | — | 需实时演练态势、建筑细节、知识库和 `inject_event`;不需派遣工具 |
+| Planner | ✓ | ✓ | 需建筑/预案与辖区力量/水源/派遣支撑初始部署；preflight 用 `propose_initial_plan` |
+| Adversary | ✓ | — | 需实时演练态势、建筑细节和 `inject_event`;不需派遣工具 |
 | Commander | ✓ | ✓ | 需演练态势/建筑数据与增援、供水、响应分析 |
 | Evaluator | — | — | 完整过程数据由调用方直接传入，评估阶段禁止外部工具引入不可控数据 |
 

@@ -51,6 +51,19 @@ export interface SpecialEventOutput {
   readonly delta?: ConfrontationDelta;
 }
 
+/** 一级 preflight 的结构化初始方案；无场景命令副作用。 */
+export interface PreflightPlanOutput {
+  readonly responseLevel: string;
+  readonly forces: readonly string[];
+  readonly tactics: readonly string[];
+  readonly keyPoints: readonly string[];
+  readonly routes: { readonly attack: readonly string[]; readonly evacuate: readonly string[] };
+  readonly safetyControls: readonly string[];
+  readonly reinforcementTriggers: readonly string[];
+  readonly evidence: readonly DecisionEvidence[];
+  readonly warnings: readonly string[];
+}
+
 /** UI 可安全展示的进度事件；刻意不携带 reasoning、工具参数或工具返回正文。 */
 export type ConfrontAgentProgressEvent =
   | { readonly type: 'connected' }
@@ -86,6 +99,25 @@ function pickStr(args: Record<string, unknown>, nested: Record<string, unknown> 
 
 function pickFinite(args: Record<string, unknown>, nested: Record<string, unknown> | undefined, key: string): number | undefined {
   return toFinite(nested?.[key]) ?? toFinite(args[key]);
+}
+
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((item) => String(item ?? '').trim()).filter(Boolean).slice(0, 12);
+}
+
+function parseEvidence(value: unknown): DecisionEvidence[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((ev): DecisionEvidence | null => {
+      const o = narrowObject(ev);
+      if (!o) return null;
+      const kind = String(o.kind ?? '').trim() as DecisionEvidence['kind'];
+      const label = String(o.label ?? o.title ?? '').trim();
+      if (!['plan', 'archive', 'force', 'water', 'knowledge', 'warning'].includes(kind) || !label) return null;
+      return { kind, label, detail: toStr(o.detail) };
+    })
+    .filter((ev): ev is DecisionEvidence => ev !== null);
 }
 
 /** 从 SSE 流里取首个指定 toolName 的 tool-call(args 已 JSON.parse)。 */
@@ -203,6 +235,55 @@ export class ConfrontAdapter {
     }
   }
 
+  /**
+   * 一级预案输出：复用 Planner，但只收集结构化方案建议，不触发 report_decision/场景命令。
+   * Agent 必须调用 Node MCP 的 propose_initial_plan；该工具无副作用。
+   */
+  async generatePreflightPlan(
+    ctx: AdapterCtx,
+    onProgress?: ConfrontAgentProgress,
+  ): Promise<PreflightPlanOutput | null> {
+    try {
+      const stream = await this.run(
+        `[一级预案输出][preflight] 作战会话=${ctx.drillId}\n` +
+          `灾情：${ctx.seed.building} ${ctx.seed.floor} ${ctx.seed.material}起火，被困${ctx.seed.trapped}人。\n` +
+          '先核对作战上下文、正式预案、真实可用力量和水源；数据不完整必须写入 warnings。' +
+          '本阶段尚未进入对抗或执行派遣：不得调用 report_decision、inject_event 或任何场景动作。' +
+          '最后必须且只能调用一次 propose_initial_plan，提交 response_level、forces、tactics、key_points、' +
+          'attack_route、evacuation_route、safety_controls、reinforcement_triggers、evidence、warnings。',
+        ctx,
+      );
+      const tc = await firstToolCall(stream, 'propose_initial_plan', onProgress);
+      const args = narrowObject(tc?.args);
+      if (!args) return null;
+      const plan = narrowObject(args.plan) ?? args;
+      const responseLevel = pickStr(args, plan, 'response_level') ?? pickStr(args, plan, 'responseLevel') ?? '';
+      const forces = stringList(plan.forces ?? args.forces);
+      const tactics = stringList(plan.tactics ?? args.tactics);
+      const keyPoints = stringList(plan.key_points ?? plan.keyPoints ?? args.key_points ?? args.keyPoints);
+      const attack = stringList(plan.attack_route ?? plan.attackRoute ?? args.attack_route ?? args.attackRoute);
+      const evacuate = stringList(plan.evacuation_route ?? plan.evacuationRoute ?? args.evacuation_route ?? args.evacuationRoute);
+      const safetyControls = stringList(plan.safety_controls ?? plan.safetyControls ?? args.safety_controls ?? args.safetyControls);
+      if (!responseLevel || !forces.length || !tactics.length || !keyPoints.length || !attack.length || !evacuate.length || !safetyControls.length) {
+        return null;
+      }
+      return {
+        responseLevel,
+        forces,
+        tactics,
+        keyPoints,
+        routes: { attack, evacuate },
+        safetyControls,
+        reinforcementTriggers: stringList(plan.reinforcement_triggers ?? plan.reinforcementTriggers ?? args.reinforcement_triggers ?? args.reinforcementTriggers),
+        evidence: parseEvidence(plan.evidence ?? args.evidence),
+        warnings: stringList(plan.warnings ?? args.warnings),
+      };
+    } catch (err) {
+      this.logger.warn('[confront-adapter] generatePreflightPlan 失败:', err);
+      return null;
+    }
+  }
+
   /** 对抗 agent:注入特情(解析 inject_event)。 */
   async injectSpecial(
     ctx: AdapterCtx,
@@ -294,19 +375,7 @@ export class ConfrontAdapter {
       if (rationale) adjustments.push(rationale);
       if (adjustments.length === 0) return null;
       // P1a:证据标签(decision.evidence 数组 [{kind,label,detail?}],容错解析)
-      const rawEvidence = Array.isArray(decision?.evidence) ? decision.evidence : Array.isArray(args.evidence) ? args.evidence : [];
-      const evidence = rawEvidence
-        .map((ev): DecisionEvidence | null => {
-          const o = narrowObject(ev);
-          if (!o) return null;
-          const kind = String(o.kind ?? '').trim() as DecisionEvidence['kind'];
-          const label = String(o.label ?? o.title ?? '').trim();
-          if (!['plan', 'archive', 'force', 'water', 'knowledge', 'warning'].includes(kind)) return null;
-          if (!label) return null;
-          const detail = toStr(o.detail);
-          return { kind, label, detail };
-        })
-        .filter((ev): ev is DecisionEvidence => ev !== null);
+      const evidence = parseEvidence(decision?.evidence ?? args.evidence);
       return { adjustments, evidence: evidence.length ? evidence : undefined };
     } catch (err) {
       this.logger.warn('[confront-adapter] generateAdjustment 失败:', err);

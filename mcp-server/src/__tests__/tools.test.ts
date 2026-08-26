@@ -251,10 +251,23 @@ describe('tools', () => {
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain('query_building_profile');
     expect(names).toContain('query_facilities');
+    expect(names).toContain('propose_initial_plan');
     expect(names).toContain('query_key_parts');
     expect(names).toContain('query_scene_state');
     expect(names).toContain('inject_event');
     expect(names).toContain('report_decision');
+  });
+
+  it('propose_initial_plan 是无副作用的 preflight 建议入口', async () => {
+    const res = await handleToolCall('propose_initial_plan', {
+      plan: {
+        response_level: 'Ⅱ级响应', forces: ['测试力量'], tactics: ['内攻控火'], key_points: ['先搜救'],
+        attack_route: ['1F', '5F'], evacuation_route: ['5F', '1F'], safety_controls: ['安全员'],
+      },
+    });
+    expect(res.isError).toBeUndefined();
+    expect(res.content[0].text).toContain('"mode":"preflight"');
+    expect(publishCommand).not.toHaveBeenCalled();
   });
 
   it('TOOLS 含 query_knowledge（RAG 检索，Round 9 加入）', () => {

@@ -177,6 +177,11 @@ export function useConfrontationDriver(opts: UseConfrontDriverOpts): void {
       };
 
       // 初始部署完成后再进入第一轮导调，避免 Planner 与 Adversary 并发造成“后台无反馈”。
+      if (s.deploy?.length) {
+        // 一级预案输出已通过共享作战会话形成有效基线；不重复请求 Planner。
+        runInjectRound(0);
+        return;
+      }
       driver.startInitialPlan({
         onStart: () => startAgentActivity(
           'planner',

@@ -30,6 +30,7 @@ import { fetchAiDispatch, fetchBuildingAnalysis, type BuildingAnalysisSummary } 
 import type { RouteRenderItem } from '@/lib/gis/route-render';
 import DisposalFlowBar from '@/components/command/DisposalFlowBar';
 import { useDisposalFlow } from '@/hooks/useDisposalFlow';
+import { getOperationSession, subscribeOperationSession, type OperationSession } from '@/operations/operation-session';
 
 // GIS 底座:与总览模块同一 RealGisMap(Leaflet 浏览器库,须客户端加载,ssr:false)
 const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
@@ -37,9 +38,16 @@ const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
   loading: () => null,
 });
 
-export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (inc: {
+export default function CommandView({
+  onIncidentSelect,
+  onOpenDrillSession,
+}: {
+  onIncidentSelect?: (inc: {
   id: string; address: string; type: string; status: string; lng: number; lat: number; caller?: string;
-}) => void }) {
+}) => void;
+  /** 共享会话存在时从GIS宏观指挥跳入局部3D演练。 */
+  onOpenDrillSession?: () => void;
+}) {
   const [snap, setSnap] = useState<LiveSnapshot>(() => getSnapshot());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [incidentPanelOpen, setIncidentPanelOpen] = useState(true);
@@ -56,11 +64,14 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
   const [mode, setMode] = useState<'real' | 'mock'>('mock');
   const [realIncidents, setRealIncidents] = useState<MockIncident[]>([]);
   const [analysisSummary, setAnalysisSummary] = useState<BuildingAnalysisSummary | null>(null);
+  const [operationSession, setOperationSession] = useState<OperationSession | null>(getOperationSession());
   const [dispatchRoutes, setDispatchRoutes] = useState<RouteRenderItem[]>([]);
   const dispatchingRef = useRef<string | null>(null);
   // GIS 底图实例(RealGisMap onMapReady 注入,供战术推演层投影)
   const [gisMap, setGisMap] = useState<L.Map | null>(null);
   const demoActiveRef = useRef(false);
+
+  useEffect(() => subscribeOperationSession(setOperationSession), []);
 
   // Events handler with demo-gate on status toast
   const handleEvents = useCallback((events: LiveEvent[]) => {
@@ -420,6 +431,27 @@ export default function CommandView({ onIncidentSelect }: { onIncidentSelect?: (
           onStop={flow.stopDemo}
         />
       </div>
+
+      {/* 演练与实战共用 OperationSession：GIS是宏观投影，可一键进入局部3D。 */}
+      {operationSession && (
+        <div className="pointer-events-auto absolute left-1/2 top-[104px] z-50 flex max-w-[680px] -translate-x-1/2 items-center gap-2 rounded-md border border-violet/55 bg-bg-panel/90 px-3 py-1.5 text-[11px] backdrop-blur-[8px]">
+          <span className="rounded border border-violet/50 bg-violet/10 px-1 py-px font-bold text-violet">
+            {operationSession.source === 'drill' ? '演练作战会话' : '实战作战会话'}
+          </span>
+          <span className="truncate text-text-2">
+            {operationSession.scenario.buildingName} · {operationSession.scenario.floor} · {operationSession.scenario.material} · 被困 {operationSession.scenario.trapped} 人
+          </span>
+          <span className="font-mono text-text-3">{operationSession.status}</span>
+          {operationSession.source === 'drill' && onOpenDrillSession && (
+            <button
+              onClick={onOpenDrillSession}
+              className="ml-1 rounded border border-cyan/50 px-2 py-0.5 text-cyan transition hover:bg-cyan/10"
+            >
+              查看局部3D
+            </button>
+          )}
+        </div>
+      )}
 
       {/* 右上悬浮:预案库 + 现场视频回传(选中警情后视频可用)。
           right-[440px]:让开右侧 C 面板(vars,right:16 width:400 → 左边缘 right:416),

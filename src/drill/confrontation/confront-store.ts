@@ -252,6 +252,8 @@ export function beginConfrontation(opts?: {
   seedError?: string;
   seedScenario?: ConfrontationSeed;
   plannedTotal?: number;
+  /** 一级作战会话已形成的初始部署；存在时二级对抗不再重复调用 Planner。 */
+  initialDeploy?: readonly string[];
 }): void {
   seqCounter = 0;
   recentEventKeys.clear();
@@ -275,7 +277,7 @@ export function beginConfrontation(opts?: {
     startedAt: Date.now(),
     plannedTotal: opts?.plannedTotal ?? 3,
     lastRound: null,
-    deploy: null,
+    deploy: opts?.initialDeploy ? [...opts.initialDeploy] : null,
     agentActivity: null,
   };
   emit();

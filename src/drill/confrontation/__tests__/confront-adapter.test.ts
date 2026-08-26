@@ -37,6 +37,34 @@ describe('confront-adapter', () => {
     expect(out?.deployLines.length).toBeGreaterThan(0);
   });
 
+  it('generatePreflightPlan 只解析无副作用的 propose_initial_plan', async () => {
+    let request: PostAgentChatParams | undefined;
+    const adapter = new ConfrontAdapter({
+      postChat: async (p) => {
+        request = p;
+        return fakeStream([JSON.stringify({
+          type: 'tool-call', toolName: 'propose_initial_plan', args: {
+            plan: {
+              response_level: 'Ⅱ级响应', forces: ['康泰路专职队（待确认）'], tactics: ['内攻控火'],
+              key_points: ['先搜救'], attack_route: ['1F', '5F'], evacuation_route: ['5F', '13F'],
+              safety_controls: ['空呼监测'], reinforcement_triggers: ['火势升级'],
+              evidence: [{ kind: 'plan', label: '21号楼正式预案V1' }], warnings: ['力量更新时间待确认'],
+            },
+          },
+        })]);
+      },
+    });
+    const out = await adapter.generatePreflightPlan(CTX);
+    expect(request?.content).toContain('[一级预案输出][preflight]');
+    expect(request?.content).toContain('不得调用 report_decision');
+    expect(out).toMatchObject({
+      responseLevel: 'Ⅱ级响应',
+      routes: { attack: ['1F', '5F'], evacuate: ['5F', '13F'] },
+      evidence: [{ kind: 'plan', label: '21号楼正式预案V1' }],
+      warnings: ['力量更新时间待确认'],
+    });
+  });
+
   it('injectSpecial 解析 inject_event args → 特情卡', async () => {
     const adapter = new ConfrontAdapter({
       postChat: fakePost([

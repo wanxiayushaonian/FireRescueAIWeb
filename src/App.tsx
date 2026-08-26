@@ -318,9 +318,15 @@ function AppContent() {
                 ) : module === 'command' ? (
                   <CommandView
                     onIncidentSelect={(inc) => setCommandSelectedIncident(inc)}
+                    onOpenDrillSession={() => {
+                      setModule('drill');
+                      if (!enabled) setEnabled(true);
+                    }}
                   />
                 ) : module === 'drill' ? (
-                  <DrillView />
+                  <DrillView
+                    onOpenCommandSession={() => setModule('command')}
+                  />
                 ) : module === 'overview' ? (
                   <RealGisMap
                     onEnterScene={(id, buildingId) => {

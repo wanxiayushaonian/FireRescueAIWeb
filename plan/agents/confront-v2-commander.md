@@ -43,7 +43,6 @@ Node MCP:
 - `query_building_profile` / `query_key_parts`:特情涉及结构、重点部位、避难层或通道时使用。
 - `query_facilities` / `query_scene_facilities`:涉及固定消防设施与楼层设备时使用。
 - `reconcile_building_facilities`:设施故障或固定消防设施参与战术时，核对台账与场景是否一致。
-- `query_knowledge`:需要真实预案战术依据时使用。
 - `list_floors` / `list_fire_devices`:仅在需要校验楼层/设备是否存在时使用。
 - `report_decision`:程序化特情响应必须且只能调用一次。
 
@@ -76,6 +75,7 @@ Python MCP:
 - `inject_event`:属于 Adversary，Commander 绝对不得自己改写灾情。
 - `gis_fly_to` / `show_route`:程序化对抗调整不操作 GIS。
 - `query_incidents`:本局特情已由对抗舱给出，不查其他警情。
+- `query_knowledge`:旧自建检索链路已迁移，不作为本角色依赖；历史资料仅在平台原生知识库已挂载时参考，且不能替代正式预案。
 
 # 四、指挥优先级
 

@@ -206,6 +206,32 @@ export const TOOLS = [
     },
   },
   {
+    name: 'propose_initial_plan',
+    description: '提交一级预案输出的结构化初始方案（无场景副作用）。仅 Planner 在 preflight 阶段使用；返回的 tool-call 由前端写入共享作战会话，之后可进入演练对抗或实战指挥。不得用本工具表示已执行派遣。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        plan: {
+          type: 'object',
+          properties: {
+            response_level: { type: 'string', description: '响应等级与调派规模摘要' },
+            forces: { type: 'array', items: { type: 'string' }, description: '力量编成；未验证可用性时必须明确“待确认”' },
+            tactics: { type: 'array', items: { type: 'string' } },
+            key_points: { type: 'array', items: { type: 'string' } },
+            attack_route: { type: 'array', items: { type: 'string' } },
+            evacuation_route: { type: 'array', items: { type: 'string' } },
+            safety_controls: { type: 'array', items: { type: 'string' } },
+            reinforcement_triggers: { type: 'array', items: { type: 'string' } },
+            evidence: { type: 'array', items: { type: 'object' }, description: '依据标签：kind=plan/archive/force/water/warning，含 label/detail' },
+            warnings: { type: 'array', items: { type: 'string' }, description: '数据缺失、草稿、过期或待确认项' },
+          },
+          required: ['response_level', 'forces', 'tactics', 'key_points', 'attack_route', 'evacuation_route', 'safety_controls'],
+        },
+      },
+      required: ['plan'],
+    },
+  },
+  {
     name: 'report_decision',
     description: '上报主智能体决策。经 /scene-events 转发至浏览器对抗舱执行(confront-store.appendAdjust,作为动态调整进入对抗时间线,供指挥员响应与评估)。前置:对抗舱处于 running;未开启时执行失败(ack=error)。',
     inputSchema: {
@@ -451,6 +477,23 @@ export async function handleToolCall(
           : []
     ));
     return { content: [{ type: 'text', text: JSON.stringify(reconciled, null, 2) }] };
+  }
+
+  if (name === 'propose_initial_plan') {
+    const plan = args.plan;
+    if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+      return {
+        isError: true,
+        content: [{ type: 'text', text: 'propose_initial_plan 缺少结构化 plan：请提供响应等级、力量、战术、要点、进攻/疏散路线和安全管控。' }],
+      };
+    }
+    // 此工具刻意不 publishCommand、不写 DrillSession：preflight 只是方案建议，不代表已派遣/已执行。
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({ accepted: true, mode: 'preflight', message: '初始方案已作为建议返回，等待人员确认后进入作战会话。' }),
+      }],
+    };
   }
 
   if (name === 'query_building_profile') {

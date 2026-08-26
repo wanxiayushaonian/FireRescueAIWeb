@@ -38,6 +38,17 @@ describe('confront-store', () => {
     expect(s.situation).toEqual({ fireLevel: 1, trappedCount: 5, damageLevel: 0 });
   });
 
+  it('一级作战会话传入 initialDeploy 时保留为二级对抗基线', () => {
+    beginConfrontation({
+      seedScenario: { building: '21号楼', floor: '5F', material: '电气', trapped: 5, seed: '#ABCD' },
+      initialDeploy: ['真实Planner：康泰路专职队首调', '真实Planner：5F内攻控火'],
+    });
+    expect(getConfrontationState().deploy).toEqual([
+      '真实Planner：康泰路专职队首调',
+      '真实Planner：5F内攻控火',
+    ]);
+  });
+
   it('appendInject 保存类型/delta 并演化火势、被困、损伤和风向', () => {
     beginConfrontation({ seedScenario: { building: 'b', floor: '5F', material: '电气', trapped: 2, seed: 's' } });
     appendInject({

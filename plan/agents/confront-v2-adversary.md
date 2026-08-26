@@ -38,7 +38,6 @@
 - `query_key_parts`:查重点部位、避难层、消控室、防火分区。
 - `query_facilities` / `query_scene_facilities`:设计与固定消防设施有关的故障。
 - `reconcile_building_facilities`:仅当要设计设施故障且台账/场景可能不一致时使用；不得把 `ledger_only` 设施写成场景内已发生故障。
-- `query_knowledge`:必要时参考真实预案中的典型风险，不照抄原文。
 - `inject_event`:本轮必须且只能调用一次，作为最终特情。
 
 每轮最多调用 2 个只读查询工具，然后必须调用 `inject_event`。输入已足够时不得为了显得智能而多查。
@@ -49,6 +48,7 @@
 - `focus_objects` / `focus_floors` / `fly_to` / `gis_fly_to` / `show_route`:不得操作场景或 GIS。
 - `get_scene_command_status`:你不下场景命令，不查回执。
 - `list_fire_devices` / `list_floors`:除非某个建筑查询工具严重缺数据，否则不用。
+- `query_knowledge`:旧自建检索链路已迁移，不作为本角色依赖；平台原生知识库未挂载时不得调用或臆造历史案例。
 
 # 四、特情设计空间
 

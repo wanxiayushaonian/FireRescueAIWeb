@@ -16,6 +16,7 @@ import ConfrontationPanel from '@/drill/confrontation/ConfrontationPanel';
 import { beginConfrontation } from '@/drill/confrontation/confront-store';
 import { subscribeConfrontation } from '@/drill/confrontation/confront-store';
 import { getDrillState } from '@/mock/drillStore';
+import { getOperationSession, setOperationStatus, subscribeOperationSession, type OperationSession } from '@/operations/operation-session';
 import { DEFAULT_DISASTER_SEED } from '@/drill/building-21';
 import DraggablePanel from '@/components/DraggablePanel';
 import { Swords, Crosshair, FileText, Archive } from 'lucide-react';
@@ -27,7 +28,7 @@ import PlanLibraryPanel from '@/components/panels/PlanLibraryPanel';
 // DrillView
 // ============================================================
 
-export default function DrillView() {
+export default function DrillView({ onOpenCommandSession }: { onOpenCommandSession?: () => void }) {
   // ---- 对抗舱开关 + 订阅 store，store.active 翻转为 false 时清理 ----
   const [confOpen, setConfOpen] = useState(false);
   const confOpenRef = useRef(confOpen);
@@ -63,6 +64,9 @@ export default function DrillView() {
   const [scenarioOpen, setScenarioOpen] = useState(true);
   const [planOpen, setPlanOpen] = useState(true);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [operationSession, setOperationSession] = useState<OperationSession | null>(getOperationSession());
+
+  useEffect(() => subscribeOperationSession(setOperationSession), []);
 
   // ---- 演练启动/停止（对抗舱状态由 store 驱动，无独立引擎）----
 
@@ -135,12 +139,34 @@ export default function DrillView() {
 
       {/* ===== 进入对抗模式(独立于工具条,不再被假启动状态隐藏) ===== */}
       {!confOpen && (
-        <div className="pointer-events-auto absolute bottom-6 right-6 z-40">
+        <div className="pointer-events-auto absolute bottom-6 right-6 z-40 flex items-center gap-2">
+          {operationSession && onOpenCommandSession && (
+            <button
+              type="button"
+              onClick={onOpenCommandSession}
+              className="rounded-lg border border-cyan/60 bg-bg-panel/90 px-3 py-2.5 text-[13px] text-cyan transition hover:bg-cyan/10"
+              title="在实战指挥中查看当前作战会话的GIS全局态势"
+            >
+              查看全局态势
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
               // 灾情种子优先级:情景参数面板「生成灾情设定」的参数 > 21号楼默认(5F/电气/5人)
               const gen = getDrillState().scenario;
+              const candidateSession = getOperationSession();
+              const session = gen && candidateSession?.source === 'drill' && candidateSession.scenario.buildingId === gen.buildingId
+                ? candidateSession
+                : null;
+              const initialDeploy = session?.initialPlan
+                ? [
+                  ...session.initialPlan.forces.slice(0, 2),
+                  ...session.initialPlan.tactics.slice(0, 2),
+                  ...session.initialPlan.keyPoints.slice(0, 3),
+                  ...session.initialPlan.safetyControls.slice(0, 2),
+                ]
+                : undefined;
               beginConfrontation({
                 seedScenario: {
                   building: gen?.buildingName ?? '21号楼',
@@ -150,7 +176,9 @@ export default function DrillView() {
                   seed: `#${Math.floor(Math.random() * 0xffff).toString(16).toUpperCase().padStart(4, '0')}`,
                 },
                 plannedTotal: 3 + Math.floor(Math.random() * 3),
+                initialDeploy,
               });
+              if (session) setOperationStatus(session.id, 'active');
               setConfOpen(true);
             }}
             className="flex items-center justify-center gap-1.5 rounded-lg border border-orange/60 bg-orange/10 px-4 py-2.5 text-[14px] font-medium text-orange transition hover:bg-orange/20"

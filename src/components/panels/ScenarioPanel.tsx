@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Building2, Layers, FlaskConical, Users, Crosshair, ChevronDown, Minus, Plus, Zap } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
@@ -9,8 +9,13 @@ import {
   fetchDrillBuildings,
 } from '@/mock/drill';
 import type { DrillBuilding } from '@/mock/drill';
-import { beginGenerate, finishGenerate, subscribeDrill } from '@/mock/drillStore';
+import { beginGenerate, finishGenerate, finishGenerateFromOperationProposal, setPlannerPhase, subscribeDrill } from '@/mock/drillStore';
 import { beginConfrontation } from '@/drill/confrontation/confront-store';
+import { ConfrontAdapter, type ConfrontAgentProgressEvent } from '@/drill/confrontation/confront-adapter';
+import { generateInitialPlanForSession } from '@/operations/generate-initial-plan';
+import { setOperationInitialPlan, startOperationSession } from '@/operations/operation-session';
+import { DRILL_PLANNER_APP_ID } from '@/lib/agent-app-ids';
+import { BUILDING_21_ID, BUILDING_21_SCENE_ID } from '@/drill/building-21';
 import { addSceneAction } from '@/mock/sceneLog';
 import { showToast } from '@/components/Toast';
 import PanelStateView from '@/components/PanelStateView';
@@ -50,6 +55,8 @@ export default function ScenarioPanel() {
   const [trapped, setTrapped] = useState(3);
   const [picking, setPicking] = useState(false);
   const [bump, setBump] = useState(0);
+  const generatingRef = useRef(false);
+  const plannerAdapter = useMemo(() => new ConfrontAdapter(), []);
 
   const loadBuildings = useCallback(async (s: FetchState) => {
     setState('loading');
@@ -127,6 +134,8 @@ export default function ScenarioPanel() {
 
   const handleGenerate = () => {
     if (!canGenerate || !building) return;
+    if (generatingRef.current) return;
+    generatingRef.current = true;
     const scenario = {
       buildingId,
       buildingName: building.name,
@@ -134,10 +143,77 @@ export default function ScenarioPanel() {
       material,
       trapped,
     };
-    beginGenerate(scenario);
-    // 预案内容即刻就绪，由预案输出面板负责分组流式展示
-    window.setTimeout(() => finishGenerate(buildDrillPlan(scenario)), 600);
-    showToast('灾情设定已生成，预案输出智能体推演中');
+    const session = startOperationSession('drill', {
+      ...scenario,
+      sceneId: buildingId === BUILDING_21_ID ? BUILDING_21_SCENE_ID : undefined,
+    });
+    beginGenerate(scenario, session.id);
+    showToast('灾情设定已生成，作战规划智能体正在研判');
+
+    const progress = (event: ConfrontAgentProgressEvent) => {
+      if (event.type === 'connected') setPlannerPhase('已连接作战规划智能体，正在读取业务数据');
+      else if (event.type === 'tool-call') setPlannerPhase(`正在调用：${event.toolName}`);
+      else if (event.type === 'tool-result') setPlannerPhase(`${event.toolName} 已返回，继续形成初始方案`);
+      else setPlannerPhase('数据核对完成，正在生成结构化初始方案');
+    };
+
+    void generateInitialPlanForSession({
+      session,
+      appId: DRILL_PLANNER_APP_ID,
+      adapter: plannerAdapter,
+      onProgress: progress,
+    }).then((proposal) => {
+      if (proposal) {
+        setOperationInitialPlan(session.id, proposal);
+        finishGenerateFromOperationProposal(proposal);
+        showToast('真实初始方案已生成，可进入对抗模式');
+        return;
+      }
+
+      // 降级仍可继续演练，但必须在UI与会话中明确标记，绝不伪称真实智能体输出。
+      const fallback = buildDrillPlan(scenario);
+      const warning = '作战规划智能体未返回完整结构化方案；当前为本地降级模板，需人工确认。';
+      setOperationInitialPlan(session.id, {
+        source: 'fallback',
+        responseLevel: fallback.responseLevel,
+        forces: fallback.forces,
+        tactics: fallback.tactics,
+        keyPoints: fallback.keyPoints,
+        routes: fallback.routes,
+        safetyControls: fallback.safetyControls,
+        reinforcementTriggers: [],
+        evidence: [{ kind: 'warning', label: '智能体规划降级', detail: warning }],
+        warnings: [warning],
+        generatedAt: Date.now(),
+      });
+      finishGenerate(fallback, {
+        source: 'fallback',
+        warnings: [warning],
+        evidence: [{ kind: 'warning', label: '智能体规划降级', detail: warning }],
+      });
+      showToast('规划智能体未返回完整方案，已明确标记为降级模板');
+    }).catch(() => {
+      // generateInitialPlanForSession 已吸收常见 agent 错误；这里兜住意外运行时异常。
+      const fallback = buildDrillPlan(scenario);
+      const warning = '规划调用发生异常；当前为本地降级模板，需人工确认。';
+      setOperationInitialPlan(session.id, {
+        source: 'fallback',
+        responseLevel: fallback.responseLevel,
+        forces: fallback.forces,
+        tactics: fallback.tactics,
+        keyPoints: fallback.keyPoints,
+        routes: fallback.routes,
+        safetyControls: fallback.safetyControls,
+        reinforcementTriggers: [],
+        evidence: [{ kind: 'warning', label: '智能体规划异常', detail: warning }],
+        warnings: [warning],
+        generatedAt: Date.now(),
+      });
+      finishGenerate(fallback, { source: 'fallback', warnings: [warning] });
+      showToast('规划调用异常，已显示降级模板');
+    }).finally(() => {
+      generatingRef.current = false;
+    });
   };
 
   return (

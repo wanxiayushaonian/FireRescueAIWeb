@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Bot, ChevronDown, RefreshCw, ShieldAlert, ClipboardCheck, TriangleAlert,
@@ -9,9 +9,14 @@ import { buildDrillPlan, evaluatePlan, pickEmergency, renderEmergency } from '@/
 import type { EmergencyEvent, EvaluationResult } from '@/mock/drill';
 import { evaluateViaAgent } from '@/lib/agent-evaluate';
 import {
-  beginEvaluate, beginGenerate, finishEvaluate, finishGenerate,
+  beginEvaluate, beginGenerate, finishEvaluate, finishGenerate, finishGenerateFromOperationProposal, setPlannerPhase,
   getDrillState, injectEmergency, subscribeDrill,
 } from '@/mock/drillStore';
+import { ConfrontAdapter, type ConfrontAgentProgressEvent } from '@/drill/confrontation/confront-adapter';
+import { generateInitialPlanForSession } from '@/operations/generate-initial-plan';
+import { getOperationSession, setOperationInitialPlan, startOperationSession } from '@/operations/operation-session';
+import { DRILL_PLANNER_APP_ID } from '@/lib/agent-app-ids';
+import { BUILDING_21_ID, BUILDING_21_SCENE_ID } from '@/drill/building-21';
 import {
   getConfrontationState, subscribeConfrontation, reopenConfrontation,
 } from '@/drill/confrontation/confront-store';
@@ -39,17 +44,26 @@ const GROUP_META = [
   { key: 'safety', title: '安全管控', icon: ShieldCheck },
 ] as const;
 
+const EVIDENCE_LABEL: Record<string, string> = {
+  plan: '正式预案', archive: '建筑档案', force: '真实力量', water: '消防水源',
+  knowledge: '历史知识', warning: '数据告警',
+};
+
 /** 分组出现时同步写入场景动作（source=预案引擎） */
-function writeGroupSceneActions(groupKey: string, s: NonNullable<DrillState['scenario']>) {
+function writeGroupSceneActions(
+  groupKey: string,
+  s: NonNullable<DrillState['scenario']>,
+  plan: NonNullable<DrillState['plan']>,
+) {
   if (groupKey === 'level') {
     addSceneAction({ action: 'switchFloor', target: `${s.buildingName} ${s.floor}`, params: { floor: s.floor }, source: '预案引擎' });
   }
   if (groupKey === 'routes') {
-    addSceneAction({ action: 'showRoute', target: `进攻路线（cyan）：首层东门 → 消防电梯 → ${s.floor}`, params: { kind: 'attack', color: '#22d3ee' }, source: '预案引擎' });
-    addSceneAction({ action: 'showRoute', target: `疏散路线（green）：${s.floor} → 防烟楼梯间 B → 首层北侧集结点`, params: { kind: 'evacuate', color: '#34d399' }, source: '预案引擎' });
+    addSceneAction({ action: 'showRoute', target: `进攻路线（cyan）：${plan.routes.attack.join(' → ')}`, params: { kind: 'attack', color: '#22d3ee' }, source: '预案引擎' });
+    addSceneAction({ action: 'showRoute', target: `疏散路线（green）：${plan.routes.evacuate.join(' → ')}`, params: { kind: 'evacuate', color: '#34d399' }, source: '预案引擎' });
   }
   if (groupKey === 'safety') {
-    addSceneAction({ action: 'batchHighlight', target: `${s.floor} 关键设备（消火栓×4、喷淋阀×2、防火门×3）`, params: { floor: s.floor, count: 9 }, source: '预案引擎' });
+    addSceneAction({ action: 'batchHighlight', target: `${s.floor} 安全管控：${plan.safetyControls[0] ?? '待确认'}`, params: { floor: s.floor }, source: '预案引擎' });
   }
 }
 
@@ -135,11 +149,15 @@ export default function PlanOutputPanel() {
   const [revealed, setRevealed] = useState(0);
   const toastedGen = useRef(0);
   const reduced = useReducedMotion();
+  const plannerAdapter = useMemo(() => new ConfrontAdapter(), []);
 
   useEffect(() => subscribeDrill(setDrill), []);
   useEffect(() => subscribeConfrontation(setConfront), []);
 
-  const { phase, plan, scenario, emergencies, evaluating, evaluation, generation } = drill;
+  const {
+    phase, plan, scenario, emergencies, evaluating, evaluation, generation,
+    planSource, planEvidence, planWarnings, plannerPhase,
+  } = drill;
   const doneRevealing = phase === 'done' && revealed >= GROUP_COUNT;
 
   // 分组流式输出：每 500ms 出现一组，并同步写场景动作
@@ -150,7 +168,7 @@ export default function PlanOutputPanel() {
     const iv = window.setInterval(() => {
       i += 1;
       setRevealed(i);
-      writeGroupSceneActions(GROUP_META[i - 1].key, scenario);
+      writeGroupSceneActions(GROUP_META[i - 1].key, scenario, plan);
       if (i >= GROUP_COUNT) {
         window.clearInterval(iv);
         if (toastedGen.current !== generation) {
@@ -166,8 +184,51 @@ export default function PlanOutputPanel() {
     if (!scenario) return;
     addSceneAction({ action: 'hideRoute', target: '清除进攻/疏散路线', source: '预案引擎' });
     addSceneAction({ action: 'removeMarker', target: `${scenario.buildingName} 着火点/关键设备标记`, source: '预案引擎' });
-    beginGenerate(scenario);
-    window.setTimeout(() => finishGenerate(buildDrillPlan(scenario)), 600);
+    const active = getOperationSession();
+    const session = active?.source === 'drill' && active.scenario.buildingId === scenario.buildingId
+      ? active
+      : startOperationSession('drill', {
+        ...scenario,
+        sceneId: scenario.buildingId === BUILDING_21_ID ? BUILDING_21_SCENE_ID : undefined,
+      });
+    beginGenerate(scenario, session.id);
+    const progress = (event: ConfrontAgentProgressEvent) => {
+      if (event.type === 'connected') setPlannerPhase('已连接作战规划智能体，正在读取业务数据');
+      else if (event.type === 'tool-call') setPlannerPhase(`正在调用：${event.toolName}`);
+      else if (event.type === 'tool-result') setPlannerPhase(`${event.toolName} 已返回，继续形成初始方案`);
+      else setPlannerPhase('数据核对完成，正在生成结构化初始方案');
+    };
+    void generateInitialPlanForSession({ session, appId: DRILL_PLANNER_APP_ID, adapter: plannerAdapter, onProgress: progress })
+      .then((proposal) => {
+        if (proposal) {
+          setOperationInitialPlan(session.id, proposal);
+          finishGenerateFromOperationProposal(proposal);
+          showToast('真实初始方案已重新生成');
+          return;
+        }
+        const fallback = buildDrillPlan(scenario);
+        const warning = '作战规划智能体未返回完整结构化方案；当前为本地降级模板，需人工确认。';
+        setOperationInitialPlan(session.id, {
+          source: 'fallback', responseLevel: fallback.responseLevel, forces: fallback.forces,
+          tactics: fallback.tactics, keyPoints: fallback.keyPoints, routes: fallback.routes,
+          safetyControls: fallback.safetyControls, reinforcementTriggers: [],
+          evidence: [{ kind: 'warning', label: '智能体规划降级', detail: warning }], warnings: [warning], generatedAt: Date.now(),
+        });
+        finishGenerate(fallback, { source: 'fallback', warnings: [warning], evidence: [{ kind: 'warning', label: '智能体规划降级', detail: warning }] });
+        showToast('规划智能体未返回完整方案，已显示降级模板');
+      })
+      .catch(() => {
+        const fallback = buildDrillPlan(scenario);
+        const warning = '规划调用发生异常；当前为本地降级模板，需人工确认。';
+        setOperationInitialPlan(session.id, {
+          source: 'fallback', responseLevel: fallback.responseLevel, forces: fallback.forces,
+          tactics: fallback.tactics, keyPoints: fallback.keyPoints, routes: fallback.routes,
+          safetyControls: fallback.safetyControls, reinforcementTriggers: [],
+          evidence: [{ kind: 'warning', label: '智能体规划异常', detail: warning }], warnings: [warning], generatedAt: Date.now(),
+        });
+        finishGenerate(fallback, { source: 'fallback', warnings: [warning] });
+        showToast('规划调用异常，已显示降级模板');
+      });
   };
 
   const handleInject = () => {
@@ -257,7 +318,7 @@ export default function PlanOutputPanel() {
           {phase === 'generating' || !doneRevealing ? (
             <div>
               <div className="mb-1 flex items-center gap-1 text-[12px] text-cyan">
-                预案输出智能体推演中
+                {plannerPhase ?? '作战规划智能体推演中'}
                 {[0, 1, 2].map((i) => (
                   <motion.span
                     key={i}
@@ -277,7 +338,9 @@ export default function PlanOutputPanel() {
           ) : (
             <motion.div initial={{ opacity: 1 }} animate={{ opacity: 0.7 }} className="flex items-center gap-2">
               <div className="h-1 flex-1 rounded-full bg-green/70" />
-              <span className="text-[12px] text-green">推演完成</span>
+              <span className={`text-[12px] ${planSource === 'agent' ? 'text-green' : 'text-amber'}`}>
+                {planSource === 'agent' ? '真实智能体方案' : '降级模板 · 待人工确认'}
+              </span>
             </motion.div>
           )}
         </div>
@@ -371,6 +434,26 @@ export default function PlanOutputPanel() {
                 )}
               </GroupCard>
             ))}
+
+            {planWarnings.length > 0 && (
+              <div className="rounded-lg border border-amber/50 bg-amber/5 p-3">
+                <div className="mb-1 text-[12px] font-bold text-amber">数据告警 / 待确认项</div>
+                {planWarnings.map((warning) => <div key={warning} className="text-[12px] leading-5 text-text-2">· {warning}</div>)}
+              </div>
+            )}
+
+            {planEvidence.length > 0 && (
+              <div className="rounded-lg border border-violet/40 bg-violet/5 p-3">
+                <div className="mb-2 text-[12px] font-bold text-violet">初始方案依据</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {planEvidence.map((item, index) => (
+                    <span key={`${item.kind}-${item.label}-${index}`} className="rounded border border-line bg-bg-panel-2 px-1.5 py-0.5 text-[11px] text-text-2" title={item.detail}>
+                      {EVIDENCE_LABEL[item.kind] ?? item.kind} · {item.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 评估中骨架 */}
             {evaluating && (

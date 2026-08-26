@@ -34,6 +34,7 @@ import { fmtT, randInt, deployLines } from './confront-helpers';
 import { addSceneAction } from '@/mock/sceneLog';
 import { addLibraryItem } from '@/mock/planLibrary';
 import { showToast } from '@/components/Toast';
+import { getOperationSession, setOperationEffectivePlan, setOperationStatus } from '@/operations/operation-session';
 import DemoTag from '@/components/DemoTag';
 import { BUILDINGS, FIRE_MATERIALS } from '@/mock/drill';
 import {
@@ -287,6 +288,8 @@ export default function ConfrontationPanel() {
       supersedes: adjustId,
       tSec: elapsedSec,
     });
+    const session = getOperationSession();
+    if (session) setOperationEffectivePlan(session.id, lines);
     setManualEditId(null);
     showToast('人工决策已记录，后续调整将以此为部署基线');
   };
@@ -324,6 +327,8 @@ export default function ConfrontationPanel() {
       review.source === 'agent' ? '真实评估智能体已生成完整复盘' : '评估智能体未响应，规则降级复盘已生成',
     );
     finishConfrontationLocal(review, conf.events.length + 1, elapsedSec);
+    const operation = getOperationSession();
+    if (operation) setOperationStatus(operation.id, 'closed');
 
     addLibraryItem({
       kind: '对抗评估',

@@ -3,6 +3,8 @@
 // 对抗模式（confrontation）状态已迁移至 src/drill/confrontation/confront-store.ts（本文件的旧对抗扩展已删除）。
 import type { DrillPlan } from './types';
 import type { EmergencyEvent, EvaluationResult, ScenarioParams } from './drill';
+import type { DecisionEvidence } from '@/drill/confrontation/confront-store';
+import type { OperationPlanProposal } from '@/operations/operation-session';
 import { addLibraryItem, patchLibraryItem } from './planLibrary';
 import { createPlan } from '@/api/plans';
 import { DRILL_DEMO_BUILDING_ID } from '@/api/building-profile';
@@ -22,6 +24,13 @@ export interface DrillState {
   evaluatedCount: number;
   /** 每次重新生成 +1，供输出面板重置流式进度 */
   generation: number;
+  /** 统一作战会话 ID：一级预案、对抗舱、实战指挥共享。 */
+  sessionId: string | null;
+  /** 一级方案来源必须显式呈现，禁止把降级模板伪装为智能体输出。 */
+  planSource: 'agent' | 'fallback' | null;
+  planEvidence: readonly DecisionEvidence[];
+  planWarnings: readonly string[];
+  plannerPhase: string | null;
 }
 
 let state: DrillState = {
@@ -33,6 +42,11 @@ let state: DrillState = {
   evaluation: null,
   evaluatedCount: 0,
   generation: 0,
+  sessionId: null,
+  planSource: null,
+  planEvidence: [],
+  planWarnings: [],
+  plannerPhase: null,
 };
 
 type Listener = (s: DrillState) => void;
@@ -53,7 +67,7 @@ export function subscribeDrill(fn: Listener): () => void {
 }
 
 /** 开始生成：清空上一轮特情/评估，进入 generating */
-export function beginGenerate(scenario: ScenarioParams) {
+export function beginGenerate(scenario: ScenarioParams, sessionId?: string) {
   state = {
     ...state,
     scenario,
@@ -63,13 +77,59 @@ export function beginGenerate(scenario: ScenarioParams) {
     evaluating: false,
     evaluation: null,
     generation: state.generation + 1,
+    sessionId: sessionId ?? null,
+    planSource: null,
+    planEvidence: [],
+    planWarnings: [],
+    plannerPhase: '正在连接作战规划智能体',
   };
   emit();
 }
 
 /** 生成完成：写入预案内容（输出面板负责分组流式展示） */
-export function finishGenerate(plan: DrillPlan) {
-  state = { ...state, phase: 'done', plan };
+export function finishGenerate(
+  plan: DrillPlan,
+  meta: {
+    source: 'agent' | 'fallback';
+    evidence?: readonly DecisionEvidence[];
+    warnings?: readonly string[];
+    plannerPhase?: string;
+  } = { source: 'fallback' },
+) {
+  state = {
+    ...state,
+    phase: 'done',
+    plan,
+    planSource: meta.source,
+    planEvidence: meta.evidence ? meta.evidence.map((item) => ({ ...item })) : [],
+    planWarnings: meta.warnings ? [...meta.warnings] : [],
+    plannerPhase: meta.plannerPhase ?? (meta.source === 'agent' ? '规划智能体已生成结构化初始方案' : '规划智能体未返回，已使用降级模板'),
+  };
+  emit();
+}
+
+/** 共享作战会话的真实 Planner 输出 → 一级面板既有六组展示模型。 */
+export function finishGenerateFromOperationProposal(proposal: OperationPlanProposal): void {
+  finishGenerate({
+    responseLevel: proposal.responseLevel,
+    forces: [...proposal.forces],
+    tactics: [...proposal.tactics],
+    keyPoints: [...proposal.keyPoints],
+    routes: { attack: [...proposal.routes.attack], evacuate: [...proposal.routes.evacuate] },
+    safetyControls: [...proposal.safetyControls],
+  }, {
+    source: proposal.source,
+    evidence: proposal.evidence,
+    warnings: proposal.warnings,
+    plannerPhase: proposal.source === 'agent'
+      ? '作战规划智能体已生成结构化初始方案'
+      : '规划智能体未返回，已使用降级模板',
+  });
+}
+
+export function setPlannerPhase(phase: string): void {
+  if (state.phase !== 'generating') return;
+  state = { ...state, plannerPhase: phase };
   emit();
 }
 

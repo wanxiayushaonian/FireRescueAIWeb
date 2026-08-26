@@ -13,6 +13,7 @@ export default defineConfig({
       'lib/**/__tests__/**/*.test.ts',
       'src/lib/**/__tests__/**/*.test.ts',
       'src/drill/**/__tests__/**/*.test.ts',
+      'src/operations/**/__tests__/**/*.test.ts',
     ],
   },
 });
