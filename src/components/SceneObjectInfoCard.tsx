@@ -14,7 +14,7 @@ import { buildPickIndex, resolvePickAcross, type PickNodeInfo } from '@/lib/scen
 import { buildOutIdToStoryIndex, type StoryLookupEntry } from '@/lib/scene-buildings';
 import { getJson } from '@/lib/http';
 import type { TwinProperty } from '@/lib/twins-props';
-import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight, getCustomNavStart, setCustomNavStart, subscribeNavPick, collectGraphNodes, pickNearestGraphNode } from '@/lib/scene-navigation';
+import { planAttackRoute, drawAttackRoute, navigateFromOutside, getNavPickMode, setNavPickMode, getNavStart, setNavStart, navNodeForOutId, navigateBetween, findNodeByOutId, highlightNavPick, clearNavPickHighlight, getCustomNavStart, setCustomNavStart, subscribeNavPick, collectGraphNodes, pickNearestGraphNode, pickNearestGraphNodes } from '@/lib/scene-navigation';
 import { gcj02ToWgs84 } from '@/lib/coord-transform';
 import { fetchKeyBuildings } from '@/api/key-buildings';
 import { showToast } from '@/components/Toast';
@@ -89,7 +89,7 @@ export default function SceneObjectInfoCard() {
 
   /** 两点导航:消费一个打点(Space/Story 图节点;highlightOutId 可选高亮被点对象,先清旧防累积) */
   const consumeNavPoint = (
-    pt: { name: string; nodeId: string; outId?: string; position?: { x: number; y: number; z: number } | null },
+    pt: { name: string; nodeId: string; altNodeIds?: readonly string[]; outId?: string; position?: { x: number; y: number; z: number } | null },
     highlightOutId?: string,
   ): void => {
     const scene = sceneRef.current;
@@ -157,12 +157,15 @@ export default function SceneObjectInfoCard() {
       if (!scene.runtime) return;
       const position = outId ? scene.runtime.getObjectWorldPosition(outId) : null;
       // kgraph 仅含 Door/Stairs:Space/Story 端点吸附到最近图节点(解析失败明确提示)
-      const snapped = position ? pickNearestGraphNode(collectGraphNodes(scene.tree), position, (id) => scene.runtime?.getObjectWorldPosition(id) ?? null) : null;
-      if (!snapped) {
+      const snaps = position ? pickNearestGraphNodes(collectGraphNodes(scene.tree), position, (id) => scene.runtime?.getObjectWorldPosition(id) ?? null, 3) : [];
+      if (snaps.length === 0) {
         showToast('该处附近没有门/楼梯连通节点,请在门/楼梯附近打点');
         return;
       }
-      navConsumeRef.current({ name, nodeId: snapped.entry.nodeId, outId: outId || undefined, position }, info.out_instance_id || undefined);
+      navConsumeRef.current(
+        { name, nodeId: snaps[0].entry.nodeId, altNodeIds: snaps.slice(1).map((c) => c.entry.nodeId), outId: outId || undefined, position },
+        info.out_instance_id || undefined,
+      );
     });
   }, [runtime, view]);
   const lastPickRef = useRef<{ sids: string[]; hitChains?: string[][]; clientX: number; clientY: number } | null>(null);
@@ -324,14 +327,17 @@ export default function SceneObjectInfoCard() {
     if (customStart) {
       // 自定义起点 → 目标(两端均吸附最近门/楼梯图节点;kgraph 真实路径 + POI)
       const endPos = runtime.getObjectWorldPosition(card.node.outId);
-      const endSnap = endPos ? pickNearestGraphNode(collectGraphNodes(tree), endPos, (id) => runtime.getObjectWorldPosition(id)) : null;
-      if (!endSnap) {
+      const endSnaps = endPos ? pickNearestGraphNodes(collectGraphNodes(tree), endPos, (id) => runtime.getObjectWorldPosition(id), 3) : [];
+      if (endSnaps.length === 0) {
         showToast('该对象附近没有门/楼梯连通节点,无法作为终点');
         return;
       }
-      void navigateBetween(runtime, customStart, {
+      void navigateBetween(runtime, {
+        ...customStart,
+      }, {
         name: card.node.name,
-        nodeId: endSnap.entry.nodeId,
+        nodeId: endSnaps[0].entry.nodeId,
+        altNodeIds: endSnaps.slice(1).map((c) => c.entry.nodeId),
         outId: card.node.outId,
         position: endPos,
       }).then((r) => {

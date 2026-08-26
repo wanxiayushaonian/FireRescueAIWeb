@@ -154,18 +154,24 @@ export function pickNearestGraphNode(
   position: { x: number; y: number; z: number },
   getPosition: PositionOf,
 ): { entry: GraphNodeEntry; position: { x: number; y: number; z: number } } | null {
-  let best: { entry: GraphNodeEntry; position: { x: number; y: number; z: number } } | null = null;
-  let bestD = Number.POSITIVE_INFINITY;
+  return pickNearestGraphNodes(entries, position, getPosition, 1)[0] ?? null;
+}
+
+/** 最近 limit 个图节点候选(近→远;孤立门/碎片分量场景下逐个重试用)。 */
+export function pickNearestGraphNodes(
+  entries: readonly GraphNodeEntry[],
+  position: { x: number; y: number; z: number },
+  getPosition: PositionOf,
+  limit: number,
+): Array<{ entry: GraphNodeEntry; position: { x: number; y: number; z: number } }> {
+  const scored: Array<{ entry: GraphNodeEntry; position: { x: number; y: number; z: number }; d: number }> = [];
   for (const entry of entries) {
     const p = getPosition(entry.outId);
     if (!p) continue;
-    const d = (p.x - position.x) ** 2 + (p.y - position.y) ** 2 + (p.z - position.z) ** 2;
-    if (d < bestD) {
-      bestD = d;
-      best = { entry, position: p };
-    }
+    scored.push({ entry, position: p, d: (p.x - position.x) ** 2 + (p.y - position.y) ** 2 + (p.z - position.z) ** 2 });
   }
-  return best;
+  scored.sort((a, b) => a.d - b.d);
+  return scored.slice(0, Math.max(1, limit)).map(({ entry, position }) => ({ entry, position }));
 }
 
 /** 已绘制导航路线 id 集(模块态;SceneViewBar「清除路线」用) */
@@ -197,6 +203,8 @@ export interface NavPoint {
   outId?: string;
   /** 被点对象的场景世界坐标(有则导航端点贴点击位置,否则回退空间/楼层节点中心) */
   position?: { x: number; y: number; z: number } | null;
+  /** 次近图节点候选(孤立门兜底重试;nodeId 本身不算在内) */
+  altNodeIds?: readonly string[];
 }
 
 let navPickMode: NavPickMode = 'off';
@@ -280,14 +288,18 @@ export function navNodeForOutId(
   tree: SceneTreeNode,
   outId: string,
   getPosition: PositionOf,
-): { name: string; nodeId: string } | null {
+): { name: string; nodeId: string; altNodeIds: string[] } | null {
   const position = getPosition(outId);
   const entries = collectGraphNodes(tree);
   if (!position || entries.length === 0) return null;
-  const snap = pickNearestGraphNode(entries, position, getPosition);
-  if (!snap) return null;
+  const snaps = pickNearestGraphNodes(entries, position, getPosition, 3);
+  if (snaps.length === 0) return null;
   const plan = planAttackRoute(tree, outId);
-  return { name: plan?.targetName ?? '', nodeId: snap.entry.nodeId };
+  return {
+    name: plan?.targetName ?? '',
+    nodeId: snaps[0].entry.nodeId,
+    altNodeIds: snaps.slice(1).map((s) => s.entry.nodeId),
+  };
 }
 
 /** 按 out 实例 id 找树节点(twins id + 名字;2D 语义点击的楼层回退用) */
@@ -330,7 +342,8 @@ let lastNavFailMessage: string | null = null;
 
 /** 两点导航:起点/终点打点 → SDK navigateWithinScene(画线+登记) + 起终点 POI 叠加。
  * 端点一律为吸附后的 Door/Stairs 图节点(node_id):Space/Story 不在图中、
- * 裸坐标不被 kgraph 吸附,两者实测均必可达失败(2026-08-27),不再尝试。 */
+ * 裸坐标不被 kgraph 吸附,两者实测均必可达失败(2026-08-27),不再尝试。
+ * altNodeIds 提供次近候选:最近节点落在孤立门/碎片分量时逐个重试(两端各限 2 个,≤4 次)。 */
 export async function navigateBetween(
   runtime: SoonspaceRuntime,
   start: NavPoint,
@@ -341,9 +354,17 @@ export async function navigateBetween(
     start: start.outId ? runtime.getObjectWorldPosition(start.outId) : null,
     end: end.outId ? runtime.getObjectWorldPosition(end.outId) : null,
   };
-  const r = await navigateAndDraw(runtime, { nodeId: start.nodeId }, { nodeId: end.nodeId }, label, poi);
-  if (r) return r;
-  const why = lastNavFailMessage ? `:${lastNavFailMessage}` : '';
+  const startIds = [start.nodeId, ...(start.altNodeIds ?? [])].slice(0, 2);
+  const endIds = [end.nodeId, ...(end.altNodeIds ?? [])].slice(0, 2);
+  let lastReason: string | null = null;
+  for (const sId of startIds) {
+    for (const eId of endIds) {
+      const r = await navigateAndDraw(runtime, { nodeId: sId }, { nodeId: eId }, label, poi);
+      if (r) return r;
+      lastReason = lastNavFailMessage;
+    }
+  }
+  const why = lastReason ? `:${lastReason}` : '';
   return { error: `两点间不可达${why}` };
 }
 
@@ -660,14 +681,29 @@ export async function drawAttackRoute(
   const targetPos0 = targetPos(plan.targetOutId);
   const pos = (outId: string): { x: number; y: number; z: number } | null => runtime.getObjectWorldPosition(outId);
 
-  // 策略 1:吸附真实路径(大门 ↔ 目标各自最近图节点;端点重合/不可达自动降级)
+  // 策略 1:吸附真实路径(大门 ↔ 目标各自最近图节点;端点重合/不可达自动降级)。
+  // 大门逐候选重试:1F 门并非全在主连通分量(实测 15/32),最外门可能孤立,失败换次外门。
   const graphEntries = opts?.graphEntries ?? [];
   if (graphEntries.length > 0 && targetPos0) {
     const gatePos = resolveGatePosition(runtime, plan);
-    if (gatePos) {
-      const s = pickNearestGraphNode(graphEntries, gatePos, pos);
-      const e = pickNearestGraphNode(graphEntries, targetPos0, pos);
-      if (s && e && s.entry.nodeId !== e.entry.nodeId) {
+    const e = pickNearestGraphNode(graphEntries, targetPos0, pos);
+    if (gatePos && e) {
+      const gatePts = plan.gateOutIds
+        .map((outId) => ({ outId, p: pos(outId) }))
+        .filter((g): g is { outId: string; p: { x: number; y: number; z: number } } => g.p !== null);
+      const seen = new Set<string>();
+      const gateSnaps = gatePts
+        .map((g) => pickNearestGraphNode(graphEntries, g.p, pos))
+        .filter((s): s is NonNullable<ReturnType<typeof pickNearestGraphNode>> => !!s)
+        .filter((s) => (seen.has(s.entry.nodeId) ? false : (seen.add(s.entry.nodeId), true)));
+      // 最外门(离质心最远)优先,其余按离 gatePos 近远排序
+      gateSnaps.sort((a, b) => {
+        const d = (q: { position: { x: number; z: number } }): number =>
+          Math.hypot(q.position.x - gatePos.x, q.position.z - gatePos.z);
+        return d(b) - d(a);
+      });
+      for (const s of gateSnaps) {
+        if (s.entry.nodeId === e.entry.nodeId) continue;
         const r = await navigateAndDraw(
           runtime,
           { nodeId: s.entry.nodeId },
