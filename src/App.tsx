@@ -270,20 +270,13 @@ function AppContent() {
         }
       }
     };
-    // 全局演示剧本：demoScript 派发模块切换（一键串联汇报演示）
-    const onDemoSwitch = (e: Event) => {
-      const d = (e as CustomEvent<{ module: ModuleKey }>).detail;
-      if (d?.module) handleSelect(d.module);
-    };
     window.addEventListener('gis:open-building-profile', onOpenProfile);
     window.addEventListener('gis:ignite-building', onIgnite);
     window.addEventListener('topbar:open-alert', onOpenAlert);
-    window.addEventListener('demo:switch-module', onDemoSwitch);
     return () => {
       window.removeEventListener('gis:open-building-profile', onOpenProfile);
       window.removeEventListener('gis:ignite-building', onIgnite);
       window.removeEventListener('topbar:open-alert', onOpenAlert);
-      window.removeEventListener('demo:switch-module', onDemoSwitch);
     };
   }, [tree, recipeStore, runtime]);
 
