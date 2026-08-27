@@ -2,6 +2,7 @@
 // 打通「归档物无处可查」业务断点（演练对抗模块第三个面板）。
 // 双页签：「归档库」（本地三分类）+「正式预案」（znya emergency_plans 真实列表，演练归档建档后可见）。
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Archive, ChevronDown, FileText, Swords, Recycle, X, RotateCcw, Stamp, Database, CheckCircle2, RefreshCw,
@@ -323,14 +324,17 @@ function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () 
   // ready 分支不包任何容器:Workspace 自带全屏 fixed 布局
   // (包进带 backdrop-filter 的遮罩会成为包含块,把它的视口宽高压扁——实测踩坑)
   if (phase === 'ready' && state) {
-    return (
+    // 必须挂 body:抽屉的拖拽 transform 会成为 fixed 后代的包含块,把全屏工作区压扁
+    if (typeof document === 'undefined') return null;
+    return createPortal(
       <ConfrontationReviewWorkspace
         review={state.review as ConfrontationReview}
         events={state.events}
         building={item.buildingName ?? item.title}
         state={state}
         onClose={onClose}
-      />
+      />,
+      document.body,
     );
   }
   return (
