@@ -201,12 +201,10 @@ export default function DisasterVarsPanel({
                   <div className="min-h-0 flex-1">
                     <Sparkline points={g.points} className={STROKE_CLS[g.tone]} />
                   </div>
-                ) : g.sub !== undefined ? (
-                  <div className="flex min-h-0 flex-1 items-start overflow-hidden">
-                    <span className="line-clamp-2 text-[12px] leading-5 text-text-3" title={g.sub}>{g.sub}</span>
-                  </div>
                 ) : (
-                  <div className="h-6" />
+                  <div className="flex min-h-0 flex-1 items-start overflow-hidden">
+                    <span className="truncate text-[11px] leading-4 text-text-3" title={g.sub}>{g.sub ?? ''}</span>
+                  </div>
                 )}
               </motion.div>
             ))}
