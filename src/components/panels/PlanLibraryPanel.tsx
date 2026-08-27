@@ -320,6 +320,19 @@ function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () 
     };
   }, [item]);
 
+  // ready 分支不包任何容器:Workspace 自带全屏 fixed 布局
+  // (包进带 backdrop-filter 的遮罩会成为包含块,把它的视口宽高压扁——实测踩坑)
+  if (phase === 'ready' && state) {
+    return (
+      <ConfrontationReviewWorkspace
+        review={state.review as ConfrontationReview}
+        events={state.events}
+        building={item.buildingName ?? item.title}
+        state={state}
+        onClose={onClose}
+      />
+    );
+  }
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -327,20 +340,11 @@ function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () 
       exit={{ opacity: 0 }}
       className="fixed inset-0 z-[105] grid place-items-center bg-black/60 backdrop-blur-sm"
     >
-      {phase === 'ready' && state ? (
-        <ConfrontationReviewWorkspace
-          review={state.review as ConfrontationReview}
-          events={state.events}
-          building={item.buildingName ?? item.title}
-          state={state}
-          onClose={onClose}
-        />
-      ) : (
-        <motion.div
-          initial={{ y: 12, opacity: 0, scale: 0.97 }}
-          animate={{ y: 0, opacity: 1, scale: 1 }}
-          exit={{ y: 12, opacity: 0, scale: 0.97 }}
-          className="flex w-[380px] flex-col items-center gap-3 rounded-lg border border-line bg-bg-panel px-6 py-6 text-center"
+      <motion.div
+        initial={{ y: 12, opacity: 0, scale: 0.97 }}
+        animate={{ y: 0, opacity: 1, scale: 1 }}
+        exit={{ y: 12, opacity: 0, scale: 0.97 }}
+        className="flex w-[380px] flex-col items-center gap-3 rounded-lg border border-line bg-bg-panel px-6 py-6 text-center"
           onClick={(e) => e.stopPropagation()}
         >
           {phase === 'loading' ? (
@@ -367,7 +371,6 @@ function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () 
             </>
           )}
         </motion.div>
-      )}
     </motion.div>
   );
 }
