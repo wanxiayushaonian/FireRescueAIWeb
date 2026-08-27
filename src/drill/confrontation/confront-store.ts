@@ -95,6 +95,8 @@ export interface ConfrontationSeed {
 export interface ConfrontationState {
   readonly active: boolean;
   readonly status: 'idle' | 'running' | 'finished';
+  /** 本局唯一演练 id(DrillSession 快照键;beginConfrontation 每局重新生成) */
+  readonly drillId: string;
   readonly seedLoading: boolean;
   readonly seedError: string | null;
   readonly thinking: boolean;
@@ -115,6 +117,7 @@ export interface ConfrontationState {
 let conf: ConfrontationState = {
   active: false,
   status: 'idle',
+  drillId: 'drill-building-21-001',
   seedLoading: false,
   seedError: null,
   thinking: false,
@@ -228,6 +231,8 @@ export function resetConfrontation(): void {
   conf = {
     active: false,
     status: 'idle',
+    // 保留上一局 id:其 DrillSession 快照仍需可寻址(预案库回看)
+    drillId: conf.drillId,
     seedLoading: false,
     seedError: null,
     thinking: false,
@@ -261,6 +266,8 @@ export function beginConfrontation(opts?: {
     ...conf,
     active: true,
     status: 'running',
+    // 每局唯一 id:DrillSession 服务端快照按此键保存,预案库归档据此回看(固定 id 会逐局覆盖)
+    drillId: `drill-building-21-${Date.now().toString(36)}`,
     seedLoading: opts?.seedLoading ?? false,
     seedError: opts?.seedError ?? null,
     thinking: false,

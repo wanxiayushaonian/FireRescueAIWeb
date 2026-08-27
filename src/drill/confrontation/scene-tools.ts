@@ -53,10 +53,13 @@ export function registerConfrontSceneTools(
   options: ConfrontSceneToolOptions = {},
 ): void {
   const assertDrillId = (args: Record<string, unknown>): void => {
-    if (!options.drillId) return;
+    // 每局唯一 id 存于 store(beginConfrontation 生成);未显式注入时动态取当前局,
+    // 桥接组件无需随局重注册。
+    const expected = options.drillId ?? getConfrontationState().drillId;
+    if (!expected) return;
     const incoming = String(args.drill_id ?? '').trim();
-    if (incoming !== options.drillId) {
-      throw new Error(`演练会话不匹配:期望 ${options.drillId}`);
+    if (incoming !== expected) {
+      throw new Error(`演练会话不匹配:期望 ${expected}`);
     }
   };
 

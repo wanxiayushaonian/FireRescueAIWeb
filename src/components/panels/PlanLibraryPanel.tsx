@@ -10,6 +10,12 @@ import type { LucideIcon } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { confirmImprovement, fetchLibrary, getLibrary, subscribeLibrary } from '@/mock/planLibrary';
 import type { LibraryItem, LibraryKind, LibraryStatus } from '@/mock/planLibrary';
+import type {
+  ConfrontationEvent,
+  ConfrontationReview,
+  ConfrontationState,
+} from '@/drill/confrontation/confront-store';
+import { ConfrontationReviewWorkspace } from '@/drill/confrontation/ConfrontationReviewWorkspace';
 import { addSceneAction } from '@/mock/sceneLog';
 import { fetchPlans, type ZnyaPlan } from '@/api/plans';
 import { showToast } from '@/components/Toast';
@@ -132,7 +138,15 @@ function ItemCard({ item, onOpen }: { item: LibraryItem; onOpen: (it: LibraryIte
   );
 }
 
-function DetailDialog({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
+function DetailDialog({
+  item,
+  onClose,
+  onOpenRecord,
+}: {
+  item: LibraryItem;
+  onClose: () => void;
+  onOpenRecord?: (item: LibraryItem) => void;
+}) {
   const meta = KIND_META[item.kind];
   const Icon = meta.icon;
   const handleReload = () => {
@@ -204,6 +218,15 @@ function DetailDialog({ item, onClose }: { item: LibraryItem; onClose: () => voi
               已入正式预案库（{item.backendPlanId.slice(0, 8)}… · draft 草稿）
             </div>
           )}
+          {item.kind === '对抗评估' && (item.drillId || item.detail) && (
+            <button
+              onClick={() => onOpenRecord?.(item)}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-violet/60 py-2 text-[13px] text-violet transition hover:bg-violet/10 hover:shadow-[0_0_10px_rgba(167,139,250,.35)]"
+            >
+              <Swords className="h-3.5 w-3.5" />
+              查看演练记录 · 完整评估报告
+            </button>
+          )}
           {item.kind === '演练预案' && (
             <button
               onClick={handleReload}
@@ -235,12 +258,128 @@ function DetailDialog({ item, onClose }: { item: LibraryItem; onClose: () => voi
   );
 }
 
+
+/**
+ * 演练记录回看层:对抗评估归档条目「查看演练记录」入口。
+ * 数据源双保险:先取归档时点序列化的本地 detail;有 drillId 时再拉服务端
+ * DrillSession 快照覆盖(跨浏览器可看,LURU 100 局内有效)。命中任一即可渲染复盘工作区。
+ */
+function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
+  const [phase, setPhase] = useState<'loading' | 'ready' | 'missing'>('loading');
+  const [state, setState] = useState<ConfrontationState | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    const fromDetail = (): ConfrontationState | null => {
+      const d = item.detail;
+      if (!d || !d.review) return null;
+      return {
+        active: false,
+        status: 'finished',
+        drillId: item.drillId ?? '',
+        seedLoading: false,
+        seedError: null,
+        thinking: false,
+        seedScenario: (d.seedScenario ?? null) as ConfrontationState['seedScenario'],
+        situation: d.situation ?? { fireLevel: 0, trappedCount: 0, damageLevel: 0 },
+        events: (d.events ?? []) as readonly ConfrontationEvent[],
+        review: d.review as ConfrontationReview,
+        evaluating: false,
+        generation: 1,
+        startedAt: d.startedAt ?? 0,
+        plannedTotal: 0,
+        lastRound: null,
+        deploy: d.deploy ?? null,
+        agentActivity: null,
+      };
+    };
+    void (async () => {
+      let data = fromDetail();
+      if (item.drillId) {
+        try {
+          const res = await fetch(`/api/drill-sessions/${encodeURIComponent(item.drillId)}`);
+          if (res.ok) {
+            const record = (await res.json()) as { snapshot?: ConfrontationState | null } | null;
+            const snap = record?.snapshot ?? null;
+            if (snap?.review && Array.isArray(snap.events)) data = snap;
+          }
+        } catch {
+          /* 服务端不可达 → 维持本地兜底 */
+        }
+      }
+      if (!alive) return;
+      if (data?.review) {
+        setState(data);
+        setPhase('ready');
+      } else {
+        setPhase('missing');
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [item]);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[105] grid place-items-center bg-black/60 backdrop-blur-sm"
+    >
+      {phase === 'ready' && state ? (
+        <ConfrontationReviewWorkspace
+          review={state.review as ConfrontationReview}
+          events={state.events}
+          building={item.buildingName ?? item.title}
+          state={state}
+          onClose={onClose}
+        />
+      ) : (
+        <motion.div
+          initial={{ y: 12, opacity: 0, scale: 0.97 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: 12, opacity: 0, scale: 0.97 }}
+          className="flex w-[380px] flex-col items-center gap-3 rounded-lg border border-line bg-bg-panel px-6 py-6 text-center"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {phase === 'loading' ? (
+            <>
+              <RefreshCw className="h-5 w-5 animate-spin text-cyan" />
+              <div className="text-[14px] font-bold text-text-1">正在调取该局演练快照</div>
+              <div className="text-[12px] leading-5 text-text-2">
+                {item.drillId ? `演练 ID ${item.drillId}` : '读取本地归档数据'}
+              </div>
+            </>
+          ) : (
+            <>
+              <Archive className="h-5 w-5 text-text-3" />
+              <div className="text-[14px] font-bold text-text-1">未找到该局演练快照</div>
+              <div className="text-[12px] leading-5 text-text-2">
+                服务端快照不存在或已被清理，且本地归档无完整数据。
+              </div>
+              <button
+                onClick={onClose}
+                className="mt-1 rounded-md border border-cyan/60 px-4 py-1.5 text-[13px] text-cyan transition hover:bg-cyan/10"
+              >
+                返回预案库
+              </button>
+            </>
+          )}
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
 export default function PlanLibraryPanel() {
   const [demoState, setDemoState] = useState<FetchState>('ok');
   const [phase, setPhase] = useState<'loading' | 'ok' | 'error'>('loading');
   const [items, setItems] = useState<LibraryItem[]>(getLibrary());
   const [filter, setFilter] = useState<'全部' | LibraryKind>('全部');
   const [detail, setDetail] = useState<LibraryItem | null>(null);
+  // 「查看演练记录」回看中的那一局(对抗评估归档;渲染 ConfrontationReviewWorkspace)
+  const [recordItem, setRecordItem] = useState<LibraryItem | null>(null);
   // 正式预案页签：znya emergency_plans 列表（null=未加载，进入页签时懒拉取）
   const [tab, setTab] = useState<'archive' | 'plans'>('archive');
   const [plans, setPlans] = useState<ZnyaPlan[] | null>(null);
@@ -457,8 +596,17 @@ export default function PlanLibraryPanel() {
           <DetailDialog
             item={items.find((it) => it.id === detail.id) ?? detail}
             onClose={() => setDetail(null)}
+            onOpenRecord={(it) => {
+              setDetail(null);
+              setRecordItem(it);
+            }}
           />
         )}
+      </AnimatePresence>
+
+      {/* 演练记录回看:服务端 DrillSession 快照优先,本地归档兜底 */}
+      <AnimatePresence>
+        {recordItem && <DrillRecordOverlay key={recordItem.id} item={recordItem} onClose={() => setRecordItem(null)} />}
       </AnimatePresence>
     </div>
   );

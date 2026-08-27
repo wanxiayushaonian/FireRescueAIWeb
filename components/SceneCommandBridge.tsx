@@ -5,7 +5,6 @@ import { manageSceneBridge } from '@/lib/scene-command-bus';
 import { addSceneAction } from '@/mock/sceneLog';
 import { registerConfrontSceneTools } from '@/drill/confrontation/scene-tools';
 import { useScene } from '@/components/SceneProvider';
-import { BUILDING_21_DRILL_ID } from '@/drill/building-21';
 import { subscribeConfrontation } from '@/drill/confrontation/confront-store';
 
 /**
@@ -21,7 +20,8 @@ import { subscribeConfrontation } from '@/drill/confrontation/confront-store';
 export function SceneCommandBridge() {
   const { recipeStore } = useScene();
   useEffect(() => {
-    registerConfrontSceneTools(addSceneAction, { drillId: BUILDING_21_DRILL_ID });
+    // 不传显式 drillId:handler 内部动态读 store 当前局 id(每局唯一)
+    registerConfrontSceneTools(addSceneAction);
     // 默认订阅同源 BFF /api/scene-events(BFF 再带 appKey 连 mcp),浏览器无需持 appKey。
     const eventsUrl = process.env.NEXT_PUBLIC_SCENE_EVENTS_URL || '/api/scene-events';
     return manageSceneBridge(eventsUrl, { addSceneAction, store: recipeStore });
@@ -34,7 +34,7 @@ export function SceneCommandBridge() {
       if (snapshot.generation === 0 && snapshot.events.length === 0 && !snapshot.lastRound) return;
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        void fetch(`/api/drill-sessions/${encodeURIComponent(BUILDING_21_DRILL_ID)}`, {
+        void fetch(`/api/drill-sessions/${encodeURIComponent(snapshot.drillId)}`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ snapshot, source: 'browser' }),

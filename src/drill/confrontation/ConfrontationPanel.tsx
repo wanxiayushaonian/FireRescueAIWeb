@@ -185,7 +185,7 @@ export default function ConfrontationPanel() {
     appIds,
     buildingId: BUILDING_21_ID,
     sceneId: BUILDING_21_SCENE_ID,
-    drillId: BUILDING_21_DRILL_ID,
+    drillId: conf.drillId || BUILDING_21_DRILL_ID,
     onInjectScene,
   });
 
@@ -315,7 +315,7 @@ export default function ConfrontationPanel() {
       appIds,
       buildingId: BUILDING_21_ID,
       sceneId: BUILDING_21_SCENE_ID,
-      drillId: BUILDING_21_DRILL_ID,
+      drillId: conf.drillId || BUILDING_21_DRILL_ID,
       seed: conf.seedScenario,
       events: conf.events,
       getState: () => ({ events: conf.events, situation: conf.situation, deploy: conf.deploy }),
@@ -348,6 +348,17 @@ export default function ConfrontationPanel() {
       status: review.archived ? '已归档' : '需修订',
       summary: [...review.comments],
       sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}${review.source === 'fallback' ? '，评估 agent 未响应 · 本地规则降级打分' : ''}，本局特情 ${injects.length} 条）`,
+      // 关联本局 DrillSession 快照(服务端) + 归档时点完整状态序列化(本地兜底):
+      // 预案库「查看记录」据此还原该局的评估报告与事件链。
+      drillId: conf.drillId,
+      detail: {
+        review,
+        events: [...conf.events, ...(conf.review ? [] : [])],
+        situation: { ...conf.situation },
+        seedScenario: conf.seedScenario,
+        startedAt: conf.startedAt,
+        deploy: conf.deploy ? [...conf.deploy] : null,
+      },
     });
 
     // 改进措施逐条回流预案库(与实战指挥战后评估同模式:待落地,自动关联同建筑演练预案)

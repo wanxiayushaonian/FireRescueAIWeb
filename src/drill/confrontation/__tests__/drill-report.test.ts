@@ -6,6 +6,7 @@ function makeState(partial: Partial<ConfrontationState> = {}): ConfrontationStat
   return {
     active: false,
     status: 'finished',
+    drillId: 'drill-building-21-001',
     seedLoading: false,
     seedError: null,
     thinking: false,

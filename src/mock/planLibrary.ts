@@ -4,6 +4,20 @@ import type { FetchState } from './types';
 import { addSceneAction } from './sceneLog';
 
 export type LibraryKind = '演练预案' | '对抗评估' | '改进措施';
+
+/**
+ * 对抗评估归档时点的完整状态序列化(本地兜底):
+ * 服务端优先走 drillId 拉 DrillSession 快照;被 LRU 挤出或服务端不可达时用此渲染报告。
+ * review/events 为对抗舱原结构(渲染端收敛类型),此处保持松耦合。
+ */
+export interface LibraryDrillDetail {
+  readonly review: unknown;
+  readonly events: readonly unknown[];
+  readonly situation?: { fireLevel: number; trappedCount: number; damageLevel: number };
+  readonly seedScenario?: unknown;
+  readonly startedAt?: number;
+  readonly deploy?: readonly string[] | null;
+}
 export type LibraryStatus = '已归档' | '需修订' | '待落地' | '已落地';
 
 export interface LibraryItem {
@@ -22,6 +36,10 @@ export interface LibraryItem {
   linkedPlanId?: string;
   /** 后端正式预案库 emergency_plans 建档 id（演练预案评估归档成功后回写） */
   backendPlanId?: string;
+  /** 本局唯一演练 id（对抗评估归档；「查看记录」关联 DrillSession 快照） */
+  drillId?: string;
+  /** 归档时点完整状态序列化（查看记录的本地兜底数据源） */
+  detail?: LibraryDrillDetail;
 }
 
 let seq = 0;

@@ -35,9 +35,13 @@ export function ConfrontationReviewWorkspace({
   onClose: () => void;
 }) {
   const evidence = events.filter((event) => event.kind === 'inject' || event.kind === 'adjust' || event.kind === 'manual');
-  const elapsedSec = state.startedAt
-    ? Math.max(0, Math.round((Date.now() - state.startedAt) / 1000))
-    : (events.at(-1)?.tSec ?? 0);
+  // 已结束的局固定用最后事件时刻(历史快照回看不随当前时钟膨胀);进行中才走实时差值
+  const elapsedSec =
+    state.status === 'finished'
+      ? (events.at(-1)?.tSec ?? 0)
+      : state.startedAt
+        ? Math.max(0, Math.round((Date.now() - state.startedAt) / 1000))
+        : (events.at(-1)?.tSec ?? 0);
   const exportReport = () => {
     const report = buildDrillReport(state, elapsedSec);
     downloadBlob(report.markdown, `${report.title}.md`, 'text/markdown;charset=utf-8');
