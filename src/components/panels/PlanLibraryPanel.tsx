@@ -256,6 +256,81 @@ function DetailDialog({
 }
 
 
+interface CloudRow {
+  drillId: string;
+  revision: number;
+  updatedAt: number;
+  summary: { score: number | null; archived: boolean | null; events: number; hasReview: boolean };
+}
+
+/** 云端演练记录(DrillSession 快照索引):与浏览器本地无关——换任何机器打开都能回放。 */
+function CloudDrillRecords({
+  rows,
+  loading,
+  onLoad,
+  onReplay,
+}: {
+  rows: Array<CloudRow> | null;
+  loading: boolean;
+  onLoad: () => void;
+  onReplay: (drillId: string) => void;
+}) {
+  const p2 = (n: number) => String(n).padStart(2, '0');
+  const fmt = (ms: number) => {
+    const d = new Date(ms);
+    return `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}`;
+  };
+  useEffect(() => {
+    if (rows === null && !loading) onLoad();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅首挂载拉取
+  }, []);
+  return (
+    <div className="mt-3 rounded-lg border border-violet/40 bg-bg-panel-2/40 p-2">
+      <div className="flex items-center gap-1.5 px-0.5 pb-1.5 text-[12px] font-bold text-violet">
+        <Database className="h-3 w-3" />
+        <span>云端演练记录（服务端快照 · 换浏览器也可回放）</span>
+        <button
+          onClick={onLoad}
+          title="刷新云端列表"
+          className="ml-auto rounded border border-line px-1 py-px text-text-3 transition hover:border-line-glow hover:text-cyan"
+        >
+          <RefreshCw className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
+      {loading || rows === null ? (
+        <div className="py-3 text-center text-[12px] text-text-3">加载中…</div>
+      ) : rows.length === 0 ? (
+        <div className="py-3 text-center text-[12px] text-text-3">暂无演练快照</div>
+      ) : (
+        <div className="space-y-1">
+          {rows.map((r) => (
+            <button
+              key={r.drillId}
+              disabled={!r.summary.hasReview}
+              onClick={() => onReplay(r.drillId)}
+              title={r.summary.hasReview ? `回放该局(快照 rev${r.revision} · 事件 ${r.summary.events} 条)` : '该局无评估结果,暂不可回放'}
+              className="flex w-full items-center gap-2 rounded-md border border-line bg-bg-panel/60 px-2 py-1.5 text-left transition hover:border-line-glow disabled:opacity-50"
+            >
+              <Swords className={`h-3.5 w-3.5 shrink-0 ${r.summary.hasReview ? 'text-orange' : 'text-text-3'}`} />
+              <span className="truncate text-[12px] text-text-1">{fmt(r.updatedAt)} 对抗局</span>
+              {r.summary.score != null && (
+                <span className="font-num text-[12px] font-bold text-cyan">{r.summary.score} 分</span>
+              )}
+              {r.summary.hasReview ? (
+                <span className="ml-auto flex items-center gap-1 text-[11px] text-violet">
+                  回放
+                </span>
+              ) : (
+                <span className="ml-auto text-[11px] text-text-3">{r.summary.events} 事件</span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /**
  * 演练记录回看门:对抗评估归档「查看记录」入口。
  * 拉取服务端 DrillSession 快照后水合对抗舱 store —— 直接回到二级界面的只读回放
@@ -333,6 +408,13 @@ export default function PlanLibraryPanel() {
   const [detail, setDetail] = useState<LibraryItem | null>(null);
   // 「查看演练记录」回看中的那一局(对抗评估归档;渲染 ConfrontationReviewWorkspace)
   const [recordItem, setRecordItem] = useState<LibraryItem | null>(null);
+  // 云端演练记录索引(DrillSession 服务端快照列表;进入归档库页签即拉,与本地条目无关)
+  const [cloudRows, setCloudRows] = useState<Array<{
+    drillId: string; revision: number; updatedAt: number;
+    summary: { score: number | null; archived: boolean | null; events: number; hasReview: boolean };
+  }> | null>(null);
+  const [cloudLoading, setCloudLoading] = useState(false);
+
   // 正式预案页签：znya emergency_plans 列表（null=未加载，进入页签时懒拉取）
   const [tab, setTab] = useState<'archive' | 'plans'>('archive');
   const [plans, setPlans] = useState<ZnyaPlan[] | null>(null);
@@ -385,6 +467,38 @@ export default function PlanLibraryPanel() {
     window.setTimeout(() => setDemoState('ok'), 800);
   };
 
+  /** 拉云端演练记录索引(DrillSession;无本地条目依赖——服务器是唯一真源)。 */
+  const loadCloud = async () => {
+    setCloudLoading(true);
+    try {
+      const res = await fetch('/api/drill-sessions');
+      const rows = res.ok ? ((await res.json()) as Array<NonNullable<typeof cloudRows>[number]>) : [];
+      if (res.ok) setCloudRows(rows);
+      else setCloudRows([]);
+    } catch {
+      setCloudRows([]);
+    } finally {
+      setCloudLoading(false);
+    }
+  };
+
+  /** 从服务端拉单局完整快照并水合为回放局(关抽屉,二级界面自动展开)。 */
+  const replayCloudRecord = async (drillId: string) => {
+    showToast('正在回到那一局对抗…');
+    try {
+      const res = await fetch(`/api/drill-sessions/${encodeURIComponent(drillId)}`);
+      if (!res.ok) { showToast('服务端未找到该局快照'); return; }
+      const record = (await res.json()) as { snapshot?: ConfrontationState | null } | null;
+      const snap = record?.snapshot ?? null;
+      if (!snap?.review || !Array.isArray(snap.events)) { showToast('该局快照不完整,无法回放'); return; }
+      hydrateReplaySnapshot(snap);
+      // 关闭预案库抽屉(DrillView 监听),二级界面随即覆盖展开
+      window.dispatchEvent(new CustomEvent('library:close'));
+    } catch {
+      showToast('调取失败:无法连接演练快照服务');
+    }
+  };
+
   const renderBody = () => {
     if (demoState === 'loading' || phase === 'loading') {
       return <PanelStateView state="loading" skeletonRows={5} />;
@@ -411,6 +525,12 @@ export default function PlanLibraryPanel() {
         <AnimatePresence initial={false}>
           {filtered.map((it) => <ItemCard key={it.id} item={it} onOpen={openDetail} />)}
         </AnimatePresence>
+        <CloudDrillRecords
+          rows={cloudRows}
+          loading={cloudLoading}
+          onLoad={() => void loadCloud()}
+          onReplay={(drillId) => void replayCloudRecord(drillId)}
+        />
       </div>
     );
   };

@@ -38,6 +38,9 @@ export default function DrillView({ onOpenCommandSession }: { onOpenCommandSessi
   const [tPlus, setTPlus] = useState(0);
   const startedAtRef = useRef(0);
   useEffect(() => {
+    // 预案库回放水合后关闭抽屉(二级界面即刻覆盖展开)
+    const onCloseLib = (): void => setLibraryOpen(false);
+    window.addEventListener('library:close', onCloseLib);
     const unsub = subscribeConfrontation((s) => {
       // 外部激活(情景面板「进入对抗模式」带参进入)自动开舱;关闭(exit)自动收起
       if (s.active && !confOpenRef.current) setConfOpen(true);
@@ -49,7 +52,10 @@ export default function DrillView({ onOpenCommandSession }: { onOpenCommandSessi
       if (running && s.startedAt) startedAtRef.current = s.startedAt;
       if (!running) setTPlus(0);
     });
-    return unsub;
+    return () => {
+      window.removeEventListener('library:close', onCloseLib);
+      unsub();
+    };
   }, []);
   // 对抗中逐秒刷新 T+
   useEffect(() => {

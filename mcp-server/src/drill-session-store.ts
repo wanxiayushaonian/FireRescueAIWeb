@@ -29,6 +29,34 @@ export class DrillSessionStore {
     return record ? structuredClone(record) : null;
   }
 
+  /** 全部局的轻量索引(新→旧;供预案库"云端演练记录"列表,不含快照体)。 */
+  list(): Array<{
+    drillId: string;
+    revision: number;
+    updatedAt: number;
+    summary: { score: number | null; archived: boolean | null; events: number; hasReview: boolean };
+  }> {
+    const rows = [...this.records.values()].sort((a, b) => b.updatedAt - a.updatedAt);
+    return rows.map((r) => {
+      const snap = (r.snapshot ?? {}) as {
+        review?: { score?: unknown; archived?: unknown } | null;
+        events?: unknown[];
+      };
+      const review = snap.review ?? null;
+      return {
+        drillId: r.drillId,
+        revision: r.revision,
+        updatedAt: r.updatedAt,
+        summary: {
+          score: review && typeof review.score === 'number' ? review.score : null,
+          archived: review && typeof review.archived === 'boolean' ? review.archived : null,
+          events: Array.isArray(snap.events) ? snap.events.length : 0,
+          hasReview: !!review,
+        },
+      };
+    });
+  }
+
   upsert(
     drillId: string,
     snapshot: unknown,

@@ -147,6 +147,15 @@ export function startHttp(opts: {
       return;
     }
 
+    if (url.pathname === '/drill-sessions' && req.method === 'GET') {
+      // 索引(不含快照体):预案库云端演练记录列表用;appKey 同样必检
+      if (!appKeyAuthorized(req, url)) {
+        res.writeHead(401); res.end('unauthorized'); return;
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(drillSessionStore.list()));
+      return;
+    }
     const drillSessionMatch = url.pathname.match(/^\/drill-sessions\/([^/]+)$/);
     if (drillSessionMatch) {
       // 浏览器经 BFF 主动同步对抗状态。该接口仅接收服务端 appKey，浏览器不持密钥。
