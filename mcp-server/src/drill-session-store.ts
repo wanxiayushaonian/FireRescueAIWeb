@@ -14,7 +14,7 @@ interface PersistedShape {
   sessions: DrillSessionRecord[];
 }
 
-const MAX_SESSIONS = 100;
+const MAX_SESSIONS = 500;
 
 /** 单进程文件持久化 store;生产通过 Docker volume 保留文件。 */
 export class DrillSessionStore {

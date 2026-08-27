@@ -11,12 +11,8 @@ import type { LucideIcon } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { confirmImprovement, fetchLibrary, getLibrary, subscribeLibrary } from '@/mock/planLibrary';
 import type { LibraryItem, LibraryKind, LibraryStatus } from '@/mock/planLibrary';
-import type {
-  ConfrontationEvent,
-  ConfrontationReview,
-  ConfrontationState,
-} from '@/drill/confrontation/confront-store';
-import { ConfrontationReviewWorkspace } from '@/drill/confrontation/ConfrontationReviewWorkspace';
+import type { ConfrontationState } from '@/drill/confrontation/confront-store';
+import { hydrateReplaySnapshot } from '@/drill/confrontation/confront-store';
 import { addSceneAction } from '@/mock/sceneLog';
 import { fetchPlans, type ZnyaPlan } from '@/api/plans';
 import { showToast } from '@/components/Toast';
@@ -219,13 +215,13 @@ function DetailDialog({
               已入正式预案库（{item.backendPlanId.slice(0, 8)}… · draft 草稿）
             </div>
           )}
-          {item.kind === '对抗评估' && (item.drillId || item.detail) && (
+          {item.kind === '对抗评估' && item.drillId && (
             <button
               onClick={() => onOpenRecord?.(item)}
               className="flex w-full items-center justify-center gap-1.5 rounded-md border border-violet/60 py-2 text-[13px] text-violet transition hover:bg-violet/10 hover:shadow-[0_0_10px_rgba(167,139,250,.35)]"
             >
               <Swords className="h-3.5 w-3.5" />
-              查看演练记录 · 完整评估报告
+              回放到这一局 · 查看评估报告
             </button>
           )}
           {item.kind === '演练预案' && (
@@ -261,82 +257,39 @@ function DetailDialog({
 
 
 /**
- * 演练记录回看层:对抗评估归档条目「查看演练记录」入口。
- * 数据源双保险:先取归档时点序列化的本地 detail;有 drillId 时再拉服务端
- * DrillSession 快照覆盖(跨浏览器可看,LURU 100 局内有效)。命中任一即可渲染复盘工作区。
+ * 演练记录回看门:对抗评估归档「查看记录」入口。
+ * 拉取服务端 DrillSession 快照后水合对抗舱 store —— 直接回到二级界面的只读回放
+ * (数据以后端为唯一真源,浏览器不留全文);快照缺失时给出明确提示。
  */
 function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () => void }) {
-  const [phase, setPhase] = useState<'loading' | 'ready' | 'missing'>('loading');
-  const [state, setState] = useState<ConfrontationState | null>(null);
+  const [msg, setMsg] = useState('正在调取该局演练快照…');
 
   useEffect(() => {
-    let alive = true;
-    const fromDetail = (): ConfrontationState | null => {
-      const d = item.detail;
-      if (!d || !d.review) return null;
-      return {
-        active: false,
-        status: 'finished',
-        drillId: item.drillId ?? '',
-        seedLoading: false,
-        seedError: null,
-        thinking: false,
-        seedScenario: (d.seedScenario ?? null) as ConfrontationState['seedScenario'],
-        situation: d.situation ?? { fireLevel: 0, trappedCount: 0, damageLevel: 0 },
-        events: (d.events ?? []) as readonly ConfrontationEvent[],
-        review: d.review as ConfrontationReview,
-        evaluating: false,
-        generation: 1,
-        startedAt: d.startedAt ?? 0,
-        plannedTotal: 0,
-        lastRound: null,
-        deploy: d.deploy ?? null,
-        agentActivity: null,
-      };
-    };
     void (async () => {
-      let data = fromDetail();
-      if (item.drillId) {
-        try {
-          const res = await fetch(`/api/drill-sessions/${encodeURIComponent(item.drillId)}`);
-          if (res.ok) {
-            const record = (await res.json()) as { snapshot?: ConfrontationState | null } | null;
-            const snap = record?.snapshot ?? null;
-            if (snap?.review && Array.isArray(snap.events)) data = snap;
-          }
-        } catch {
-          /* 服务端不可达 → 维持本地兜底 */
-        }
+      if (!item.drillId) {
+        setMsg('该记录没有关联演练 ID,无法回放');
+        return;
       }
-      if (!alive) return;
-      if (data?.review) {
-        setState(data);
-        setPhase('ready');
-      } else {
-        setPhase('missing');
+      try {
+        const res = await fetch(`/api/drill-sessions/${encodeURIComponent(item.drillId)}`);
+        if (!res.ok) {
+          setMsg('服务端未找到该局快照(可能已被清理)');
+          return;
+        }
+        const record = (await res.json()) as { snapshot?: ConfrontationState | null } | null;
+        const snap = record?.snapshot ?? null;
+        if (!snap?.review || !Array.isArray(snap.events)) {
+          setMsg('该局快照不完整,无法回放');
+          return;
+        }
+        hydrateReplaySnapshot(snap);
+        onClose();
+      } catch {
+        setMsg('调取失败:无法连接演练快照服务');
       }
     })();
-    return () => {
-      alive = false;
-    };
   }, [item]);
 
-  // ready 分支不包任何容器:Workspace 自带全屏 fixed 布局
-  // (包进带 backdrop-filter 的遮罩会成为包含块,把它的视口宽高压扁——实测踩坑)
-  if (phase === 'ready' && state) {
-    // 必须挂 body:抽屉的拖拽 transform 会成为 fixed 后代的包含块,把全屏工作区压扁
-    if (typeof document === 'undefined') return null;
-    return createPortal(
-      <ConfrontationReviewWorkspace
-        review={state.review as ConfrontationReview}
-        events={state.events}
-        building={item.buildingName ?? item.title}
-        state={state}
-        onClose={onClose}
-      />,
-      document.body,
-    );
-  }
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -347,34 +300,27 @@ function DrillRecordOverlay({ item, onClose }: { item: LibraryItem; onClose: () 
       <motion.div
         initial={{ y: 12, opacity: 0, scale: 0.97 }}
         animate={{ y: 0, opacity: 1, scale: 1 }}
-        exit={{ y: 12, opacity: 0, scale: 0.97 }}
         className="flex w-[380px] flex-col items-center gap-3 rounded-lg border border-line bg-bg-panel px-6 py-6 text-center"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {phase === 'loading' ? (
-            <>
-              <RefreshCw className="h-5 w-5 animate-spin text-cyan" />
-              <div className="text-[14px] font-bold text-text-1">正在调取该局演练快照</div>
-              <div className="text-[12px] leading-5 text-text-2">
-                {item.drillId ? `演练 ID ${item.drillId}` : '读取本地归档数据'}
-              </div>
-            </>
-          ) : (
-            <>
-              <Archive className="h-5 w-5 text-text-3" />
-              <div className="text-[14px] font-bold text-text-1">未找到该局演练快照</div>
-              <div className="text-[12px] leading-5 text-text-2">
-                服务端快照不存在或已被清理，且本地归档无完整数据。
-              </div>
-              <button
-                onClick={onClose}
-                className="mt-1 rounded-md border border-cyan/60 px-4 py-1.5 text-[13px] text-cyan transition hover:bg-cyan/10"
-              >
-                返回预案库
-              </button>
-            </>
-          )}
-        </motion.div>
+        onClick={(e) => e.stopPropagation()}
+      >
+        {msg.startsWith('正在') ? (
+          <RefreshCw className="h-5 w-5 animate-spin text-cyan" />
+        ) : (
+          <Archive className="h-5 w-5 text-text-3" />
+        )}
+        <div className="text-[14px] font-bold text-text-1">
+          {msg.startsWith('正在') ? '正在回到那一局对抗…' : '无法回放该局演练'}
+        </div>
+        <div className="text-[12px] leading-5 text-text-2">{msg}</div>
+        {!msg.startsWith('正在') && (
+          <button
+            onClick={onClose}
+            className="mt-1 rounded-md border border-cyan/60 px-4 py-1.5 text-[13px] text-cyan transition hover:bg-cyan/10"
+          >
+            返回预案库
+          </button>
+        )}
+      </motion.div>
     </motion.div>
   );
 }

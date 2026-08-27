@@ -241,3 +241,31 @@ describe('P0 人工决策闭环', () => {
     expect(s.situation.fireLevel).toBe(2); // manual 不带 delta,态势不变
   });
 });
+
+describe('hydrateReplaySnapshot(预案库回看回放)', () => {
+  it('水合后进入 finished 回放局:active 开启、replay 标记、id 沿快照、数据原样', async () => {
+    const { beginConfrontation, appendInject, hydrateReplaySnapshot, getConfrontationState } = await import('../confront-store');
+    beginConfrontation({ seedScenario: { building: 'X', floor: '1F', material: '电气', trapped: 1, seed: '#T' } });
+    appendInject({ specialType: 'explosion', emergency: '爆燃', tSec: 3, location: '5F' });
+    const snap = {
+      ...getConfrontationState(),
+      drillId: 'drill-archive-test',
+      review: {
+        score: 77,
+        archived: false,
+        conclusion: '结论',
+        comments: [],
+        outcomes: [],
+        source: 'fallback',
+      },
+    };
+    hydrateReplaySnapshot(snap as never);
+    const s = getConfrontationState();
+    expect(s.active).toBe(true);
+    expect(s.replay).toBe(true);
+    expect(s.status).toBe('finished');
+    expect(s.drillId).toBe('drill-archive-test');
+    expect(s.review?.score).toBe(77);
+    expect(s.events.length).toBeGreaterThan(0);
+  });
+});

@@ -97,6 +97,8 @@ export interface ConfrontationState {
   readonly status: 'idle' | 'running' | 'finished';
   /** 本局唯一演练 id(DrillSession 快照键;beginConfrontation 每局重新生成) */
   readonly drillId: string;
+  /** 回放模式(由预案库"查看记录"从 DrillSession 快照水合;界面只读,不驱动 agent) */
+  readonly replay?: boolean;
   readonly seedLoading: boolean;
   readonly seedError: string | null;
   readonly thinking: boolean;
@@ -494,6 +496,28 @@ export function finishConfrontationLocal(
     events: [...conf.events, evalEvt],
     lastRound: { score: review.score, archived: review.archived },
   };
+  emit();
+}
+
+/**
+ * 从 DrillSession 快照水合为回放局:active 置真打开二级界面,status=finished 全部只读。
+ * 数据唯一来源是服务端快照(预案库归档只存 drillId)——与用户裁定的"后端为唯一真源"一致。
+ */
+export function hydrateReplaySnapshot(snapshot: ConfrontationState): void {
+  recentEventKeys.clear();
+  conf = {
+    ...snapshot,
+    active: true,
+    status: 'finished',
+    replay: true,
+    seedLoading: false,
+    seedError: null,
+    thinking: false,
+    evaluating: false,
+    agentActivity: null,
+    generation: conf.generation + 1,
+  };
+  seqCounter = 0;
   emit();
 }
 

@@ -209,7 +209,7 @@ export default function ConfrontationPanel() {
   }, [conf.review, conf.generation]);
 
   useEffect(() => {
-    if (conf.review && conf.status === 'finished' && openedReviewGen.current !== conf.generation) {
+    if (conf.review && conf.status === 'finished' && !conf.replay && openedReviewGen.current !== conf.generation) {
       openedReviewGen.current = conf.generation;
       setReviewOpen(true);
     }
@@ -262,6 +262,7 @@ export default function ConfrontationPanel() {
   };
 
   const handleRespond = (eventId: string, adopted: boolean) => {
+    if (conf.replay) { showToast('回放模式:历史决策不可更改'); return; }
     const elapsedSec = conf.startedAt
       ? Math.max(0, Math.round((Date.now() - conf.startedAt) / 1000))
       : 0;
@@ -285,6 +286,7 @@ export default function ConfrontationPanel() {
     : null;
 
   const handleManualSave = (adjustId: string, lines: string[], note: string) => {
+    if (conf.replay) { showToast('回放模式:历史决策不可更改'); return; }
     const target = conf.events.find((e) => e.id === adjustId && e.kind === 'adjust');
     if (!target) return;
     const elapsedSec = conf.startedAt
@@ -305,7 +307,7 @@ export default function ConfrontationPanel() {
   };
 
   const finishConfrontation = async () => {
-    if (conf.status !== 'running') return;
+    if (conf.status !== 'running' || conf.replay) return;
     const elapsedSec = conf.startedAt
       ? Math.max(0, Math.round((Date.now() - conf.startedAt) / 1000))
       : 0;
@@ -348,17 +350,9 @@ export default function ConfrontationPanel() {
       status: review.archived ? '已归档' : '需修订',
       summary: [...review.comments],
       sourceDetail: `来源：演练对抗 · 对抗评估（${review.conclusion}${review.source === 'fallback' ? '，评估 agent 未响应 · 本地规则降级打分' : ''}，本局特情 ${injects.length} 条）`,
-      // 关联本局 DrillSession 快照(服务端) + 归档时点完整状态序列化(本地兜底):
-      // 预案库「查看记录」据此还原该局的评估报告与事件链。
+      // 只关联本局 DrillSession 快照键:报告与全过程数据以后端为唯一真源
+      // (不落浏览器——用户裁定;「查看演练记录」按此键拉服务端快照回放)
       drillId: conf.drillId,
-      detail: {
-        review,
-        events: [...conf.events, ...(conf.review ? [] : [])],
-        situation: { ...conf.situation },
-        seedScenario: conf.seedScenario,
-        startedAt: conf.startedAt,
-        deploy: conf.deploy ? [...conf.deploy] : null,
-      },
     });
 
     // 改进措施逐条回流预案库(与实战指挥战后评估同模式:待落地,自动关联同建筑演练预案)
@@ -400,7 +394,9 @@ export default function ConfrontationPanel() {
         对抗中
       </span>
     ) : conf.status === 'finished' ? (
-      <span className="rounded-full border border-green/60 px-2.5 py-0.5 text-[12px] text-green">已结束</span>
+      <span className={`rounded-full border px-2.5 py-0.5 text-[12px] ${conf.replay ? 'border-violet/60 bg-violet/10 text-violet' : 'border-green/60 text-green'}`}>
+        {conf.replay ? '回放 · 已结束' : '已结束'}
+      </span>
     ) : (
       <span className="rounded-full border border-line px-2.5 py-0.5 text-[12px] text-text-3">待机</span>
     );
@@ -583,7 +579,7 @@ export default function ConfrontationPanel() {
             </div>
           </motion.div>
 
-          {/* 结束对抗并评估 */}
+          {/* 结束对抗并评估(回放局隐藏) */}
           <div className="mt-auto">
             <button
               onClick={() => void finishConfrontation()}
