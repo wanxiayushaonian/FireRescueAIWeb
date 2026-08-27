@@ -1,6 +1,6 @@
 // 灾情变量监测面板（command.md §3）：温度/烟气/被困/火势 2×2 仪表网格 + 阈值配色 + 趋势条
 import { motion } from 'framer-motion';
-import { Thermometer, Wind, Users, Flame, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
+import { Building2, Siren, Users, Flame, ArrowUp, ArrowDown, ChevronDown } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { useState } from 'react';
 import type { FetchState } from '@/mock/types';
@@ -50,7 +50,8 @@ function Sparkline({ points, className }: { points: number[]; className?: string
 }
 
 interface GaugeDef {
-  key: keyof LiveVars['history'];
+  /** 数值型指标的历史键;文本型(floor/units)为 null → 不渲染趋势条与涨落箭头 */
+  key: keyof LiveVars['history'] | null;
   name: string;
   icon: LucideIcon;
   display: string;
@@ -58,27 +59,33 @@ interface GaugeDef {
   tone: Tone;
   delta: number;
   over: boolean; // 超阈值呼吸发光
-  points: number[];
+  points?: number[];
+  /** 文本型指标的副文案行(楼层功能区 / 参站单位名列表) */
+  sub?: string;
+}
+
+function textGauge(name: string, icon: LucideIcon, vars: LiveVars): GaugeDef {
+  if (name === 'floor') {
+    return { key: null, name: '着火楼层', icon: Building2, display: vars.floor || '—', unit: '', tone: 'cyan', delta: 0, over: false };
+  }
+  const n = vars.units.length;
+  return {
+    key: null, name: '参战单位', icon: Siren,
+    display: String(n), unit: n === 1 ? '支' : '支力量',
+    tone: n >= 4 ? 'orange' : n >= 2 ? 'green' : 'cyan',
+    delta: 0, over: false,
+    sub: n > 0 ? vars.units.join('、') : '待调度确认',
+  };
 }
 
 function buildGauges(vars: LiveVars): GaugeDef[] {
   const h = vars.history;
   const deltaOf = (arr: number[]) => (arr.length >= 2 ? arr[arr.length - 1] - arr[arr.length - 2] : 0);
-  const tempTone: Tone = vars.temperature > 500 ? 'red' : vars.temperature >= 200 ? 'orange' : 'cyan';
-  const smokeTone: Tone = vars.smoke > 60 ? 'red' : vars.smoke >= 30 ? 'amber' : 'green';
   const trappedTone: Tone = vars.trapped > 0 ? 'orange' : 'green';
   const levelTone: Tone = vars.fireLevel >= 4 ? 'red' : vars.fireLevel === 3 ? 'orange' : 'cyan';
   return [
-    {
-      key: 'temperature', name: '火场温度', icon: Thermometer,
-      display: String(vars.temperature), unit: '℃', tone: tempTone,
-      delta: deltaOf(h.temperature), over: vars.temperature > 500, points: h.temperature,
-    },
-    {
-      key: 'smoke', name: '烟气浓度', icon: Wind,
-      display: String(vars.smoke), unit: '%', tone: smokeTone,
-      delta: deltaOf(h.smoke), over: vars.smoke > 60, points: h.smoke,
-    },
+    textGauge('floor', Building2, vars),
+    textGauge('units', Siren, vars),
     {
       key: 'trapped', name: '被困人数', icon: Users,
       display: String(vars.trapped), unit: vars.trapped === 0 ? '全部救出' : '人', tone: trappedTone,
@@ -86,7 +93,7 @@ function buildGauges(vars: LiveVars): GaugeDef[] {
     },
     {
       key: 'fireLevel', name: '火势等级', icon: Flame,
-      display: ROMAN[vars.fireLevel - 1], unit: '级', tone: levelTone,
+      display: ROMAN[vars.fireLevel - 1] ?? '—', unit: '级', tone: levelTone,
       delta: deltaOf(h.fireLevel), over: vars.fireLevel >= 4, points: h.fireLevel,
     },
   ];
@@ -190,9 +197,17 @@ export default function DisasterVarsPanel({
                   </motion.span>
                   <span className="shrink-0 text-[11px] text-text-3">{g.unit}</span>
                 </div>
-                <div className="min-h-0 flex-1">
-                  <Sparkline points={g.points} className={STROKE_CLS[g.tone]} />
-                </div>
+                {'points' in g && g.points && g.points.length >= 2 ? (
+                  <div className="min-h-0 flex-1">
+                    <Sparkline points={g.points} className={STROKE_CLS[g.tone]} />
+                  </div>
+                ) : g.sub !== undefined ? (
+                  <div className="flex min-h-0 flex-1 items-start overflow-hidden">
+                    <span className="line-clamp-2 text-[12px] leading-5 text-text-3" title={g.sub}>{g.sub}</span>
+                  </div>
+                ) : (
+                  <div className="h-6" />
+                )}
               </motion.div>
             ))}
           </div>

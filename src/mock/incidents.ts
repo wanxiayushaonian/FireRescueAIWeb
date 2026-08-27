@@ -13,6 +13,10 @@ export interface Incident {
   receivedAt: string;
   statusHistory: Array<{ status: IncidentStatus; ts: string }>;
   lng: number; lat: number;
+  /** 着火楼层（灾情变量卡展示；从地址楼层解析或手工标注） */
+  floor?: string;
+  /** 参战单位（就近调度 + 按灾种/级别合理编成；微型站→主战→增援→战保） */
+  units?: string[];
 }
 
 export interface DisasterVars {
@@ -76,6 +80,8 @@ export const INITIAL_INCIDENTS: Incident[] = [
       { status: '到场', ts: nowTime(-60_000) },
     ],
     lng: 116.00556, lat: 29.67511,
+    floor: '3F',
+    units: ['通江大道消防站', '迎宾大道消防站'],
   },
   {
     id: 'JZ-20250612-006',
@@ -91,6 +97,9 @@ export const INITIAL_INCIDENTS: Incident[] = [
       { status: '控制', ts: nowTime(-2 * 60_000) },
     ],
     lng: 115.94751, lat: 29.66124,
+    // 一级建筑火灾·控制阶段:属地微型站先期处置 + 主战/增援/战保编成
+    floor: '12F',
+    units: ['乐盈广场21号楼微型站', '城东救援站', '建昌路消防站', '战勤保障站'],
   },
   {
     id: 'JZ-20250612-005',
@@ -104,17 +113,20 @@ export const INITIAL_INCIDENTS: Incident[] = [
       { status: '出动', ts: nowTime(-30_000) },
     ],
     lng: 116.00704, lat: 29.70366,
+    // 出动阶段:力量在途,仅列已调度单位
+    floor: '2F',
+    units: ['庐山消防站', '县府路专职队'],
   },
 ];
 
 /** 新警情池:同为库内九江重点建筑快照(与初始 3 起不重复,地址精确到楼层/功能区) */
-const NEW_INCIDENT_POOL: Array<Pick<Incident, 'address' | 'type' | 'caller' | 'lng' | 'lat'>> = [
-  { address: '九江市浔阳区浔阳路88号九江苏宁广场 28F', type: '建筑火灾', caller: '陈 ** 136****9014', lng: 115.9895, lat: 29.7068 },
-  { address: '九江市八里湖新区文博大道168号九江博物馆 2F展厅', type: '建筑火灾', caller: '刘 ** 135****3378', lng: 115.95331, lat: 29.69054 },
-  { address: '九江市浔阳区塔岭南路48号九江市第一人民医院 门诊楼3F', type: '抢险救援', caller: '赵 ** 150****6621', lng: 115.9865, lat: 29.7085 },
-  { address: '九江市濂溪区前进东路551号九江职业技术学院 实训楼4F', type: '抢险救援', caller: '周 ** 189****0455', lng: 116.0358, lat: 29.6525 },
-  { address: '九江市八里湖新区体育路88号九江市体育中心 体育馆1F', type: '抢险救援', caller: '吴 ** 187****3326', lng: 115.9658, lat: 29.6725 },
-  { address: '九江市浔阳区滨江东路999号九江银行总部大楼 18F', type: '建筑火灾', caller: '郑 ** 159****7708', lng: 116.0058, lat: 29.7185 },
+const NEW_INCIDENT_POOL: Array<Pick<Incident, 'address' | 'type' | 'caller' | 'lng' | 'lat' | 'floor' | 'units'>> = [
+  { address: '九江市浔阳区浔阳路88号九江苏宁广场 28F', type: '建筑火灾', caller: '陈 ** 136****9014', lng: 115.9895, lat: 29.7068, floor: '28F', units: ['工业园专职队', '通江大道消防站'] },
+  { address: '九江市八里湖新区文博大道168号九江博物馆 2F展厅', type: '建筑火灾', caller: '刘 ** 135****3378', lng: 115.95331, lat: 29.69054, floor: '2F', units: ['沙阎路消防站', '战勤保障站'] },
+  { address: '九江市浔阳区塔岭南路48号九江市第一人民医院 门诊楼3F', type: '抢险救援', caller: '赵 ** 150****6621', lng: 115.9865, lat: 29.7085, floor: '3F', units: ['庐山消防站', '康泰路专职队'] },
+  { address: '九江市濂溪区前进东路551号九江职业技术学院 实训楼4F', type: '抢险救援', caller: '周 ** 189****0455', lng: 116.0358, lat: 29.6525, floor: '4F', units: ['建昌路消防站', '工业园专职队'] },
+  { address: '九江市八里湖新区体育路88号九江市体育中心 体育馆1F', type: '抢险救援', caller: '吴 ** 187****3326', lng: 115.9658, lat: 29.6725, floor: '1F', units: ['迎宾大道消防站'] },
+  { address: '九江市浔阳区滨江东路999号九江银行总部大楼 18F', type: '建筑火灾', caller: '郑 ** 159****7708', lng: 116.0058, lat: 29.7185, floor: '18F', units: ['庐山消防站', '通江大道消防站', '战勤保障站'] },
 ];
 
 let incidentSeq = 8;

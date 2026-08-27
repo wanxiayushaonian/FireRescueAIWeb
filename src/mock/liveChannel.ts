@@ -24,6 +24,10 @@ export interface VarHistory {
 
 export interface LiveVars extends DisasterVars {
   history: VarHistory; // 最近 6 个采样点（趋势条）
+  /** 着火楼层（取自警情;展示卡用,静态量不入趋势） */
+  floor: string;
+  /** 参战单位名称列表(静态编成,不随采样变化) */
+  units: string[];
 }
 
 export type LiveEvent =
@@ -97,6 +101,12 @@ function randInt(lo: number, hi: number) {
   return lo + Math.floor(Math.random() * (hi - lo + 1));
 }
 
+/** 从地址尾段抽楼层兜底(警情未显式标注 floor 时) */
+function floorOf(incident: Incident): string {
+  if (incident.floor) return incident.floor;
+  return /([Bb]?\d{1,2}F)/.exec(incident.address)?.[1]?.toUpperCase() ?? '—';
+}
+
 function initialVars(incident: Incident): LiveVars {
   const base: DisasterVars = {
     incidentId: incident.id,
@@ -108,6 +118,8 @@ function initialVars(incident: Incident): LiveVars {
   };
   return {
     ...base,
+    floor: floorOf(incident),
+    units: incident.units ?? [],
     history: {
       temperature: [base.temperature],
       smoke: [base.smoke],
