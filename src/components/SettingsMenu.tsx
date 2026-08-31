@@ -3,16 +3,18 @@
 // Popover 向上弹出(side="top"),自带 Portal → 不受 SideNav overflow-hidden 裁切。
 // 当前收纳「渲染性能」设置(从 TopBar 迁移);后续新增设置分区加在本组件 PopoverContent 内。
 import { useEffect, useState } from 'react';
-import { Settings, MapPin, RotateCcw, Eye } from 'lucide-react';
+import { Settings, MapPin, RotateCcw, Eye, Clapperboard } from 'lucide-react';
 import { Popover, PopoverTrigger, PopoverContent } from './ui/popover';
 import { useScene } from './SceneProvider';
 import { showToast } from './Toast';
 import { SceneDisplayModal } from './SceneDisplayModal';
+import VideoSourceSettingsModal from './VideoSourceSettingsModal';
 import type { PerfStats } from '@/lib/soonspace-runtime';
 
 export default function SettingsMenu({ collapsed }: { collapsed: boolean }) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [displayOpen, setDisplayOpen] = useState(false);
+  const [videoOpen, setVideoOpen] = useState(false);
 
   return (
     <>
@@ -57,10 +59,22 @@ export default function SettingsMenu({ collapsed }: { collapsed: boolean }) {
               内容显示
               <span className="ml-auto text-[10px] text-cyan/60">按类别显隐</span>
             </button>
+            <button
+              onClick={() => {
+                setPopoverOpen(false);
+                setVideoOpen(true);
+              }}
+              className="mt-1.5 flex w-full items-center gap-2 rounded border border-line px-2 py-1.5 text-[12px] text-text-2 transition hover:border-line-glow hover:text-cyan"
+            >
+              <Clapperboard className="h-3.5 w-3.5" />
+              视频源设置
+              <span className="ml-auto text-[10px] text-text-3/70">各模块播放视频</span>
+            </button>
           </div>
         </PopoverContent>
       </Popover>
       <SceneDisplayModal open={displayOpen} onOpenChange={setDisplayOpen} />
+      <VideoSourceSettingsModal open={videoOpen} onOpenChange={setVideoOpen} />
     </>
   );
 }

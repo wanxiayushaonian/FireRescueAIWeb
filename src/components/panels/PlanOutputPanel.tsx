@@ -2,12 +2,16 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import {
   Bot, ChevronDown, RefreshCw, ShieldAlert, ClipboardCheck, TriangleAlert,
-  Gauge, Users, Swords, ListOrdered, Route, ShieldCheck, Stamp,
+  Gauge, Users, Swords, ListOrdered, Route, ShieldCheck, Stamp, Play,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { FetchState } from '@/mock/types';
 import { buildDrillPlan, evaluatePlan, pickEmergency, renderEmergency } from '@/mock/drill';
 import type { EmergencyEvent, EvaluationResult } from '@/mock/drill';
 import { evaluateViaAgent } from '@/lib/agent-evaluate';
+import { getVideoSource, isLocalFileSource, type VideoSlotId } from '@/lib/video-source-config';
+import { resolveLocalVideoUrl } from '@/lib/video-local-file';
+import VideoPopup from '@/components/VideoPopup';
 import {
   beginEvaluate, beginGenerate, finishEvaluate, finishGenerate, finishGenerateFromOperationProposal, setPlannerPhase,
   getDrillState, injectEmergency, subscribeDrill,
@@ -36,14 +40,15 @@ const STATE_OPTIONS: Array<{ value: FetchState; label: string }> = [
 ];
 
 const GROUP_COUNT = 6;
-const GROUP_META = [
+/** video:配置了讲解视频的分组,标题行出现播放按钮(视频源在设置菜单按槽位配置) */
+const GROUP_META: Array<{ key: string; title: string; icon: LucideIcon; video?: VideoSlotId }> = [
   { key: 'level', title: '响应等级', icon: Gauge },
-  { key: 'forces', title: '力量编成', icon: Users },
-  { key: 'tactics', title: '战术战法', icon: Swords },
+  { key: 'forces', title: '力量编成', icon: Users, video: 'plan-forces' },
+  { key: 'tactics', title: '战术战法', icon: Swords, video: 'plan-tactics' },
   { key: 'keyPoints', title: '处置要点', icon: ListOrdered },
-  { key: 'routes', title: '进攻疏散路线', icon: Route },
+  { key: 'routes', title: '进攻疏散路线', icon: Route, video: 'plan-routes' },
   { key: 'safety', title: '安全管控', icon: ShieldCheck },
-] as const;
+];
 
 const EVIDENCE_LABEL: Record<string, string> = {
   plan: '正式预案', archive: '建筑档案', force: '真实力量', water: '消防水源',
@@ -97,8 +102,8 @@ function TypewriterText({ text, enabled, className = '' }: { text: string; enabl
 }
 
 function GroupCard({
-  index, children,
-}: { index: number; children: React.ReactNode }) {
+  index, onPlayVideo, children,
+}: { index: number; onPlayVideo?: () => void; children: React.ReactNode }) {
   const meta = GROUP_META[index];
   const Icon = meta.icon;
   const level = meta.key === 'level';
@@ -112,6 +117,15 @@ function GroupCard({
         <span className="text-[13px] font-bold text-text-1">{meta.title}</span>
         {level && (
           <span className="rounded border border-orange/60 px-1 py-px text-[11px] leading-4 text-orange">等级徽标</span>
+        )}
+        {onPlayVideo && (
+          <button
+            onClick={onPlayVideo}
+            title="播放讲解视频"
+            className="ml-auto flex h-6 items-center gap-1 rounded border border-cyan/50 px-1.5 text-[11px] text-cyan transition hover:bg-cyan/10 hover:shadow-[0_0_8px_rgba(34,211,238,.3)]"
+          >
+            <Play className="h-3 w-3" />视频
+          </button>
         )}
       </div>
       {children}
@@ -148,6 +162,8 @@ export default function PlanOutputPanel() {
   const [confront, setConfront] = useState<ConfrontationState>(getConfrontationState());
   const [typewriter, setTypewriter] = useState(true);
   const [revealed, setRevealed] = useState(0);
+  const [videoSlot, setVideoSlot] = useState<VideoSlotId | null>(null);
+  const [videoSrc, setVideoSrc] = useState('');
   const toastedGen = useRef(0);
   const reduced = useReducedMotion();
   const plannerAdapter = useMemo(() => new ConfrontAdapter(), []);
@@ -283,6 +299,26 @@ export default function PlanOutputPanel() {
     window.setTimeout(() => setDemoState('ok'), 800);
   };
 
+  /** 分组播放按钮:未配置源时 toast 指引去设置;本地文件方案在手势内解析授权,已配置则开浮窗 */
+  const handlePlayGroupVideo = async (slot: VideoSlotId) => {
+    const stored = getVideoSource(slot);
+    if (!stored) {
+      showToast('未配置该分组的视频源，请在左下角「设置 → 视频源设置」中配置');
+      return;
+    }
+    if (isLocalFileSource(stored)) {
+      const url = await resolveLocalVideoUrl(slot);
+      if (!url) {
+        showToast('本地视频无法访问，请在「设置 → 视频源设置」中重新选择');
+        return;
+      }
+      setVideoSrc(url);
+    } else {
+      setVideoSrc('');
+    }
+    setVideoSlot(slot);
+  };
+
   const itemCls = 'text-[13px] leading-5 text-text-2';
 
   const renderBody = () => {
@@ -389,7 +425,11 @@ export default function PlanOutputPanel() {
             className="flex flex-col gap-3"
           >
             {shown.map((meta, gi) => (
-              <GroupCard key={`${generation}-${meta.key}`} index={gi}>
+              <GroupCard
+                key={`${generation}-${meta.key}`}
+                index={gi}
+                onPlayVideo={meta.video ? () => handlePlayGroupVideo(meta.video!) : undefined}
+              >
                 {meta.key === 'level' && (
                   <TypewriterText enabled={typewriter} text={plan.responseLevel} className="text-[14px] font-bold text-orange" />
                 )}
@@ -612,6 +652,12 @@ export default function PlanOutputPanel() {
         </div>
       </div>
       <div className="min-h-0 flex-1">{renderBody()}</div>
+      <VideoPopup
+        slot={videoSlot ?? 'plan-forces'}
+        open={videoSlot !== null}
+        srcOverride={videoSrc}
+        onOpenChange={(v) => { if (!v) setVideoSlot(null); }}
+      />
     </div>
   );
 }

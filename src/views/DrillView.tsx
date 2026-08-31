@@ -107,10 +107,10 @@ export default function DrillView({ onOpenCommandSession }: { onOpenCommandSessi
           panelId="drill-plan"
           title="预案输出"
           icon={FileText}
-          width={480}
+          width={560}
           dock="right"
           defaultPos={{ x: 16, y: 16 }}
-          height="min(calc(100dvh - 120px), 600px)"
+          height="min(calc(100dvh - 120px), 720px)"
           open={planOpen}
           onOpenChange={setPlanOpen}
         >
