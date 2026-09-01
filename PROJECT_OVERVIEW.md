@@ -264,6 +264,7 @@ cd deploy
 | 演示验收真相源 | `DEMO.md` |
 | 数据权威与双 MCP 分工 | `doc/data-authority-mcp-blueprint.md` |
 | 智能体提示词+MCP 配置打包 | `doc/agent-mcp-pack/`(README 索引 + 6 主题文件 + prompts/ 9 篇,自包含分发) |
+| **项目答辩文档包** | `doc/defense/`(总体方案/核心底层逻辑/数据方案/创新点与 QA,答辩视角重组织) |
 | 四角色提示词(现行权威) | `plan/agents/confront-v2-*.md`(索引 `plan/2026-08-25-confrontation-agent-prompts.md`) |
 | 演示验收记录 | `doc/demo-validation-2026-08-25.md`(v1) / `-v2-`(复测) / `-v3-`(三连验收) |
 | 场景包普查 | `doc/ref/pack-inventory.md` |
