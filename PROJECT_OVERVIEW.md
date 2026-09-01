@@ -1,6 +1,6 @@
 # 火场救援数字孪生平台 — 项目总览
 
-> 更新时间:2026-08-26(演示基线后收口批次)
+> 更新时间:2026-08-31(视频播放功能 + 智能体配置打包)
 > 当前分支:`master`(唯一分支)
 > 部署状态:✅ 已部署至 http://111.75.149.221:3000(push master 经 CI 自动部署)
 > 权威技术蓝图(跨项目:模板/赛事后端/znya):见仓库根目录 `项目技术蓝图与实施指南.md`
@@ -31,11 +31,11 @@
 | 维度 | 状态 | 说明 |
 |------|------|------|
 | **分支** | ✅ 单分支 | 仅 `master`;功能分支已全部回收(2026-08-25) |
-| **功能** | ✅ 黄金链 v2 已验收 | 四角色/去重/态势演化已落地,生产三连验收通过,`demo-baseline` 已移动至验收提交;当前做收口增强 |
-| **测试** | 🟡 逻辑层较强 | 主项目约 447 用例,MCP 约 97 用例,znya 约 356 用例;尚缺 React 组件与浏览器 E2E |
+| **功能** | ✅ 黄金链 v2 已验收 | 四角色/去重/态势演化已落地,生产三连验收通过,`demo-baseline` 已移动至验收提交;08-26 收口批次完成(3D 复位/归档持久化/布局/特情门禁);08-31 新增模块级视频讲解与本地文件播放 |
+| **测试** | 🟡 逻辑层较强 | 主项目约 501 用例,MCP 约 98 用例,znya 约 356 用例;尚缺 React 组件与浏览器 E2E |
 | **部署** | ✅ 已加门禁 | push master → CI quality-gate(`npm run verify`)→ SSH 服务器本地构建自动部署;Docker 健康检查;生产脏工作区拒绝部署 |
-| **文档** | 🟡 收口中 | `DEMO.md` 为演示验收真相源;`plan/README.md` 是 plan/ 唯一索引(32 篇 + agents/ 4 篇) |
-| **技术债** | 🟢 较少 | 1 个 TODO(commandBridge 三 stub);`@xyflow/react` 残留依赖与 globals.css 死样式待清;TS 版本不一致(主 6.0.3 / mcp 5.6.0) |
+| **文档** | 🟡 收口中 | `DEMO.md` 为演示验收真相源;`plan/README.md` 是 plan/ 唯一索引(32 篇 + agents/ 4 篇);`doc/agent-mcp-pack/` 为智能体提示词+MCP 配置自包含分发包 |
+| **技术债** | 🟢 较少 | 1 个 TODO(commandBridge 三 stub);TS 版本不一致(主 6.0.3 / mcp 5.6.0,裁定赛后统一);`@xyflow/react` 已卸载(2026-08-27) |
 
 ---
 
@@ -48,11 +48,11 @@
 | **态势总览** | `src/App.tsx` (overview) | GIS 地图 + 资源总览面板 + 水源/单位/警情图层 + 风险研判 agent(gis_fly_to/show_route 联动) |
 | **对象总览** | `src/App.tsx` (objects) | 建筑档案(znya 真实数据) + 楼层聚焦 + 设备拾取/搜索 + 场内导航 + 作战参谋 agent |
 | **熟悉考核** | `src/views/TrainingView.tsx` | 六熟悉 AI 引导(17 步联动) + 自主导览 + 综合考核(mock 题库) + 教练 agent |
-| **演练对抗** | `src/views/DrillView.tsx` + `src/drill/confrontation/` | 一级:灾情参数/预案输出(mock 模板+真评估)/预案库;二级:对抗舱四角色 agent + 特情去重 + 态势演化 + 3D 联动 + 评估回流预案库 |
-| **实战指挥** | `src/views/CommandView.tsx` | 实时警情(mock 频道) + AI 派遣(plan_dispatch 真实) + 案域三圈 + 处置时间轴 + 车辆动画 + 指挥 agent |
+| **演练对抗** | `src/views/DrillView.tsx` + `src/drill/confrontation/` | 一级:灾情参数/预案输出(真 agent propose_initial_plan+降级模板)/预案库(本地归档+云端演练记录回放)/分组讲解视频浮窗;二级:对抗舱四角色 agent + 特情去重 + 态势演化 + 3D 联动 + 评估回流预案库 |
+| **实战指挥** | `src/views/CommandView.tsx` | 实时警情(mock 频道) + AI 派遣(plan_dispatch 真实) + 案域三圈 + 处置时间轴 + 车辆动画 + 辅助决策 agent + 现场视频回传(配置源播真实视频/未配 mock 占位) |
 | **GIS 底座** | `src/components/RealGisMap.tsx` | 高德瓦片 + Leaflet + 路线规划 + 力量/水源/单位图层 + 视角记忆 |
 | **3D 场景** | `src/components/SceneProvider.tsx` + `src/App.tsx`(SceneContainer) | Soonspace 引擎 + 楼层聚焦/炸开 + 内容显隐模态(Recipe 白名单,现行唯一显隐方案) + 设备拾取 + 2D 平面图 + 场内/场外导航 |
-| **Agent 对话** | `src/components/assistant-ui/AgentChatThread.tsx` + `src/components/AgentSidebar.tsx` | SSE 流式对话 + 双 tab(业务/全局,9 个平台 app) + 工具调用 + 历史会话 + scene:// 锚点联动 |
+| **Agent 对话** | `src/components/assistant-ui/AgentChatThread.tsx` + `src/components/AgentSidebar.tsx` | SSE 流式对话(双层看门狗) + 双 tab(业务/全局,11 个平台 app) + 工具调用 + 历史会话 + scene:// 锚点 + 裸文本位置链接化(楼层/设施/地名可点) |
 | **建筑档案** | `src/components/panels/BuildingProfilePanel.tsx` | 建筑详情 + 楼层分布 + 消防设施统计 + 关键部位楼层聚焦 |
 | **预案库** | `src/components/panels/PlanLibraryPanel.tsx` | 归档库(演练产出回流,znya 建档) + 正式预案(znya emergency_plans 只读);已挂载演练/指挥两模块 |
 
@@ -94,15 +94,15 @@ web/
 │   ├── drill/          # 演练对抗(对抗舱 confrontation/ + building-21 常量)
 │   ├── api/            # 前端 API 调用层
 │   ├── lib/            # src 域纯函数(agent-context 等,vitest 覆盖)
-│   └── mock/           # Mock 数据(警情/题库/六熟悉;building.ts 为无引用死代码待清)
+│   └── mock/           # Mock 数据(警情/题库/六熟悉)
 ├── lib/
 │   ├── scene-recipe/   # 3D 显隐 Recipe 编排(单一真相源)
 │   ├── scene-command-bus/  # 场景命令总线(MCP→浏览器执行+ack 回执)
 │   ├── gis/            # GIS 纯函数(渲染/查询/ETA/车辆动画)
-│   └── *.ts            # mapper/geo-query/scene-sdk/soonspace-runtime/agent-* 等
-├── mcp-server/         # 场景/演练 MCP 服务(独立子包,src 13 文件,17 工具)
-├── app/api/            # BFF API 路由(20 个:ustudio 14 + business 代理 + scene-events×2 + drill-sessions + health 等)
-├── doc/                # data-authority-mcp-blueprint / demo-validation / packages / mcp / archive
+│   └── *.ts            # mapper/geo-query/scene-sdk/soonspace-runtime/agent-*/video-source-config 等
+├── mcp-server/         # 场景/演练 MCP 服务(独立子包,18 工具)
+├── app/api/            # BFF API 路由(21 个:ustudio 14 + business 代理 + scene-events×2 + drill-sessions×2 + health 等)
+├── doc/                # data-authority-mcp-blueprint / demo-validation / agent-mcp-pack(智能体配置打包) / packages / mcp / archive
 └── plan/               # 设计与计划文档(32 篇 + agents/ 4 篇四角色提示词,索引见 plan/README.md)
 ```
 
@@ -114,7 +114,7 @@ web/
                               → 高德地图 (GIS 底图)
 
 Agent 对话 → uStudio agent-chat (SSE) → 工具调用
-  → Node MCP :8787(场景/GIS/演练,17 工具)──场景命令──> /scene-events SSE → 浏览器 SceneCommandBridge → SDK,ack 回执
+  → Node MCP :8787(场景/GIS/演练,18 工具)──场景命令──> /scene-events SSE → 浏览器 SceneCommandBridge → SDK,ack 回执
   → Python MCP :8788(业务事实,11 工具)──> znya PostgreSQL
 
 演练状态:浏览器 confront-store ──120ms 防抖 PUT──> BFF /api/drill-sessions/:id ──> MCP DrillSession(文件持久化)
@@ -142,10 +142,10 @@ push master → GitHub Actions: quality-gate(npm run verify: typecheck+测试+mc
 
 ### 5.1 高优先级 🔴
 
-**1. 演示后收口与可信度增强**
-- 演练结束自动恢复 3D 全楼视角，避免楼层炸开状态泄漏
-- 评估/改进措施写入浏览器持久化库，并由 DrillSession 作为服务端快照兜底
-- 1280×720 视口保证预案库入口可见；特情类型与描述语义冲突时拒绝入列
+**1. 演示前遗留风险**(08-26 收口批次已完成:3D 复位/归档持久化/1280×720 布局/特情一致性门禁)
+- 长链路聊天流 2-3 分钟处可能被网关掐断(已加响应头+流空闲双层看门狗,可手动重新生成;自动续问待拍板)
+- 对抗评估归档仍在 DrillSession 文件形态(LRU 500 局),进 znya PostgreSQL 审计层待用户裁定
+- 平台知识库旧预案"258 米"文本残留(该口径唯一来源,待平台侧更新或接受)
 
 ### 5.2 中优先级 🟡
 
@@ -156,8 +156,7 @@ push master → GitHub Actions: quality-gate(npm run verify: typecheck+测试+mc
 ### 5.3 低优先级 🟢
 
 **6. 技术债清理**
-- `@xyflow/react` 残留依赖 + globals.css 死样式删除
-- TypeScript 版本统一(主 6.0.3 vs mcp 5.6.0)
+- TypeScript 版本统一(主 6.0.3 vs mcp 5.6.0,裁定赛后统一)
 - `lib/soonspace-runtime.ts` commandBridge 三方法 stub(panelList/panelSetVisible/showVideo,迁壳遗留)
 
 **7. 测试覆盖扩展**
@@ -180,7 +179,6 @@ push master → GitHub Actions: quality-gate(npm run verify: typecheck+测试+mc
 |------|------|------|
 | React 组件无测试覆盖 | 质量无保障 | 引入 `@testing-library/react` + jsdom |
 | TypeScript 版本不一致 | 主 6.0.3 vs mcp 5.6.0 | 统一版本,避免类型兼容问题 |
-| `@xyflow/react` 未使用 | 依赖冗余 | 删依赖 + globals.css 死样式 |
 
 ### 6.3 性能问题
 
@@ -207,7 +205,7 @@ cp .env.example .env.local
 # 编辑 .env.local,填入:
 # - NEXT_PUBLIC_X_APP_KEY (uStudio 场景密钥)
 # - NEXT_PUBLIC_USTUDIO_BASE (uStudio 网关地址)
-# - NEXT_PUBLIC_*_APP_ID (9 个 agent app id,未配自动降级)
+# - NEXT_PUBLIC_*_APP_ID (11 个 agent app id,未配自动降级)
 # - ZNYA_BASE_URL (znya 后端地址)
 # - ZNYA_ADMIN_USER / ZNYA_ADMIN_PASSWORD (znya 管理员账号)
 # - MCP_APP_KEY (MCP 服务认证密钥)
@@ -265,8 +263,9 @@ cd deploy
 |------|------|
 | 演示验收真相源 | `DEMO.md` |
 | 数据权威与双 MCP 分工 | `doc/data-authority-mcp-blueprint.md` |
+| 智能体提示词+MCP 配置打包 | `doc/agent-mcp-pack/`(README 索引 + 6 主题文件 + prompts/ 9 篇,自包含分发) |
 | 四角色提示词(现行权威) | `plan/agents/confront-v2-*.md`(索引 `plan/2026-08-25-confrontation-agent-prompts.md`) |
-| 演示验收记录 | `doc/demo-validation-2026-08-25.md`, `doc/demo-validation-v2-2026-08-25.md` |
+| 演示验收记录 | `doc/demo-validation-2026-08-25.md`(v1) / `-v2-`(复测) / `-v3-`(三连验收) |
 | 场景包普查 | `doc/ref/pack-inventory.md` |
 | 需求对齐 | `doc/ref/ref.md` + `doc/ref/ref-status.md` |
 | 底层包技术文档 | `doc/packages/`(ustudio-sdk/soonspacejs/multi-agent-sdk/插件) |
