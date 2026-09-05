@@ -10,6 +10,8 @@ import { LocationVocabProvider } from '@/components/RichLocationText';
 import type { ModuleKey } from '@/components/SideNav';
 import { SceneProvider, useScene } from '@/components/SceneProvider';
 import { SceneCommandBridge } from '@/components/SceneCommandBridge';
+import { subscribeSceneActions, type SceneExecutorRuntime } from '@/lib/scene-action-executor';
+import { useRef } from 'react';
 // GIS 底座:Leaflet 是浏览器库,须客户端加载(ssr:false),否则构建期 SSR 报 window 未定义
 const RealGisMap = dynamic(() => import('@/components/RealGisMap'), {
   ssr: false,
@@ -51,8 +53,42 @@ export default function App() {
  *  避免与演练自己的顶部条/参数条/右栏重合(此前帧率/书签条全叠在演练 UI 上);
  *  楼层显隐工具栏(SceneToolbar)按需求保留:下移避让演练工具条 + 紧凑模式(去搜索)避让两侧浮动面板。 */
 function SceneContainer({ module }: { module: ModuleKey }) {
-  const { containerRef, view, progress } = useScene();
+  const { containerRef, view, progress, runtime, recipeStore, tree, initialView } = useScene();
+  const initialViewRef = useRef(initialView);
+  initialViewRef.current = initialView;
   const isDrill = module === 'drill';
+
+  // 场景动作总线执行器:各面板/智能体写 sceneLog(showRoute/flyTo/switchFloor 等)
+  // → 此处订阅映射到真实 SDK。原挂载在 RealSceneView,该组件已不在应用代码图内,
+  // 导致执行器整个模块被摇树剔除、线上从未执行——2026-09-05 迁入本组件(真实 3D 容器)。
+  useEffect(() => {
+    if (!runtime || view !== 'ready') return;
+    const executor: SceneExecutorRuntime = {
+      flyToObject: (id) => {
+        void runtime.flyToObject(id);
+      },
+      highlightObject: (id, c) => {
+        runtime.highlightObject(id, c);
+      },
+      clearObjectHighlight: (id) => {
+        runtime.clearObjectHighlight(id);
+      },
+      resetCamera: () => {
+        const vp = initialViewRef.current;
+        if (vp) {
+          void runtime.setCameraViewpoint(vp, true);
+        } else {
+          console.warn('[real-scene] resetCamera: 初始视角未存,跳过');
+        }
+      },
+      getObjectWorldPosition: (id) => runtime.getObjectWorldPosition(id),
+      drawVirtualRoute: (detail, options) => runtime.drawVirtualRoute(detail, options),
+      clearVirtualRoute: (id) => {
+        runtime.clearVirtualRoute(id);
+      },
+    };
+    return subscribeSceneActions(executor, recipeStore ?? undefined, tree);
+  }, [runtime, view, recipeStore, tree]);
 
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">

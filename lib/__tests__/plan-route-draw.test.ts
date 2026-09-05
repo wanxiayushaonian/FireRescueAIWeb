@@ -155,6 +155,14 @@ describe('drawPlanRoute', () => {
     expect(calls.drawn[0]?.route_color).toBe('#34d399');
   });
 
+  it('多于两个可定位点时只连首尾(最远两点直连)', () => {
+    const { rt, calls } = fakeRuntime(POSITIONS);
+    // 大堂(0,5,0) → 避难层25F(10,100,5) → 25F Story(2,100,2):中点不参与
+    const r = drawPlanRoute('attack', ['1F 大堂', '25F 避难层', '25F'], testTree(), rt);
+    expect(r).toEqual({ drawn: true, pointCount: 2 });
+    expect((calls.drawn[0]?.path as Array<{ position: XYZ }>).map((p) => p.position.x)).toEqual([0, 2]);
+  });
+
   it('锚点不足 2 个不画线并给出原因', () => {
     const { rt, calls } = fakeRuntime(POSITIONS);
     const r = drawPlanRoute('attack', ['供水干线'], testTree(), rt);

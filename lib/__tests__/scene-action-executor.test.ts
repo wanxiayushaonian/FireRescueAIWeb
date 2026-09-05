@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mapSceneAction } from '@/lib/scene-action-executor';
+import { mapSceneAction, subscribeSceneActions } from '@/lib/scene-action-executor';
 import { setGlobalRecipeStore } from '@/lib/scene-recipe/global-store';
 import type { RecipeStore } from '@/lib/scene-recipe/store';
-import type { SceneAction } from '@/mock/sceneLog';
+import { addSceneAction, clearSceneLog, type SceneAction } from '../../src/mock/sceneLog';
 import type { SceneTreeNode } from '@/lib/ustudio';
 
 function makeRuntime() {
@@ -145,5 +145,42 @@ describe('mapSceneAction', () => {
     const r = makeRuntime();
     const a: SceneAction = { ts: '00:00:00', action: 'flyTo', target: '', source: '面板' };
     expect(mapSceneAction(a, r).executed).toBe(false);
+  });
+});
+
+describe('subscribeSceneActions 首次订阅回放', () => {
+  afterEach(() => {
+    clearSceneLog();
+  });
+
+  it('场景晚于预案就绪:回放日志里的 showRoute 补画(两种各一条)', () => {
+    const r = makeRuntime();
+    r.getObjectWorldPosition.mockImplementation((id: string) =>
+      id === 'd1' ? { x: 0, y: 0, z: 0 } : { x: 9, y: 0, z: 0 });
+    addSceneAction({
+      action: 'showRoute', target: '进攻路线', source: '预案引擎',
+      params: { kind: 'attack', steps: ['首层东门', '西门'] },
+    });
+    addSceneAction({
+      action: 'showRoute', target: '疏散路线', source: '预案引擎',
+      params: { kind: 'evacuate', steps: ['首层东门', '西门'] },
+    });
+    const unsub = subscribeSceneActions(r, undefined, makeTree());
+    expect(r.drawVirtualRoute).toHaveBeenCalledTimes(2);
+    expect(r.clearVirtualRoute).toHaveBeenCalledWith('plan-route-attack');
+    expect(r.clearVirtualRoute).toHaveBeenCalledWith('plan-route-evacuate');
+    unsub();
+  });
+
+  it('hideRoute 晚于 showRoute:不回放已被清除的路线', () => {
+    const r = makeRuntime();
+    addSceneAction({
+      action: 'showRoute', target: '进攻路线', source: '预案引擎',
+      params: { kind: 'attack', steps: ['首层东门', '西门'] },
+    });
+    addSceneAction({ action: 'hideRoute', target: '清除', source: '预案引擎' });
+    const unsub = subscribeSceneActions(r, undefined, makeTree());
+    expect(r.drawVirtualRoute).not.toHaveBeenCalled();
+    unsub();
   });
 });

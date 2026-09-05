@@ -1,10 +1,11 @@
 // 预案路线 3D 绘制(最小实现):预案输出的 attack/evacuate 步骤文本 → 场景锚点
-// → drawVirtualRoute 折线。锚点分词复用 linkifyText(与位置芯片同一套词表,
-// 芯片能点的地方路线就能画):设施类型锚点查设备索引(带楼层过滤、贴近上一步
-// 楼层防跨楼乱连),裸楼层锚点落 Story 中心;GIS 地名属场外经纬度,暂不画
-// (留 navigateFromExternal 场外段增强)。自由文本命中不了的步骤跳过;
-// 可定位锚点 < 2 不画线,避免误连。执行挂载见 scene-action-executor 的
-// showRoute/hideRoute(2026-09-04 前这两个动作只写日志不执行)。
+// → drawVirtualRoute 直线。按需求裁定(2026-09-05)只连**首尾两个可定位锚点**
+// (最远两点联通,低精度即可):锚点分词复用 linkifyText(与位置芯片同一套词表),
+// 设施类型锚点查设备索引(带楼层过滤、贴近上一步楼层防跨楼乱连),裸楼层锚点落
+// Story 中心;GIS 地名属场外经纬度,暂不画(留 navigateFromExternal 场外段增强)。
+// 自由文本命中不了的步骤跳过;可定位锚点 < 2 不画线,避免误连。
+// 执行挂载见 App.tsx SceneContainer(2026-09-05 自 RealSceneView 迁入——该组件
+// 已不在应用代码图内,原挂载点导致执行器整个模块被摇树剔除、线上从未执行)。
 import type { SceneTreeNode } from './ustudio';
 import { linkifyText } from './location-linkify';
 import { parseFloorSpec, parseFloorToken, storyIdsForFloorSpec } from './floor-focus';
@@ -182,8 +183,10 @@ function samePoint(a: XYZ, b: XYZ): boolean {
 }
 
 /**
- * 解析并画一条预案路线。同步入参校验 + 触发绘制;drawVirtualRoute 的
- * Promise 拒绝(SDK 画线失败)兜底 catch,不产生未处理拒绝。
+ * 解析并画一条预案路线。按需求裁定(2026-09-05)只连**首尾两个可定位锚点**:
+ * 途经点多为 AI 生成,存在性无法保证,逐点直连会折线乱穿;两端即"最远两点联通"。
+ * 同步入参校验 + 触发绘制;drawVirtualRoute 的 Promise 拒绝(SDK 画线失败)兜底
+ * catch,不产生未处理拒绝。
  */
 export function drawPlanRoute(
   kind: PlanRouteKind,
@@ -193,20 +196,20 @@ export function drawPlanRoute(
 ): PlanRouteDrawResult {
   const { anchors, skipped } = resolvePlanRouteAnchors(steps, tree);
   const firstSkip = skipped[0]?.reason;
-  const points: XYZ[] = [];
-  for (const a of anchors) {
-    const p = runtime.getObjectWorldPosition(a.outId);
-    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y) || !Number.isFinite(p.z)) continue;
-    if (points.length > 0 && samePoint(points[points.length - 1], p)) continue;
-    points.push(p);
-  }
-  if (points.length < 2) {
+  if (anchors.length < 2) {
     return {
       drawn: false,
-      pointCount: points.length,
-      reason: `可定位锚点不足(命中 ${points.length} 个${firstSkip ? `;如「${skipped[0].step}」${firstSkip}` : ''})`,
+      pointCount: 0,
+      reason: `可定位锚点不足(命中 ${anchors.length} 个${firstSkip ? `;如「${skipped[0].step}」${firstSkip}` : ''})`,
     };
   }
+  const p0 = runtime.getObjectWorldPosition(anchors[0].outId);
+  const p1 = runtime.getObjectWorldPosition(anchors[anchors.length - 1].outId);
+  const ok = (p: XYZ | null): p is XYZ => !!p && Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z);
+  if (!ok(p0) || !ok(p1) || samePoint(p0, p1)) {
+    return { drawn: false, pointCount: 0, reason: '首尾锚点坐标不可得或重合' };
+  }
+  const points: XYZ[] = [p0, p1];
   const routeId = PLAN_ROUTE_IDS[kind];
   // 先清同 id 再画:重新生成/分组重放时幂等替换,不与导航路线(nav-*)混线
   runtime.clearVirtualRoute(routeId);
@@ -216,7 +219,7 @@ export function drawPlanRoute(
     route_color: PLAN_ROUTE_COLORS[kind],
     path: points.map((p) => ({ position: p })),
     start_coordinate: points[0],
-    end_coordinate: points[points.length - 1],
+    end_coordinate: points[1],
   };
   try {
     const r = runtime.drawVirtualRoute(detail) as Promise<unknown> | void;

@@ -118,6 +118,8 @@ export function mapSceneAction(
 /**
  * 订阅 sceneLog,每条最新 action 经 mapSceneAction 映射执行。
  * 跳过的动作(IGNORED / target 非 id / 未知)打 warn,便于排查。
+ * 首次订阅时回放最近的预案路线状态:场景(3D 包)常晚于预案分组流式输出就绪,
+ * 那时派发的 showRoute 无人订阅,不回放就会永久丢线。
  * @param tree 场景实例树(showRoute 步骤文本 → 锚点解析用;未就绪时路线跳过)。
  * @returns 退订函数。
  */
@@ -126,8 +128,29 @@ export function subscribeSceneActions(
   store?: RecipeStore,
   tree?: SceneTreeNode | null,
 ): () => void {
-  return subscribeSceneLog((_list, latest) => {
-    if (!latest) return;
+  let booted = false;
+  return subscribeSceneLog((list, latest) => {
+    if (!latest) {
+      // 初次订阅(list 最新在前):按线种回放比最近 hideRoute 更新的 showRoute
+      if (booted) return;
+      booted = true;
+      for (const kind of ['attack', 'evacuate'] as const) {
+        const showIdx = list.findIndex(
+          (a) =>
+            a.action === 'showRoute' &&
+            (a.params as { kind?: unknown } | undefined)?.kind === kind &&
+            Array.isArray((a.params as { steps?: unknown } | undefined)?.steps),
+        );
+        if (showIdx < 0) continue;
+        const hideIdx = list.findIndex((a) => a.action === 'hideRoute');
+        if (hideIdx >= 0 && hideIdx < showIdx) continue; // hideRoute 更新(索引小=更新)
+        const res = mapSceneAction(list[showIdx], runtime, store, tree);
+        if (!res.executed && res.reason) {
+          console.warn('[real-scene] 回放预案路线失败', kind, res.reason);
+        }
+      }
+      return;
+    }
     const res = mapSceneAction(latest, runtime, store, tree);
     if (!res.executed && res.reason) {
       console.warn('[real-scene] action skipped', latest.action, res.reason);
