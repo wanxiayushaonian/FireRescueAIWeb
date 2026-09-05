@@ -3,6 +3,7 @@ import { mapSceneAction } from '@/lib/scene-action-executor';
 import { setGlobalRecipeStore } from '@/lib/scene-recipe/global-store';
 import type { RecipeStore } from '@/lib/scene-recipe/store';
 import type { SceneAction } from '@/mock/sceneLog';
+import type { SceneTreeNode } from '@/lib/ustudio';
 
 function makeRuntime() {
   return {
@@ -10,7 +11,21 @@ function makeRuntime() {
     highlightObject: vi.fn(),
     clearObjectHighlight: vi.fn(),
     resetCamera: vi.fn(),
+    getObjectWorldPosition: vi.fn((_id: string): { x: number; y: number; z: number } | null => null),
+    drawVirtualRoute: vi.fn(),
+    clearVirtualRoute: vi.fn(),
   };
+}
+
+/** 1F 东门/西门最小树(showRoute 画线用)。 */
+function makeTree(): SceneTreeNode {
+  const n = (id: string, name: string, type: string, children: SceneTreeNode[] = []): SceneTreeNode => ({
+    id, name, type, children,
+    twins_instance_id: `tw-${id}`, twins_instance_name: name, twins_identifier: type, out_instance_id: id,
+  });
+  return n('t', '测试楼', 'Building', [
+    n('s1', '1F', 'Story', [n('d1', '东门', 'Door'), n('d2', '西门', 'Door')]),
+  ]);
 }
 
 describe('mapSceneAction', () => {
@@ -74,12 +89,56 @@ describe('mapSceneAction', () => {
     expect(r.resetCamera).toHaveBeenCalled();
   });
 
-  it('showRoute/drawZone/addMarker/updatePlan → 忽略(留架构第4步)', () => {
+  it('drawZone/drawRoute/clearTactical/addMarker/removeMarker/updatePlan → 忽略(留后续)', () => {
+    const r = makeRuntime();
+    for (const action of ['drawZone', 'drawRoute', 'clearTactical', 'addMarker', 'removeMarker', 'updatePlan'] as const) {
+      const a: SceneAction = { ts: '00:00:00', action, target: 'x', source: '面板' };
+      expect(mapSceneAction(a, r).reason).toMatch(/忽略/);
+    }
+  });
+
+  it('showRoute 无 steps → 不执行(旧日志动作仅记录)', () => {
     const r = makeRuntime();
     const a: SceneAction = { ts: '00:00:00', action: 'showRoute', target: 'r1', source: '面板' };
     const res = mapSceneAction(a, r);
     expect(res.executed).toBe(false);
-    expect(res.reason).toMatch(/忽略|未实现/);
+    expect(res.reason).toMatch(/steps/);
+    expect(r.drawVirtualRoute).not.toHaveBeenCalled();
+  });
+
+  it('showRoute 带 steps 但树未就绪 → 不执行(锚点无法解析)', () => {
+    const r = makeRuntime();
+    const a: SceneAction = {
+      ts: '00:00:00', action: 'showRoute', target: '进攻路线', source: '预案引擎',
+      params: { kind: 'attack', steps: ['1F 大堂', '25F 避难层'] },
+    };
+    const res = mapSceneAction(a, r, undefined, null);
+    expect(res.executed).toBe(false);
+    expect(r.drawVirtualRoute).not.toHaveBeenCalled();
+  });
+
+  it('showRoute 带 steps + 树就绪 → drawVirtualRoute 画预案折线', () => {
+    const r = makeRuntime();
+    r.getObjectWorldPosition.mockImplementation((id: string) =>
+      id === 'd1' ? { x: 0, y: 0, z: 0 } : { x: 9, y: 0, z: 0 });
+    const tree = makeTree();
+    const a: SceneAction = {
+      ts: '00:00:00', action: 'showRoute', target: '进攻路线', source: '预案引擎',
+      params: { kind: 'attack', steps: ['首层东门', '西门'] },
+    };
+    const res = mapSceneAction(a, r, undefined, tree);
+    expect(res.executed).toBe(true);
+    expect(r.clearVirtualRoute).toHaveBeenCalledWith('plan-route-attack');
+    expect(r.drawVirtualRoute).toHaveBeenCalledTimes(1);
+    expect((r.drawVirtualRoute.mock.calls[0][0] as { route_id: string }).route_id).toBe('plan-route-attack');
+  });
+
+  it('hideRoute → 清除预案路线(kind 缺省两条)', () => {
+    const r = makeRuntime();
+    const a: SceneAction = { ts: '00:00:00', action: 'hideRoute', target: '清除进攻/疏散路线', source: '预案引擎' };
+    const res = mapSceneAction(a, r);
+    expect(res.executed).toBe(true);
+    expect(r.clearVirtualRoute).toHaveBeenCalledTimes(2);
   });
 
   it('空 target → 不执行', () => {

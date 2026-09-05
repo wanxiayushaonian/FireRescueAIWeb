@@ -65,8 +65,10 @@ function writeGroupSceneActions(
     addSceneAction({ action: 'switchFloor', target: `${s.buildingName} ${s.floor}`, params: { floor: s.floor }, source: '预案引擎' });
   }
   if (groupKey === 'routes') {
-    addSceneAction({ action: 'showRoute', target: `进攻路线（cyan）：${plan.routes.attack.join(' → ')}`, params: { kind: 'attack', color: '#22d3ee' }, source: '预案引擎' });
-    addSceneAction({ action: 'showRoute', target: `疏散路线（green）：${plan.routes.evacuate.join(' → ')}`, params: { kind: 'evacuate', color: '#34d399' }, source: '预案引擎' });
+    // steps 随动作进执行器(scene-action-executor → plan-route-draw 解析画线);
+    // target 保持人读文案进日志。
+    addSceneAction({ action: 'showRoute', target: `进攻路线（cyan）：${plan.routes.attack.join(' → ')}`, params: { kind: 'attack', color: '#22d3ee', steps: [...plan.routes.attack] }, source: '预案引擎' });
+    addSceneAction({ action: 'showRoute', target: `疏散路线（green）：${plan.routes.evacuate.join(' → ')}`, params: { kind: 'evacuate', color: '#34d399', steps: [...plan.routes.evacuate] }, source: '预案引擎' });
   }
   if (groupKey === 'safety') {
     addSceneAction({ action: 'batchHighlight', target: `${s.floor} 安全管控：${plan.safetyControls[0] ?? '待确认'}`, params: { floor: s.floor }, source: '预案引擎' });

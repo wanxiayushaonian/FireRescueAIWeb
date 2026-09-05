@@ -12,11 +12,11 @@ import { useScene } from '@/components/SceneProvider';
  * 包含 3D 场景容器和 UI 覆盖层。
  */
 export function RealSceneView() {
-  const { runtime, view, error, containerRef, initialView, recipeStore } = useScene();
+  const { runtime, view, error, containerRef, initialView, recipeStore, tree } = useScene();
   const initialViewRef = useRef(initialView);
   initialViewRef.current = initialView;
 
-  // 订阅场景动作（flyTo、highlight 等）
+  // 订阅场景动作（flyTo、highlight、showRoute 等）
   useEffect(() => {
     if (!runtime || view !== 'ready') return;
 
@@ -38,13 +38,18 @@ export function RealSceneView() {
           console.warn('[real-scene] resetCamera: 初始视角未存,跳过');
         }
       },
+      getObjectWorldPosition: (id) => runtime.getObjectWorldPosition(id),
+      drawVirtualRoute: (detail, options) => runtime.drawVirtualRoute(detail, options),
+      clearVirtualRoute: (id) => {
+        runtime.clearVirtualRoute(id);
+      },
     };
 
-    const unsub = subscribeSceneActions(executor, recipeStore ?? undefined);
+    const unsub = subscribeSceneActions(executor, recipeStore ?? undefined, tree);
     return () => {
       unsub();
     };
-  }, [runtime, view, recipeStore]);
+  }, [runtime, view, recipeStore, tree]);
 
   return (
     <div className="scene-grid relative h-full w-full overflow-hidden bg-bg-grid">
